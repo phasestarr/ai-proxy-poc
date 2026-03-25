@@ -1,0 +1,127 @@
+# Purpose:
+# - Define the multi-container local development and deployment topology.
+#
+# Current services:
+# - frontend
+# - proxy-api
+# - postgres
+# - redis
+#
+# Responsibilities:
+# - Build or run each service with the correct ports, environment variables,
+#   version pins, dependencies, and volumes
+# - Provide a simple single-command startup flow for the full stack
+#
+# Notes:
+# - Keep service names stable because internal container networking depends on them.
+# - The backend should not assume localhost for database access when running in Compose.
+# - Version pins are sourced from deploy/.env so Dockerfiles and Compose stay aligned.
+
+services:
+  postgres:
+    image: "postgres:${POSTGRES_VERSION:-16-alpine}"
+    container_name: ai-proxy-postgres
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-ai_proxy}"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  redis:
+    image: "redis:${REDIS_VERSION:-7-alpine}"
+    container_name: ai-proxy-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  proxy-api:
+    build:
+      context: ../proxy-api
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "${PYTHON_VERSION:-3.13.12}"
+        PIP_VERSION: "${PIP_VERSION:-25.3}"
+    container_name: ai-proxy-api
+    environment:
+      APP_NAME: "${APP_NAME:-AI Proxy API}"
+      APP_ENV: "${APP_ENV:-dev}"
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_proxy}"
+      REDIS_URL: "redis://redis:6379/0"
+      AUTH_COOKIE_SECURE: "true"
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/gcp-service-account.json}"
+      GOOGLE_CLOUD_PROJECT: "${GOOGLE_CLOUD_PROJECT:-}"
+      GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION:-global}"
+      VERTEX_AI_MODEL: "${VERTEX_AI_MODEL:-gemini-2.5-flash}"
+      VERTEX_AI_API_VERSION: "${VERTEX_AI_API_VERSION:-v1}"
+      CHAT_INFLIGHT_LOCK_TTL_SECONDS: "${CHAT_INFLIGHT_LOCK_TTL_SECONDS:-180}"
+      CHAT_RATE_LIMIT_PER_MINUTE: "${CHAT_RATE_LIMIT_PER_MINUTE:-10}"
+      CHAT_RATE_LIMIT_PER_HOUR: "${CHAT_RATE_LIMIT_PER_HOUR:-30}"
+      STARTUP_DEPENDENCY_MAX_ATTEMPTS: "${STARTUP_DEPENDENCY_MAX_ATTEMPTS:-30}"
+      STARTUP_DEPENDENCY_RETRY_SECONDS: "${STARTUP_DEPENDENCY_RETRY_SECONDS:-2}"
+    volumes:
+      - ../secrets:/run/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "${NODE_VERSION:-24.14.0}"
+        NPM_VERSION: "${NPM_VERSION:-11.9.0}"
+        NGINX_VERSION: "${NGINX_VERSION:-1.27-alpine}"
+    environment:
+      NGINX_EXTERNAL_HTTPS_PORT: "${FRONTEND_HTTPS_PORT:-8443}"
+    container_name: ai-proxy-frontend
+    ports:
+      - "${FRONTEND_HTTP_PORT:-8080}:80"
+      - "${FRONTEND_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ../frontend/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      proxy-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

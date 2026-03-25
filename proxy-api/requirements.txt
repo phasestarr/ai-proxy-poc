@@ -1,0 +1,17 @@
+# Purpose:
+# - List Python dependencies required by the backend application.
+#
+# Current scope:
+# - FastAPI application startup
+# - Uvicorn server execution
+# - Pydantic-based settings and schema support
+# - SQLAlchemy ORM and PostgreSQL connectivity
+
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pydantic==2.11.7
+pydantic-settings==2.10.1
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+redis==5.2.1
+google-genai==1.66.0

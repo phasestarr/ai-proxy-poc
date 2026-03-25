@@ -1,0 +1,50 @@
+# Purpose:
+# - Prevent local-only files, secrets, build outputs, caches, and IDE metadata
+#   from being committed to the repository.
+#
+# Must ignore:
+# - Python virtual environments
+# - __pycache__ and test caches
+# - node_modules and frontend build output
+# - .env files and local secrets
+# - IntelliJ local workspace files
+#
+# Notes:
+# - Repository hygiene matters early. Do not allow local machine state to pollute Git.
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+!deploy/.env.example
+
+# Node
+node_modules/
+dist/
+
+# Logs
+*.log
+
+# Docker
+*.pid
+
+# Secrets
+secrets/*
+!secrets/README.md
+*.crt
+*.key
+*.pem
+gcp-service-account.json
+
+# Build artifacts
+build/
+coverage/

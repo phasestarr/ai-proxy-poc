@@ -1,0 +1,161 @@
+.auth-shell {
+  min-height: 100vh;
+  padding: 28px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-stage {
+  width: min(420px, 100%);
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-status {
+  width: 100%;
+  padding: 26px 24px;
+  border: 1px solid var(--line-soft);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 18px 42px rgba(120, 171, 220, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.auth-status-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #6698c3;
+}
+
+.auth-status-text {
+  margin: 10px 0 0;
+  font-size: 18px;
+  line-height: 1.35;
+  color: #163d66;
+}
+
+.login-card {
+  width: 100%;
+  padding: 28px 24px;
+  border: 1px solid var(--line-soft);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 22px 56px rgba(111, 167, 218, 0.24);
+  backdrop-filter: blur(14px);
+  animation: login-rise 240ms ease-out;
+}
+
+.login-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #5c8db5;
+}
+
+.login-title {
+  margin: 12px 0 8px;
+  font-size: clamp(28px, 8vw, 40px);
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+  color: #10365c;
+}
+
+.login-copy {
+  margin: 0 0 20px;
+  color: #4f789f;
+  line-height: 1.5;
+}
+
+.login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-button {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid #b8d6f4;
+  background: #eef6ff;
+  color: #194870;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.login-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #e2f0ff;
+  box-shadow: 0 12px 28px rgba(112, 172, 230, 0.18);
+}
+
+.login-button--microsoft {
+  background: linear-gradient(140deg, #f9fdff 0%, #e7f1fb 100%);
+}
+
+.login-button--guest {
+  background: linear-gradient(140deg, #79b9ff 0%, #4f98ec 100%);
+  border-color: #4f98ec;
+  color: #ffffff;
+}
+
+.login-button--guest:hover:not(:disabled) {
+  background: linear-gradient(140deg, #6eaef4 0%, #418bdd 100%);
+}
+
+.login-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  box-shadow: none;
+}
+
+.login-hint {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: #5b83aa;
+}
+
+.login-error {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: #bb2743;
+}
+
+@keyframes login-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 720px) {
+  .auth-shell {
+    padding: 16px 10px;
+  }
+
+  .auth-stage {
+    min-height: 220px;
+  }
+
+  .login-card,
+  .auth-status {
+    padding: 22px 18px;
+  }
+}
