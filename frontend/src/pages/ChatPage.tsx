@@ -1,6 +1,7 @@
-import { FormEvent, startTransition, useEffect, useRef, useState } from "react";
+import { FormEvent, startTransition, useLayoutEffect, useRef, useState } from "react";
 
 import { getRandomCompletionNote, getRandomWelcomeText } from "../config/chatContent";
+import MarkdownMessage from "../components/MarkdownMessage";
 import { AuthenticationRequiredError, type AuthSession } from "../services/authService";
 import { streamChatReply } from "../services/chatService";
 import {
@@ -16,6 +17,7 @@ import {
 import "./chat-page.css";
 
 const AUTO_SCROLL_THRESHOLD_PX = 96;
+const TOOLS_ACTION_TAG = "[Tools]";
 
 const actionButtons = ["Photo", "Model", "Tools"];
 
@@ -36,11 +38,22 @@ export default function ChatPage({ session, onLogout, onSessionExpired }: ChatPa
 
   const hasStarted = messages.length > 0;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!conversationRef.current || !shouldAutoScrollRef.current) {
       return;
     }
-    conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (!conversationRef.current) {
+        return;
+      }
+
+      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [messages]);
 
   const handleConversationScroll = () => {
@@ -68,19 +81,25 @@ export default function ChatPage({ session, onLogout, onSessionExpired }: ChatPa
       return;
     }
 
+    const { cleanPrompt, useRag } = parsePromptControlTags(trimmedPrompt);
+    if (!cleanPrompt) {
+      return;
+    }
+
     const userMessageId = nextMessageIdRef.current;
     nextMessageIdRef.current += 1;
 
     const assistantMessageId = nextMessageIdRef.current;
     nextMessageIdRef.current += 1;
 
-    const userMessage = createPendingUserMessage(userMessageId, trimmedPrompt);
+    const userMessage = createPendingUserMessage(userMessageId, cleanPrompt, useRag);
     const assistantMessage = createStreamingAssistantMessage(assistantMessageId);
 
     const requestMessages = buildRequestMessages(messages, userMessage);
 
     setPrompt("");
     setIsSending(true);
+    shouldAutoScrollRef.current = true;
     setMessages((current) => [
       ...current,
       userMessage,
@@ -90,6 +109,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired }: ChatPa
     try {
       await streamChatReply({
         messages: requestMessages,
+        useRag,
         onDelta: (deltaText) => {
           startTransition(() => {
             setMessages((current) => appendAssistantDelta(current, assistantMessageId, deltaText));
@@ -130,10 +150,15 @@ export default function ChatPage({ session, onLogout, onSessionExpired }: ChatPa
             {messages.map((message) => (
               <article className={`chat-message chat-message--${message.role}`} key={message.id}>
                 <div className={`chat-bubble ${message.role === "user" ? "chat-bubble--question" : "chat-bubble--answer"}`}>
+                  {message.role === "user" && message.grounded ? (
+                    <p className="chat-tag chat-tag--grounded">[Grounded]</p>
+                  ) : null}
                   {message.role === "assistant" && message.status === "streaming" && message.content.length === 0 ? (
                     <p className="chat-loading">Generating response...</p>
+                  ) : message.role === "assistant" ? (
+                    <MarkdownMessage className="markdown-message" content={message.content} />
                   ) : (
-                    <p>{message.content}</p>
+                    <p className="chat-plain-text">{message.content}</p>
                   )}
                 </div>
                 {message.role === "assistant" && message.status === "done" && message.completionNote ? (
@@ -191,4 +216,10 @@ export default function ChatPage({ session, onLogout, onSessionExpired }: ChatPa
       </section>
     </main>
   );
+}
+
+function parsePromptControlTags(prompt: string): { cleanPrompt: string; useRag: boolean } {
+  const useRag = prompt.includes(TOOLS_ACTION_TAG);
+  const cleanPrompt = prompt.replaceAll(TOOLS_ACTION_TAG, " ").replace(/\s+/g, " ").trim();
+  return { cleanPrompt, useRag };
 }

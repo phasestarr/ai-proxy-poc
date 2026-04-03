@@ -7,7 +7,7 @@
 # - Launch the FastAPI app through Uvicorn
 #
 # Notes:
-# - Version pins are supplied through Docker build args from deploy/.env.
+# - Version pins are supplied through Docker build args from the repo-root .env.
 # - Keep dependency layers cache-friendly when possible.
 
 ARG PYTHON_VERSION=3.13.12
@@ -26,7 +26,5 @@ RUN python -m pip install --no-cache-dir --upgrade pip==${PIP_VERSION} \
     && python -m pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-
-EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug", "--access-log"]

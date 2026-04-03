@@ -15,11 +15,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies.auth import get_client_ip
-from app.core.config import settings
-from app.core.security import clear_session_cookie, set_session_cookie
+from app.config.settings import settings
 from app.api.v1.dependencies.db import get_db
 from app.schemas.auth import AuthAnonymousResponse, AuthSessionEnvelope, SessionView
 from app.services.auth import create_guest_session, delete_session, resolve_session
+from app.services.auth_security import clear_session_cookie, set_session_cookie
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

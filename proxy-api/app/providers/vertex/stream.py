@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 
 from app.providers.vertex.client import build_vertex_ai_client
 from app.providers.vertex.mapper import map_chat_messages_to_vertex_contents, map_vertex_stream_chunk
+from app.providers.vertex.rag import build_vertex_rag_tools
 from app.schemas.chat import ChatMessage
 
 logger = logging.getLogger("uvicorn.error")
@@ -28,6 +29,7 @@ async def stream_vertex_chat_completion(
     *,
     model_name: str,
     messages: list[ChatMessage],
+    use_rag: bool = False,
 ) -> AsyncIterator:
     client = build_vertex_ai_client()
 
@@ -35,7 +37,11 @@ async def stream_vertex_chat_completion(
         from google.genai import types
 
         system_instruction, contents = map_chat_messages_to_vertex_contents(messages)
-        config = types.GenerateContentConfig(system_instruction=system_instruction) if system_instruction else None
+        config = _build_generate_content_config(
+            types=types,
+            system_instruction=system_instruction,
+            use_rag=use_rag,
+        )
 
         async with client.aio as aio_client:
             stream = await aio_client.models.generate_content_stream(
@@ -63,6 +69,22 @@ def _map_vertex_exception(exc: Exception) -> VertexProviderError:
             return VertexProviderError(detail)
 
     return VertexProviderError("vertex ai request failed")
+
+
+def _build_generate_content_config(*, types, system_instruction: str | None, use_rag: bool):
+    config_kwargs: dict[str, object] = {}
+    if system_instruction:
+        config_kwargs["system_instruction"] = system_instruction
+
+    if use_rag:
+        rag_tools = build_vertex_rag_tools(types_module=types)
+        if rag_tools:
+            config_kwargs["tools"] = rag_tools
+
+    if not config_kwargs:
+        return None
+
+    return types.GenerateContentConfig(**config_kwargs)
 
 
 def _format_vertex_api_error(exc) -> str:

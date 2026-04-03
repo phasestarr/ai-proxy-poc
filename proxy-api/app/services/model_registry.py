@@ -13,7 +13,7 @@ Notes:
 
 from dataclasses import dataclass
 
-from app.core.config import settings
+from app.config.ai import ai_settings
 from app.schemas.model import ModelInfo
 
 DEFAULT_MODEL_ID = "vertex-default"
@@ -33,8 +33,8 @@ def _build_default_model_definition() -> ModelDefinition:
     return ModelDefinition(
         public_id=DEFAULT_MODEL_ID,
         provider=VERTEX_PROVIDER,
-        provider_model=settings.vertex_ai_model,
-        display_name=f"Vertex AI ({settings.vertex_ai_model})",
+        provider_model=ai_settings.vertex_ai_model,
+        display_name=f"Vertex AI ({ai_settings.vertex_ai_model})",
         available=True,
     )
 

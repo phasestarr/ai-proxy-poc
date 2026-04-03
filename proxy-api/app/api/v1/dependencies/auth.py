@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.config.settings import settings
 from app.api.v1.dependencies.db import get_db
 from app.services.auth import SessionContext, resolve_session
 

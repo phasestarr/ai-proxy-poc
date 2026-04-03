@@ -1,20 +1,20 @@
 """
 Purpose:
-- Load and expose backend application settings from environment variables.
+- Load and expose non-AI backend application settings from environment variables.
 
 Responsibilities:
-- Define runtime, database, auth, and provider-related settings
+- Define runtime, database, auth, and infrastructure settings
 - Keep environment loading centralized and predictable
-- Provide durable defaults for containerized execution
+- Leave provider and model-specific configuration to dedicated modules
 """
 
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
+class AppSettings(BaseSettings):
     app_name: str = "AI Proxy API"
     app_env: str = "dev"
     app_host: str = "0.0.0.0"
@@ -49,17 +49,6 @@ class Settings(BaseSettings):
         default_factory=lambda: ["openid", "profile", "email", "offline_access", "User.Read"],
     )
 
-    vertex_ai_project: str = Field(
-        default="",
-        validation_alias=AliasChoices("VERTEX_AI_PROJECT", "GOOGLE_CLOUD_PROJECT"),
-    )
-    vertex_ai_location: str = Field(
-        default="global",
-        validation_alias=AliasChoices("VERTEX_AI_LOCATION", "GOOGLE_CLOUD_LOCATION"),
-    )
-    vertex_ai_model: str = Field(default="gemini-2.5-flash", validation_alias="VERTEX_AI_MODEL")
-    vertex_ai_api_version: str = Field(default="v1", validation_alias="VERTEX_AI_API_VERSION")
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -67,4 +56,4 @@ class Settings(BaseSettings):
     )
 
 
-settings = Settings()
+settings = AppSettings()

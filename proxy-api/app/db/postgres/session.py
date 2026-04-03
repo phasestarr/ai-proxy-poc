@@ -10,7 +10,7 @@ Responsibilities:
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.core.config import settings
+from app.config.settings import settings
 from app.db.postgres.base import Base
 
 engine = create_engine(

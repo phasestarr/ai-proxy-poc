@@ -19,10 +19,11 @@ from uuid import uuid4
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.security import build_guest_display_name, generate_session_key, hash_session_key, utc_now
+from app.config.settings import settings
+from app.config.time import utc_now
 from app.db.postgres.models.auth import AuthIdentity, AuthProviderSession, AuthSession
 from app.db.postgres.models.user import User
+from app.services.auth_security import build_guest_display_name, generate_session_key, hash_session_key
 
 AuthType = Literal["guest", "microsoft"]
 

@@ -56,6 +56,7 @@ export type ChatStreamDone = {
 
 type StreamChatReplyOptions = {
   messages: ChatRequestMessage[];
+  useRag?: boolean;
   signal?: AbortSignal;
   onStart?: (event: ChatStreamStart) => void;
   onDelta?: (deltaText: string) => void;
@@ -73,6 +74,7 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
     body: JSON.stringify({
       model: DEFAULT_MODEL,
       messages: options.messages,
+      use_rag: options.useRag ?? false,
     }),
     signal: options.signal,
   });

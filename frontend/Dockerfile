@@ -7,7 +7,7 @@
 # - Serve the built static files through NGINX
 #
 # Notes:
-# - Version pins are supplied through Docker build args from deploy/.env.
+# - Version pins are supplied through Docker build args from the repo-root .env.
 # - Keep the image small and predictable.
 # - Separate dependency installation from source copy when possible for caching.
 
@@ -30,15 +30,9 @@ RUN npm run build
 
 FROM nginx:${NGINX_VERSION} AS runtime
 
-RUN apk add --no-cache openssl
-ENV NGINX_EXTERNAL_HTTPS_PORT=443
-
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx/default.conf /etc/nginx/templates/default.conf.template
-COPY nginx/40-generate-dev-cert.sh /docker-entrypoint.d/40-generate-dev-cert.sh
-RUN chmod +x /docker-entrypoint.d/40-generate-dev-cert.sh
 
-EXPOSE 80
-EXPOSE 443
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]

@@ -14,7 +14,8 @@ Notes:
 
 from __future__ import annotations
 
-from app.core.config import settings
+from app.config.ai import ai_settings
+from app.providers.vertex.rag import VertexRagConfigurationError, ensure_vertex_rag_configuration_ready
 
 
 class VertexProviderConfigurationError(RuntimeError):
@@ -22,12 +23,16 @@ class VertexProviderConfigurationError(RuntimeError):
 
 
 def ensure_vertex_provider_ready() -> None:
-    if not settings.vertex_ai_project:
+    if not ai_settings.vertex_ai_project:
         raise VertexProviderConfigurationError("vertex ai project is not configured")
-    if not settings.vertex_ai_location:
+    if not ai_settings.vertex_ai_location:
         raise VertexProviderConfigurationError("vertex ai location is not configured")
-    if not settings.vertex_ai_model:
+    if not ai_settings.vertex_ai_model:
         raise VertexProviderConfigurationError("vertex ai model is not configured")
+    try:
+        ensure_vertex_rag_configuration_ready()
+    except VertexRagConfigurationError as exc:
+        raise VertexProviderConfigurationError(str(exc)) from exc
 
     try:
         from google import genai  # noqa: F401
@@ -44,7 +49,7 @@ def build_vertex_ai_client():
 
     return genai.Client(
         vertexai=True,
-        project=settings.vertex_ai_project,
-        location=settings.vertex_ai_location,
-        http_options=types.HttpOptions(api_version=settings.vertex_ai_api_version),
+        project=ai_settings.vertex_ai_project,
+        location=ai_settings.vertex_ai_location,
+        http_options=types.HttpOptions(api_version=ai_settings.vertex_ai_api_version),
     )

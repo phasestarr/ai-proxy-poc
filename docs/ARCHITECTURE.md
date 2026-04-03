@@ -1,11 +1,13 @@
 # Architecture
 
 ## Runtime
-- Browser -> `frontend` NGINX container with TLS termination
+- Browser -> upstream `root-proxy` NGINX for TLS termination
+- upstream `root-proxy` -> host `8081` -> `frontend` NGINX container over HTTP
 - `frontend` NGINX -> `proxy-api` for `/api/*` and `/health`
 - `proxy-api` -> PostgreSQL
 - `proxy-api` -> Redis
 - `proxy-api` -> Vertex AI
+- `proxy-api` -> Vertex AI RAG Engine when RAG corpora are configured
 
 Active NGINX config:
 - `frontend/nginx/default.conf`
@@ -36,10 +38,10 @@ Supported run mode:
 ### Chat Stream
 1. `POST /api/v1/chat/completions` enters `app/api/v1/endpoints/chat.py`.
 2. `app/api/v1/dependencies/auth.py` resolves the session and capability.
-3. `app/services/chat/preparation.py` validates and normalizes the request.
+3. `app/services/chat/preparation.py` validates and normalizes the request, including the optional `use_rag` flag.
 4. `app/services/model_registry.py` resolves the public model id.
 5. `app/db/redis/chat_coordination.py` acquires the single-flight lock and rate-limit state.
-6. `app/providers/vertex/stream.py` opens the provider stream.
+6. `app/providers/vertex/stream.py` opens the provider stream and adds a Vertex RAG retrieval tool only when `use_rag=true` and RAG corpora are configured.
 7. `app/services/chat/stream.py` maps provider chunks into SSE `start`, `delta`, `done`, `error`.
 
 ### Startup
@@ -50,6 +52,9 @@ Supported run mode:
 
 ## Current Notes
 - Active login mode is guest login only.
+- Frontend NGINX serves static assets and proxies backend routes only; TLS termination is handled outside this repo.
+- The frontend NGINX preserves upstream forwarded host/proto/port headers when proxying to the backend.
+- RAG corpus creation/import is not handled inside this repo yet; the backend expects pre-created corpus resource names through environment variables.
 - `usage` endpoint/service/schema are scaffolded and not registered.
 - Microsoft-related DB fields exist, but callback/login flow is not active.
 - Database initialization still uses `Base.metadata.create_all()`.

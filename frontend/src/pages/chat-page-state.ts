@@ -7,17 +7,19 @@ export type TranscriptMessage = {
   id: number;
   role: MessageRole;
   content: string;
+  grounded?: boolean;
   status?: MessageStatus;
   completionNote?: string;
   detail?: string;
   excludedFromRequest?: boolean;
 };
 
-export function createPendingUserMessage(id: number, content: string): TranscriptMessage {
+export function createPendingUserMessage(id: number, content: string, grounded = false): TranscriptMessage {
   return {
     id,
     role: "user",
     content,
+    grounded,
   };
 }
 

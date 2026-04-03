@@ -1,7 +1,8 @@
 # API
 
 Base host:
-- `https://localhost:8443`
+- upstream HTTPS host that fronts this stack
+- direct local receive port: `http://localhost:8081`
 
 Versioned prefix:
 - `/api/v1`
@@ -9,7 +10,7 @@ Versioned prefix:
 Auth model:
 - session-cookie based
 - cookie name: `session_id`
-- cookie flags in Compose: `HttpOnly`, `Secure`, `SameSite=Strict`
+- cookie flags in default Compose: `HttpOnly`, `Secure`, `SameSite=Strict`
 
 ## Active Routes
 
@@ -50,6 +51,7 @@ Auth model:
 ```json
 {
   "model": "vertex-default",
+  "use_rag": false,
   "messages": [
     {
       "role": "user",
@@ -65,6 +67,7 @@ Auth model:
   - `delta`
   - `done`
   - `error`
+- If `use_rag=true` and `VERTEX_AI_RAG_CORPORA` is configured, the backend attaches a Vertex AI RAG retrieval tool to the provider request before streaming begins
 
 - Error status:
   - `400`: invalid payload or unsupported model
@@ -82,3 +85,4 @@ Auth model:
 ## Not Active Yet
 - `usage` and quota endpoints exist as scaffolds only
 - Microsoft auth callback flow is not registered
+- Vertex AI RAG corpus creation/import automation is not exposed by this API

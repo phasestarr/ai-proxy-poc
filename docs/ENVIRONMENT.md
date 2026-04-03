@@ -1,16 +1,15 @@
 # Environment Variables
 
 ## Source of Truth
-- Host-side runtime variables live in `deploy/.env`.
+- Host-side runtime variables live in the repo-root `.env`.
 - Docker Compose injects backend container variables from `deploy/docker-compose.yml`.
 - Direct local backend `.env` files are not part of the supported workflow.
 
-## Variables In `deploy/.env`
+## Variables In `.env`
 
-### Ports
-- `FRONTEND_HTTP_PORT`: host port for frontend HTTP. Default `8080`
-- `FRONTEND_HTTPS_PORT`: host port for frontend HTTPS. Default `8443`
-- `POSTGRES_PORT`: host port for PostgreSQL. Default `5432`
+### Frontend
+- `AI_PROXY_CONTAINER_NAME`: frontend container name. Default `ai-proxy-frontend`
+- `AI_PROXY_HTTP_PORT`: host port that receives upstream proxy traffic and direct local HTTP testing. Default `8081`
 
 ### Database
 - `POSTGRES_DB`: PostgreSQL database name. Default `ai_proxy`
@@ -20,6 +19,7 @@
 ### App
 - `APP_NAME`: backend app name. Default `AI Proxy API`
 - `APP_ENV`: backend app environment. Default `dev`
+- `AUTH_COOKIE_SECURE`: whether session cookies require HTTPS. Default `true`
 
 ### Vertex / GCP
 - `GOOGLE_APPLICATION_CREDENTIALS`: in-container path to the mounted JSON credential file
@@ -27,6 +27,9 @@
 - `GOOGLE_CLOUD_LOCATION`: Vertex location. Default `global`
 - `VERTEX_AI_MODEL`: public default provider model binding. Default `gemini-2.5-flash`
 - `VERTEX_AI_API_VERSION`: Vertex API version. Default `v1`
+- `VERTEX_AI_RAG_CORPORA`: optional comma-separated or JSON-array list of Vertex AI RAG corpus resource names
+- `VERTEX_AI_RAG_SIMILARITY_TOP_K`: optional retrieval depth for RAG grounding. Default `5`
+- `VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD`: optional minimum similarity threshold passed to Vertex RAG retrieval
 
 ### Chat Limits
 - `CHAT_INFLIGHT_LOCK_TTL_SECONDS`: Redis single-flight lock TTL. Default `180`
@@ -49,10 +52,12 @@
 ## Compose-Derived Backend Variables
 - `DATABASE_URL` is built inside Compose from the PostgreSQL settings.
 - `REDIS_URL` is set inside Compose as `redis://redis:6379/0`.
-- `AUTH_COOKIE_SECURE=true` is set inside Compose.
-- The backend container is not directly published on a host port.
+- `AUTH_COOKIE_SECURE` is passed through from `.env` and defaults to `true`.
+- The backend, PostgreSQL, and Redis containers are not directly published on host ports.
 
 ## Runtime Notes
-- Host entrypoint is `https://localhost:8443`.
-- `http://localhost:8080` redirects to HTTPS in the default stack.
-- The frontend container generates a fallback self-signed certificate if real TLS files are not mounted.
+- Direct host receive port is `http://localhost:8081` with the current `.env`.
+- In the integrated deployment, upstream TLS is terminated by the sibling `root-proxy` stack before traffic reaches this repo.
+- Leave `AUTH_COOKIE_SECURE=true` when traffic arrives through an HTTPS edge proxy. Set it to `false` only for plain HTTP local debugging.
+- RAG mode stays off unless `VERTEX_AI_RAG_CORPORA` contains at least one corpus resource name.
+- This repo currently assumes the RAG corpus already exists; control-plane corpus creation/import is still an external step.

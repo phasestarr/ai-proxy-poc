@@ -34,6 +34,7 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str = Field(default="vertex-default", min_length=1)
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=100)
+    use_rag: bool = False
 
     @model_validator(mode="after")
     def validate_messages(self) -> "ChatCompletionRequest":

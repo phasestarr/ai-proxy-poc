@@ -1,6 +1,6 @@
 # NOTEPAD
 
-Snapshot date: `2026-03-25`
+Snapshot date: `2026-04-01`
 
 ## Entry Order
 
@@ -11,7 +11,7 @@ Snapshot date: `2026-03-25`
 `frontend/src/App.tsx` -> `frontend/src/services/authService.ts` -> `POST /api/v1/auth/login/guest` -> `proxy-api/app/api/v1/endpoints/auth.py` -> `proxy-api/app/services/auth.py`
 
 ### Chat
-`frontend/src/pages/ChatPage.tsx` -> `frontend/src/services/chatService.ts` -> `POST /api/v1/chat/completions` -> `proxy-api/app/api/v1/endpoints/chat.py` -> `proxy-api/app/api/v1/dependencies/auth.py` -> `proxy-api/app/services/chat/preparation.py` -> `proxy-api/app/services/model_registry.py` -> `proxy-api/app/db/redis/chat_coordination.py` -> `proxy-api/app/providers/vertex/stream.py`
+`frontend/src/pages/ChatPage.tsx` -> `frontend/src/services/chatService.ts` -> `POST /api/v1/chat/completions` with `use_rag` derived from `[Tools]` -> `proxy-api/app/api/v1/endpoints/chat.py` -> `proxy-api/app/api/v1/dependencies/auth.py` -> `proxy-api/app/services/chat/preparation.py` -> `proxy-api/app/services/model_registry.py` -> `proxy-api/app/db/redis/chat_coordination.py` -> `proxy-api/app/providers/vertex/stream.py` -> optional `proxy-api/app/providers/vertex/rag.py`
 
 ### Backend Startup
 `proxy-api/app/main.py` -> `proxy-api/app/db/redis/client.py` -> `proxy-api/app/db/postgres/session.py` -> `proxy-api/app/services/auth.py`
@@ -20,11 +20,11 @@ Snapshot date: `2026-03-25`
 
 ### Root
 - `README.md`: repo overview and Compose run guide
+- `.env.example`: repo-root Compose env template
 - `Makefile`: Docker Compose helper commands
 
 ### Deploy
 - `deploy/docker-compose.yml`: full stack topology
-- `deploy/.env.example`: Compose env template
 - `deploy/deploy.sh`: deployment stub
 - `secrets/README.md`: local secret placement note
 
@@ -34,9 +34,7 @@ Snapshot date: `2026-03-25`
 - `frontend/package-lock.json`: npm lockfile
 - `frontend/vite.config.ts`: Vite build config
 - `frontend/index.html`: SPA HTML shell
-- `frontend/nginx/default.conf`: frontend reverse proxy and SPA serving config
-- `frontend/nginx/40-generate-dev-cert.sh`: fallback self-signed cert generator
-- `frontend/nginx/certs/README.md`: TLS cert placeholder note
+- `frontend/nginx/default.conf`: frontend reverse proxy and SPA serving config behind an external TLS terminator
 - `frontend/src/main.tsx`: React entrypoint
 - `frontend/src/App.tsx`: auth bootstrap and page switch
 - `frontend/src/styles.css`: global styles
@@ -100,6 +98,7 @@ Snapshot date: `2026-03-25`
 - `proxy-api/app/providers/vertex/__init__.py`: Vertex package marker
 - `proxy-api/app/providers/vertex/client.py`: Vertex config check and SDK client creation
 - `proxy-api/app/providers/vertex/mapper.py`: schema-to-Vertex mapping
+- `proxy-api/app/providers/vertex/rag.py`: optional Vertex RAG retrieval tool configuration
 - `proxy-api/app/providers/vertex/stream.py`: Vertex streaming adapter
 - `proxy-api/app/providers/vertex/types.py`: normalized provider chunk types
 
@@ -112,6 +111,8 @@ Snapshot date: `2026-03-25`
 
 ## Notes
 - Active auth flow is guest login only.
+- TLS termination now happens in sibling `root-proxy`; this repo receives forwarded HTTP on host port `8081`.
+- Vertex RAG grounding is available only when pre-created corpus resource names are configured.
 - `usage` modules are scaffold-only and not registered.
 - Microsoft auth-related fields exist, but the flow is not active yet.
 - DB initialization still uses `create_all()` and `proxy-api/alembic/` is empty.

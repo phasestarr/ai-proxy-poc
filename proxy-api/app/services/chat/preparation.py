@@ -25,6 +25,7 @@ from app.services.model_registry import ModelDefinition, get_model_definition
 class PreparedChatCompletionRequest:
     model: ModelDefinition
     messages: list[ChatMessage]
+    use_rag: bool
 
 
 def prepare_chat_completion_request(
@@ -44,6 +45,7 @@ def prepare_chat_completion_request(
     return PreparedChatCompletionRequest(
         model=model,
         messages=list(payload.messages),
+        use_rag=payload.use_rag,
     )
 
 

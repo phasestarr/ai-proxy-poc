@@ -66,6 +66,7 @@ def create_chat_completion_stream(
         prepared.model.provider,
         prepared.model.provider_model,
         prepared.messages,
+        prepared.use_rag,
         lease,
     )
 
@@ -75,6 +76,7 @@ async def _stream_chat_completion(
     provider: str,
     provider_model: str,
     messages,
+    use_rag: bool,
     lease,
 ) -> AsyncIterator[bytes]:
     last_chunk: VertexStreamChunk | None = None
@@ -87,6 +89,7 @@ async def _stream_chat_completion(
         async for chunk in stream_vertex_chat_completion(
             model_name=provider_model,
             messages=messages,
+            use_rag=use_rag,
         ):
             last_chunk = chunk
             if chunk.text:

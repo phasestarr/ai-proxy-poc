@@ -19,7 +19,7 @@ from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.api.router import api_router
-from app.core.config import settings
+from app.config.settings import settings
 from app.db.postgres.session import SessionLocal, init_database
 from app.db.redis.client import close_redis_client, verify_redis_connection
 from app.services.auth import purge_expired_auth_data

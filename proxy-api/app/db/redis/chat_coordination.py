@@ -16,8 +16,8 @@ import secrets
 
 from redis.exceptions import RedisError
 
-from app.core.config import settings
-from app.core.security import utc_now
+from app.config.settings import settings
+from app.config.time import utc_now
 from app.db.redis.client import get_redis_client
 
 LOCK_KEY_PREFIX = "ai-proxy:chat:lock"

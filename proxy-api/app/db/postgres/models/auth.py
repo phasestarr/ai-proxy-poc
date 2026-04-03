@@ -15,7 +15,7 @@ from datetime import datetime
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, JSON, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.security import utc_now
+from app.config.time import utc_now
 from app.db.postgres.base import Base
 
 

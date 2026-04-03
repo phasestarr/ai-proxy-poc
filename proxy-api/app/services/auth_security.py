@@ -1,26 +1,26 @@
 """
 Purpose:
-- Define shared security helpers used by authentication and session handling.
+- Hold low-level auth and session security primitives used by the auth service and auth endpoints.
 
 Responsibilities:
-- Generate and hash session identifiers
-- Build cookie parameters consistently
-- Keep reusable security-related helpers outside of endpoint modules
+- Generate and hash browser session identifiers
+- Build guest display names
+- Apply and clear auth cookies consistently
+
+Notes:
+- This module intentionally stays below auth business rules in `services.auth`.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 import hashlib
 import secrets
 
 from starlette.responses import Response
 
-from app.core.config import settings
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+from app.config.settings import settings
+from app.config.time import utc_now
 
 
 def generate_session_key() -> str:

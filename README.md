@@ -9,7 +9,8 @@ Monorepo proof of concept for an internal AI proxy.
 ## Stack
 - `frontend/`: React app built with Vite and served by containerized NGINX
 - `proxy-api/`: FastAPI backend
-- `deploy/`: Docker Compose and env templates
+- `deploy/`: Docker Compose runtime files
+- `.env.example`: Compose env template copied to repo-root `.env`
 - `docs/`: reference docs
 - `secrets/`: local secret mount point for containerized runs
 
@@ -23,6 +24,7 @@ Implemented now:
 - Redis-backed request rate limits for chat
 - model listing
 - Vertex AI streaming chat integration when configured
+- optional Vertex AI RAG Engine grounding when one or more RAG corpora are configured
 
 Planned next:
 - Microsoft SSO with MSAL-compatible backend flow
@@ -37,36 +39,30 @@ Planned next:
 Create the env file:
 
 ```powershell
-Copy-Item deploy/.env.example deploy/.env
+Copy-Item .env.example .env
 ```
 
 Before first startup:
-- set `GOOGLE_CLOUD_PROJECT` in `deploy/.env`
+- set `GOOGLE_CLOUD_PROJECT` in `.env`
 - confirm `GOOGLE_APPLICATION_CREDENTIALS` points at a real file under `secrets/`
 - put the service account JSON at `secrets/gcp-service-account.json` unless you change the path
+- set `AI_PROXY_CONTAINER_NAME` in `.env` to match your edge routing plan
+- if you want grounded RAG responses, create a Vertex AI RAG corpus separately and set
+  `VERTEX_AI_RAG_CORPORA` to one or more corpus resource names
 
-Start the stack:
-
-```powershell
-docker compose --env-file deploy/.env -f deploy/docker-compose.yml up --build -d
-```
+Operational commands:
+- [deploy/README.md](deploy/README.md)
+- [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
 
 Host entrypoints:
-- `http://localhost:8080` redirects to HTTPS
-- `https://localhost:8443` serves the frontend
-- `https://localhost:8443/health` proxies backend health
-- `https://localhost:8443/api/v1/...` proxies the backend API
+- `root-proxy` is the public entrypoint for this stack
+- in the integrated deployment, sibling `root-proxy` terminates TLS and forwards HTTPS traffic to `http://ai-proxy-frontend:8080` over `edge-net`
+- the frontend is no longer published directly on a host port
 
 Default smoke test:
-1. Open `https://localhost:8443`
-2. Accept the self-signed certificate warning if the fallback dev cert is being used
+1. Start `root-proxy`
+2. Open the upstream HTTPS host
 3. Wait for the login card
 4. Click `Guest Login`
 5. Send a prompt
 6. Click `Log Out`
-
-Stop the stack:
-
-```powershell
-docker compose --env-file deploy/.env -f deploy/docker-compose.yml down
-```
