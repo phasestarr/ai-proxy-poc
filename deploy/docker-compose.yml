@@ -15,7 +15,7 @@
 # Notes:
 # - Keep service names stable because internal container networking depends on them.
 # - The backend should not assume localhost for database access when running in Compose.
-# - Version pins are sourced from deploy/.env so Dockerfiles and Compose stay aligned.
+# - Version pins are sourced from the repo-root .env so Dockerfiles and Compose stay aligned.
 
 services:
   postgres:
@@ -25,8 +25,6 @@ services:
       POSTGRES_DB: "${POSTGRES_DB:-ai_proxy}"
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -64,12 +62,15 @@ services:
       APP_PORT: "8000"
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_proxy}"
       REDIS_URL: "redis://redis:6379/0"
-      AUTH_COOKIE_SECURE: "true"
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-true}"
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/gcp-service-account.json}"
       GOOGLE_CLOUD_PROJECT: "${GOOGLE_CLOUD_PROJECT:-}"
       GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION:-global}"
       VERTEX_AI_MODEL: "${VERTEX_AI_MODEL:-gemini-2.5-flash}"
       VERTEX_AI_API_VERSION: "${VERTEX_AI_API_VERSION:-v1}"
+      VERTEX_AI_RAG_CORPORA: "${VERTEX_AI_RAG_CORPORA:-}"
+      VERTEX_AI_RAG_SIMILARITY_TOP_K: "${VERTEX_AI_RAG_SIMILARITY_TOP_K:-5}"
+      VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD: "${VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD:-}"
       CHAT_INFLIGHT_LOCK_TTL_SECONDS: "${CHAT_INFLIGHT_LOCK_TTL_SECONDS:-180}"
       CHAT_RATE_LIMIT_PER_MINUTE: "${CHAT_RATE_LIMIT_PER_MINUTE:-10}"
       CHAT_RATE_LIMIT_PER_HOUR: "${CHAT_RATE_LIMIT_PER_HOUR:-30}"
@@ -104,19 +105,17 @@ services:
         NODE_VERSION: "${NODE_VERSION:-24.14.0}"
         NPM_VERSION: "${NPM_VERSION:-11.9.0}"
         NGINX_VERSION: "${NGINX_VERSION:-1.27-alpine}"
-    environment:
-      NGINX_EXTERNAL_HTTPS_PORT: "${FRONTEND_HTTPS_PORT:-8443}"
-    container_name: ai-proxy-frontend
-    ports:
-      - "${FRONTEND_HTTP_PORT:-8080}:80"
-      - "${FRONTEND_HTTPS_PORT:-8443}:443"
-    volumes:
-      - ../frontend/nginx/certs:/etc/nginx/certs:ro
+    container_name: "${AI_PROXY_CONTAINER_NAME:-ai-proxy-frontend}"
+    expose:
+      - "8080"
     depends_on:
       proxy-api:
         condition: service_healthy
+    networks:
+      - default
+#      - edge-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://127.0.0.1/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -125,3 +124,7 @@ services:
 
 volumes:
   postgres-data:
+
+#networks:
+#  edge-net:
+#    external: true
