@@ -23,9 +23,13 @@ from app.db.redis.chat_coordination import (
     enforce_chat_rate_limits,
     release_chat_execution_lease,
 )
-from app.providers.vertex.client import VertexProviderConfigurationError, ensure_vertex_provider_ready
-from app.providers.vertex.stream import VertexProviderError, stream_vertex_chat_completion
-from app.providers.vertex.types import VertexStreamChunk
+from app.providers.dispatcher import (
+    ProviderConfigurationError,
+    ProviderExecutionError,
+    ensure_provider_ready,
+    stream_provider_chat_completion,
+)
+from app.providers.types import ProviderRoute, ProviderStreamChunk
 from app.schemas.chat import (
     ChatCompletionRequest,
     ChatStreamDeltaEvent,
@@ -50,8 +54,8 @@ def create_chat_completion_stream(
     prepared = prepare_chat_completion_request(payload, session=session)
 
     try:
-        _ensure_provider_ready(provider=prepared.model.provider)
-    except VertexProviderConfigurationError as exc:
+        ensure_provider_ready(provider=prepared.route.model.provider)
+    except ProviderConfigurationError as exc:
         raise ChatProviderUnavailableError(str(exc)) from exc
 
     lease = acquire_chat_execution_lease(session_id=session.session_id)
@@ -62,34 +66,27 @@ def create_chat_completion_stream(
         raise
 
     return _stream_chat_completion(
-        prepared.model.public_id,
-        prepared.model.provider,
-        prepared.model.provider_model,
+        prepared.route,
         prepared.messages,
-        prepared.use_rag,
         lease,
     )
 
 
 async def _stream_chat_completion(
-    public_model_id: str,
-    provider: str,
-    provider_model: str,
+    route: ProviderRoute,
     messages,
-    use_rag: bool,
     lease,
 ) -> AsyncIterator[bytes]:
-    last_chunk: VertexStreamChunk | None = None
+    last_chunk: ProviderStreamChunk | None = None
     yield _encode_sse_event(
         "start",
-        ChatStreamStartEvent(model=public_model_id, provider=provider),
+        ChatStreamStartEvent(model=route.model.public_id, provider=route.model.provider),
     )
 
     try:
-        async for chunk in stream_vertex_chat_completion(
-            model_name=provider_model,
+        async for chunk in stream_provider_chat_completion(
+            route=route,
             messages=messages,
-            use_rag=use_rag,
         ):
             last_chunk = chunk
             if chunk.text:
@@ -99,7 +96,7 @@ async def _stream_chat_completion(
                 )
     except asyncio.CancelledError:
         raise
-    except VertexProviderError as exc:
+    except ProviderExecutionError as exc:
         yield _encode_sse_event(
             "error",
             ChatStreamErrorEvent(detail=str(exc)),
@@ -117,22 +114,15 @@ async def _stream_chat_completion(
     yield _encode_sse_event(
         "done",
         ChatStreamDoneEvent(
-            model=public_model_id,
-            provider=provider,
+            model=route.model.public_id,
+            provider=route.model.provider,
             finish_reason=last_chunk.finish_reason if last_chunk else None,
             usage=_map_usage_summary(last_chunk),
         ),
     )
 
 
-def _ensure_provider_ready(*, provider: str) -> None:
-    if provider == "vertex_ai":
-        ensure_vertex_provider_ready()
-        return
-    raise ChatProviderUnavailableError(f"provider is not configured: {provider}")
-
-
-def _map_usage_summary(chunk: VertexStreamChunk | None) -> ChatUsageSummary | None:
+def _map_usage_summary(chunk: ProviderStreamChunk | None) -> ChatUsageSummary | None:
     if chunk is None or chunk.usage is None:
         return None
     return ChatUsageSummary(

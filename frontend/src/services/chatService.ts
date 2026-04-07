@@ -1,13 +1,16 @@
 import { AuthenticationRequiredError } from "./authService";
 import { readSseStream } from "./sse";
 
-const DEFAULT_MODEL = "vertex-default";
-
 export type ChatRole = "system" | "user" | "assistant";
 
 export type ChatRequestMessage = {
   role: ChatRole;
   content: string;
+};
+
+export type ChatSelection = {
+  modelId?: string | null;
+  toolIds?: string[];
 };
 
 type ChatStreamStartApiEvent = {
@@ -56,7 +59,7 @@ export type ChatStreamDone = {
 
 type StreamChatReplyOptions = {
   messages: ChatRequestMessage[];
-  useRag?: boolean;
+  selection?: ChatSelection;
   signal?: AbortSignal;
   onStart?: (event: ChatStreamStart) => void;
   onDelta?: (deltaText: string) => void;
@@ -72,9 +75,9 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: DEFAULT_MODEL,
+      model_id: options.selection?.modelId ?? null,
+      tool_ids: options.selection?.toolIds ?? [],
       messages: options.messages,
-      use_rag: options.useRag ?? false,
     }),
     signal: options.signal,
   });

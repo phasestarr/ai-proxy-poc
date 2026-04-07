@@ -2,24 +2,32 @@ import type { ChatRequestMessage } from "../services/chatService";
 
 export type MessageRole = "user" | "assistant";
 export type MessageStatus = "streaming" | "done" | "error";
+export type MessageRequestMeta = {
+  modelLabel: string;
+  toolLabels: string[];
+};
 
 export type TranscriptMessage = {
   id: number;
   role: MessageRole;
   content: string;
-  grounded?: boolean;
+  requestMeta?: MessageRequestMeta;
   status?: MessageStatus;
   completionNote?: string;
   detail?: string;
   excludedFromRequest?: boolean;
 };
 
-export function createPendingUserMessage(id: number, content: string, grounded = false): TranscriptMessage {
+export function createPendingUserMessage(
+  id: number,
+  content: string,
+  requestMeta?: MessageRequestMeta,
+): TranscriptMessage {
   return {
     id,
     role: "user",
     content,
-    grounded,
+    requestMeta,
   };
 }
 

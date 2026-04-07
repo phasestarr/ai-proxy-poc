@@ -15,3 +15,5 @@ sqlalchemy==2.0.36
 psycopg[binary]==3.2.3
 redis==5.2.1
 google-genai==1.66.0
+cryptography==46.0.6
+msal==1.35.1

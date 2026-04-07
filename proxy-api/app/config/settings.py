@@ -28,12 +28,14 @@ class AppSettings(BaseSettings):
     auth_cookie_samesite: Literal["lax", "strict", "none"] = "strict"
     auth_cookie_path: str = "/"
     auth_cookie_domain: str | None = None
+    auth_data_encryption_key: str = ""
 
     auth_guest_idle_minutes: int = 360
     auth_guest_absolute_hours: int = 24
     auth_microsoft_idle_minutes: int = 1440
     auth_microsoft_absolute_days: int = 1
     auth_cleanup_interval_minutes: int = 60
+    microsoft_oauth_transaction_minutes: int = 10
 
     chat_inflight_lock_ttl_seconds: int = 180
     chat_rate_limit_per_minute: int = 10
@@ -46,7 +48,7 @@ class AppSettings(BaseSettings):
     microsoft_client_secret: str = ""
     microsoft_redirect_path: str = "/api/v1/auth/callback/microsoft"
     microsoft_scopes: list[str] = Field(
-        default_factory=lambda: ["openid", "profile", "email", "offline_access", "User.Read"],
+        default_factory=lambda: ["email"],
     )
 
     model_config = SettingsConfigDict(

@@ -11,11 +11,11 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 
 from app.providers.vertex.client import build_vertex_ai_client
 from app.providers.vertex.mapper import map_chat_messages_to_vertex_contents, map_vertex_stream_chunk
-from app.providers.vertex.rag import build_vertex_rag_tools
+from app.providers.vertex.tools import VertexToolConfigurationError, build_vertex_tools
 from app.schemas.chat import ChatMessage
 
 logger = logging.getLogger("uvicorn.error")
@@ -29,7 +29,7 @@ async def stream_vertex_chat_completion(
     *,
     model_name: str,
     messages: list[ChatMessage],
-    use_rag: bool = False,
+    selected_tool_ids: Iterable[str] = (),
 ) -> AsyncIterator:
     client = build_vertex_ai_client()
 
@@ -40,7 +40,7 @@ async def stream_vertex_chat_completion(
         config = _build_generate_content_config(
             types=types,
             system_instruction=system_instruction,
-            use_rag=use_rag,
+            selected_tool_ids=selected_tool_ids,
         )
 
         async with client.aio as aio_client:
@@ -59,6 +59,9 @@ async def stream_vertex_chat_completion(
 
 
 def _map_vertex_exception(exc: Exception) -> VertexProviderError:
+    if isinstance(exc, VertexToolConfigurationError):
+        return VertexProviderError(str(exc))
+
     try:
         from google.genai import errors
     except ImportError:
@@ -71,15 +74,17 @@ def _map_vertex_exception(exc: Exception) -> VertexProviderError:
     return VertexProviderError("vertex ai request failed")
 
 
-def _build_generate_content_config(*, types, system_instruction: str | None, use_rag: bool):
+def _build_generate_content_config(*, types, system_instruction: str | None, selected_tool_ids: Iterable[str]):
     config_kwargs: dict[str, object] = {}
     if system_instruction:
         config_kwargs["system_instruction"] = system_instruction
 
-    if use_rag:
-        rag_tools = build_vertex_rag_tools(types_module=types)
-        if rag_tools:
-            config_kwargs["tools"] = rag_tools
+    configured_tools = build_vertex_tools(
+        selected_tool_ids=selected_tool_ids,
+        types_module=types,
+    )
+    if configured_tools:
+        config_kwargs["tools"] = configured_tools
 
     if not config_kwargs:
         return None

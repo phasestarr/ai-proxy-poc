@@ -1,118 +1,285 @@
 # NOTEPAD
 
-Snapshot date: `2026-04-01`
+Short reference for the current codebase.
+
+## Runtime
+- `root-proxy` routes `ai.nextinsol.com` to `ai-proxy-frontend:8080`
+- frontend NGINX proxies `/api/*` and `/health` to `proxy-api:8000`
+- backend depends on PostgreSQL, Redis, and Vertex AI
 
 ## Entry Order
+- frontend boot: `frontend/src/main.tsx` -> `frontend/src/App.tsx` -> `GET /api/v1/auth/me`
+- model discovery: `frontend/src/pages/ChatPage.tsx` -> `GET /api/v1/models`
+- guest login: `frontend/src/services/authService.ts` -> `POST /api/v1/auth/login/guest`
+- microsoft login: `frontend/src/services/authService.ts` -> `GET /api/v1/auth/login/microsoft` -> Microsoft -> `GET /api/v1/auth/callback/microsoft`
+- chat: `frontend/src/pages/ChatPage.tsx` -> `frontend/src/services/chatService.ts` -> `POST /api/v1/chat/completions`
 
-### Frontend Boot
-`frontend/src/main.tsx` -> `frontend/src/App.tsx` -> `frontend/src/services/authService.ts` -> `GET /api/v1/auth/me`
+## Gemini Chat Assembly
 
-### Guest Login
-`frontend/src/App.tsx` -> `frontend/src/services/authService.ts` -> `POST /api/v1/auth/login/guest` -> `proxy-api/app/api/v1/endpoints/auth.py` -> `proxy-api/app/services/auth.py`
+Current Gemini path is:
+- frontend transcript state -> request JSON -> backend schema validation -> provider route resolution -> Vertex `contents` and `config` assembly -> `google.genai` `generate_content_stream(...)`
 
-### Chat
-`frontend/src/pages/ChatPage.tsx` -> `frontend/src/services/chatService.ts` -> `POST /api/v1/chat/completions` with `use_rag` derived from `[Tools]` -> `proxy-api/app/api/v1/endpoints/chat.py` -> `proxy-api/app/api/v1/dependencies/auth.py` -> `proxy-api/app/services/chat/preparation.py` -> `proxy-api/app/services/model_registry.py` -> `proxy-api/app/db/redis/chat_coordination.py` -> `proxy-api/app/providers/vertex/stream.py` -> optional `proxy-api/app/providers/vertex/rag.py`
+Relevant code:
+- transcript state helpers: `frontend/src/pages/chat-page-state.ts`
+- submit flow and SSE append flow: `frontend/src/pages/ChatPage.tsx`
+- browser request body assembly: `frontend/src/services/chatService.ts`
+- API request schema: `proxy-api/app/schemas/chat.py`
+- route resolution: `proxy-api/app/services/chat/preparation.py`
+- model/tool routing: `proxy-api/app/providers/catalog.py`
+- Vertex mapping: `proxy-api/app/providers/vertex/mapper.py`
+- Vertex tool mapping: `proxy-api/app/providers/vertex/tools.py`
+- Vertex request execution: `proxy-api/app/providers/vertex/stream.py`
 
-### Backend Startup
-`proxy-api/app/main.py` -> `proxy-api/app/db/redis/client.py` -> `proxy-api/app/db/postgres/session.py` -> `proxy-api/app/services/auth.py`
+## Frontend Transcript Rules
 
-## Files
+Transcript message shape in the UI:
+- role: `user | assistant`
+- no frontend `system` message is currently created
+- each send creates one pending user message and one empty assistant placeholder
 
-### Root
-- `README.md`: repo overview and Compose run guide
-- `.env.example`: repo-root Compose env template
-- `Makefile`: Docker Compose helper commands
+Where it happens:
+- create user message: `createPendingUserMessage()` in `frontend/src/pages/chat-page-state.ts`
+- create assistant placeholder: `createStreamingAssistantMessage()` in `frontend/src/pages/chat-page-state.ts`
+- build request transcript for the backend: `buildRequestMessages()` in `frontend/src/pages/chat-page-state.ts`
+- append both to current screen state before the request returns: `setMessages([...current, userMessage, assistantMessage])` in `frontend/src/pages/ChatPage.tsx`
+- append streamed assistant text: `appendAssistantDelta()` in `frontend/src/pages/chat-page-state.ts`
+- mark assistant complete: `completeAssistantMessage()` in `frontend/src/pages/chat-page-state.ts`
 
-### Deploy
-- `deploy/docker-compose.yml`: full stack topology
-- `deploy/deploy.sh`: deployment stub
-- `secrets/README.md`: local secret placement note
+Example transcript before request build:
 
-### Frontend
-- `frontend/Dockerfile`: frontend build and NGINX runtime image
-- `frontend/package.json`: frontend package manifest
-- `frontend/package-lock.json`: npm lockfile
-- `frontend/vite.config.ts`: Vite build config
-- `frontend/index.html`: SPA HTML shell
-- `frontend/nginx/default.conf`: frontend reverse proxy and SPA serving config behind an external TLS terminator
-- `frontend/src/main.tsx`: React entrypoint
-- `frontend/src/App.tsx`: auth bootstrap and page switch
-- `frontend/src/styles.css`: global styles
-- `frontend/src/config/chatContent.ts`: UI copy pool
-- `frontend/src/pages/LoginPage.tsx`: login screen
-- `frontend/src/pages/login-page.css`: login styles
-- `frontend/src/pages/ChatPage.tsx`: chat screen
-- `frontend/src/pages/chat-page.css`: chat styles
-- `frontend/src/pages/chat-page-state.ts`: chat transcript state helpers
-- `frontend/src/services/authService.ts`: auth/session API wrapper
-- `frontend/src/services/chatService.ts`: chat streaming API wrapper
-- `frontend/src/services/sse.ts`: SSE parser
+```json
+[
+  {"id":1,"role":"user","content":"안녕"},
+  {"id":2,"role":"assistant","content":"안녕하세요","status":"done"}
+]
+```
 
-### Backend Runtime
-- `proxy-api/Dockerfile`: backend image build
-- `proxy-api/requirements.txt`: backend dependency list
-- `proxy-api/app/main.py`: FastAPI entrypoint
-- `proxy-api/app/api/health.py`: `/health` route
-- `proxy-api/app/api/router.py`: `/api` router composition
-- `proxy-api/app/api/v1/api.py`: v1 route composition
-- `proxy-api/app/api/v1/dependencies/__init__.py`: dependency exports
-- `proxy-api/app/api/v1/dependencies/auth.py`: session and capability dependencies
-- `proxy-api/app/api/v1/dependencies/db.py`: DB session dependency
-- `proxy-api/app/api/v1/endpoints/__init__.py`: endpoint package marker
-- `proxy-api/app/api/v1/endpoints/auth.py`: auth endpoints
-- `proxy-api/app/api/v1/endpoints/chat.py`: chat endpoint
-- `proxy-api/app/api/v1/endpoints/models.py`: model listing endpoint
-- `proxy-api/app/api/v1/endpoints/usage.py`: usage endpoint scaffold
+If the next user prompt is `RAG가 뭐야`, request messages become:
 
-### Backend Core
-- `proxy-api/app/core/config.py`: env-backed settings
-- `proxy-api/app/core/security.py`: session and cookie helpers
-- `proxy-api/app/core/exceptions.py`: exception scaffold
-- `proxy-api/app/core/logging.py`: logging scaffold
+```json
+[
+  {"role":"user","content":"안녕"},
+  {"role":"assistant","content":"안녕하세요"},
+  {"role":"user","content":"RAG가 뭐야"}
+]
+```
 
-### Backend DB
-- `proxy-api/app/db/__init__.py`: storage package marker
-- `proxy-api/app/db/postgres/__init__.py`: postgres exports
-- `proxy-api/app/db/postgres/base.py`: SQLAlchemy base
-- `proxy-api/app/db/postgres/session.py`: engine, session factory, `create_all()`
-- `proxy-api/app/db/postgres/models/__init__.py`: model exports
-- `proxy-api/app/db/postgres/models/user.py`: `users` table
-- `proxy-api/app/db/postgres/models/auth.py`: auth/session related tables
-- `proxy-api/app/db/postgres/models/chat_request.py`: chat request model scaffold
-- `proxy-api/app/db/postgres/models/usage_log.py`: usage log model scaffold
-- `proxy-api/app/db/redis/__init__.py`: redis exports
-- `proxy-api/app/db/redis/client.py`: Redis client
-- `proxy-api/app/db/redis/chat_coordination.py`: chat lock and rate-limit logic
+## Browser Request JSON
 
-### Backend Services
-- `proxy-api/app/services/__init__.py`: service package marker
-- `proxy-api/app/services/auth.py`: guest session and auth lifecycle logic
-- `proxy-api/app/services/model_registry.py`: public model registry
-- `proxy-api/app/services/usage.py`: usage service scaffold
-- `proxy-api/app/services/chat/__init__.py`: chat service exports
-- `proxy-api/app/services/chat/preparation.py`: request validation and normalization
-- `proxy-api/app/services/chat/stream.py`: chat orchestration and SSE mapping
+The frontend sends:
 
-### Backend Providers
-- `proxy-api/app/providers/__init__.py`: provider package marker
-- `proxy-api/app/providers/vertex/__init__.py`: Vertex package marker
-- `proxy-api/app/providers/vertex/client.py`: Vertex config check and SDK client creation
-- `proxy-api/app/providers/vertex/mapper.py`: schema-to-Vertex mapping
-- `proxy-api/app/providers/vertex/rag.py`: optional Vertex RAG retrieval tool configuration
-- `proxy-api/app/providers/vertex/stream.py`: Vertex streaming adapter
-- `proxy-api/app/providers/vertex/types.py`: normalized provider chunk types
+```json
+{
+  "model_id": "gemini",
+  "tool_ids": ["rag"],
+  "messages": [
+    {"role":"user","content":"안녕"},
+    {"role":"assistant","content":"안녕하세요"},
+    {"role":"user","content":"RAG가 뭐야"}
+  ]
+}
+```
 
-### Backend Schemas
-- `proxy-api/app/schemas/__init__.py`: schema package marker
-- `proxy-api/app/schemas/auth.py`: auth response schemas
-- `proxy-api/app/schemas/chat.py`: chat request and SSE schemas
-- `proxy-api/app/schemas/model.py`: model list schemas
-- `proxy-api/app/schemas/usage.py`: usage schema scaffold
+Where it is assembled:
+- `frontend/src/services/chatService.ts`
+- body keys: `model_id`, `tool_ids`, `messages`
 
-## Notes
-- Active auth flow is guest login only.
-- TLS termination now happens in sibling `root-proxy`; this repo receives forwarded HTTP on host port `8081`.
-- Vertex RAG grounding is available only when pre-created corpus resource names are configured.
-- `usage` modules are scaffold-only and not registered.
-- Microsoft auth-related fields exist, but the flow is not active yet.
-- DB initialization still uses `create_all()` and `proxy-api/alembic/` is empty.
+## Backend Validation and Route Resolution
+
+Incoming request schema:
+- `ChatMessage.role`: `system | user | assistant`
+- `ChatMessage.content`: trimmed non-blank string
+- at least one `user` message is required
+- last message must be `user`
+
+Where it is validated:
+- `proxy-api/app/schemas/chat.py`
+
+Provider route resolution:
+- public model id `gemini` resolves to provider `vertex_ai`
+- provider model comes from `VERTEX_AI_MODEL`
+- public tool id `rag` is validated here as a backend-owned alias
+
+Where it is resolved:
+- `proxy-api/app/services/chat/preparation.py`
+- `proxy-api/app/providers/catalog.py`
+- `proxy-api/app/providers/vertex/provider.py`
+
+Internal route shape after resolution:
+
+```json
+{
+  "route": {
+    "model": {
+      "public_id": "gemini",
+      "provider": "vertex_ai",
+      "provider_model": "gemini-2.5-flash"
+    },
+    "tool_ids": ["rag"]
+  },
+  "messages": [
+    {"role":"user","content":"안녕"},
+    {"role":"assistant","content":"안녕하세요"},
+    {"role":"user","content":"RAG가 뭐야"}
+  ]
+}
+```
+
+## Vertex Contents Mapping
+
+Current mapper behavior:
+- `system` messages are accumulated into one `system_instruction`
+- `assistant` is converted to Vertex role `model`
+- every non-system message becomes `parts: [{"text": "..."}]`
+- no file/image/pdf parts are currently supported in this repo
+
+Where it happens:
+- `proxy-api/app/providers/vertex/mapper.py`
+
+Example mapped Vertex payload:
+
+```json
+{
+  "system_instruction": null,
+  "contents": [
+    {"role":"user","parts":[{"text":"안녕"}]},
+    {"role":"model","parts":[{"text":"안녕하세요"}]},
+    {"role":"user","parts":[{"text":"RAG가 뭐야"}]}
+  ]
+}
+```
+
+If a system message existed:
+
+```json
+{
+  "system_instruction": "Answer tersely.",
+  "contents": [
+    {"role":"user","parts":[{"text":"배포 경로 요약해줘"}]}
+  ]
+}
+```
+
+## Vertex Tool Mapping
+
+Public tool id exposed by this repo:
+- `rag`
+
+This is not a native Gemini tool name.
+- repo alias: `rag`
+- actual Vertex tool field: `retrieval.vertex_rag_store`
+
+Where it is mapped:
+- `proxy-api/app/providers/vertex/provider.py` exposes public tool `rag`
+- `proxy-api/app/providers/vertex/tools.py` maps `rag` -> Vertex retrieval payload
+
+Current mapping logic:
+- if `"rag"` is present in selected tool ids, build one Vertex `Tool`
+- corpora come from `VERTEX_AI_RAG_CORPORA`
+- `similarity_top_k` comes from `VERTEX_AI_RAG_SIMILARITY_TOP_K`
+- optional `vector_distance_threshold` comes from `VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD`
+
+Resulting Vertex tool payload:
+
+```json
+{
+  "retrieval": {
+    "vertex_rag_store": {
+      "rag_resources": [
+        {"rag_corpus":"projects/PROJECT/locations/LOCATION/ragCorpora/CORPUS_ID"}
+      ],
+      "similarity_top_k": 5,
+      "vector_distance_threshold": 0.5
+    }
+  }
+}
+```
+
+## Final `google.genai` Call Shape
+
+The repo calls:
+- `google.genai.Client(vertexai=True, project=..., location=..., http_options=...)`
+- `aio_client.models.generate_content_stream(model=..., contents=..., config=...)`
+
+Where it happens:
+- client construction: `proxy-api/app/providers/vertex/client.py`
+- request execution: `proxy-api/app/providers/vertex/stream.py`
+
+Effective SDK call shape with RAG enabled:
+
+```json
+{
+  "model": "gemini-2.5-flash",
+  "contents": [
+    {"role":"user","parts":[{"text":"안녕"}]},
+    {"role":"model","parts":[{"text":"안녕하세요"}]},
+    {"role":"user","parts":[{"text":"RAG가 뭐야"}]}
+  ],
+  "config": {
+    "tools": [
+      {
+        "retrieval": {
+          "vertex_rag_store": {
+            "rag_resources": [
+              {"rag_corpus":"projects/.../locations/.../ragCorpora/..."}
+            ],
+            "similarity_top_k": 5
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+Without tools, `config` may be `null`.
+
+## Function Calling vs Retrieval
+
+Current repo uses retrieval, not function calling.
+
+Why:
+- there is no `FunctionCall` handling loop in this repo
+- there is no `FunctionResponse` second turn injection path in this repo
+- `proxy-api/app/providers/vertex/tools.py` builds `retrieval`, not `functionDeclarations`
+
+Function calling flow is different:
+- request includes `tools: [{ functionDeclarations: [...] }]`
+- model may return `FunctionCall`
+- app executes external code or API call
+- app sends `FunctionResponse` back on the next turn
+- model then produces final natural-language output
+
+Retrieval flow is different:
+- request includes `tools: [{ retrieval: ... }]`
+- system executes retrieval and presents the results to the model for generation
+- no app-side manual function execution loop is required for the current repo's RAG path
+
+## Official Docs
+
+Core API shapes:
+- Vertex `Tool` reference: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1beta1/Tool
+- Vertex `Content` reference: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/Content
+- Vertex `generateContent` reference: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/projects.locations.publishers.models/generateContent
+- Vertex `streamGenerateContent` reference: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/projects.locations.publishers.models/streamGenerateContent
+
+Function calling:
+- intro: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/multimodal/function-calling
+- reference: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/function-calling
+
+RAG / retrieval:
+- RAG quickstart: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-quickstart
+- RAG corpus REST resource: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/projects.locations.ragCorpora
+- RAG file import REST resource: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/projects.locations.ragCorpora.ragFiles/import
+
+Google Gen AI Python SDK:
+- SDK docs: https://googleapis.github.io/python-genai/
+
+## Current Public Surface
+- model: `gemini`
+- placeholder model: `chatgpt`
+- tool: `rag`
+- auth: guest, optional Microsoft
+
+## Still Scaffolded
+- usage schemas, services, and models

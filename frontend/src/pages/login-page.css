@@ -103,17 +103,21 @@
 }
 
 .login-button--microsoft {
-  background: linear-gradient(140deg, #f9fdff 0%, #e7f1fb 100%);
-}
-
-.login-button--guest {
   background: linear-gradient(140deg, #79b9ff 0%, #4f98ec 100%);
   border-color: #4f98ec;
   color: #ffffff;
 }
 
-.login-button--guest:hover:not(:disabled) {
+.login-button--microsoft:hover:not(:disabled) {
   background: linear-gradient(140deg, #6eaef4 0%, #418bdd 100%);
+}
+
+.login-button--guest {
+  background: linear-gradient(140deg, #f9fdff 0%, #e7f1fb 100%);
+}
+
+.login-button--guest:hover:not(:disabled) {
+  background: #e2f0ff;
 }
 
 .login-button:disabled {

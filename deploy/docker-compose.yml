@@ -1,5 +1,5 @@
 # Purpose:
-# - Define the multi-container local development and deployment topology.
+# - Define the multi-container server deployment topology for the app stack.
 #
 # Current services:
 # - frontend
@@ -13,7 +13,7 @@
 # - Provide a simple single-command startup flow for the full stack
 #
 # Notes:
-# - Keep service names stable because internal container networking depends on them.
+# - Keep service names stable because internal container and edge routing depend on them.
 # - The backend should not assume localhost for database access when running in Compose.
 # - Version pins are sourced from the repo-root .env so Dockerfiles and Compose stay aligned.
 
@@ -63,6 +63,7 @@ services:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_proxy}"
       REDIS_URL: "redis://redis:6379/0"
       AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-true}"
+      AUTH_DATA_ENCRYPTION_KEY: "${AUTH_DATA_ENCRYPTION_KEY:-}"
       GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/gcp-service-account.json}"
       GOOGLE_CLOUD_PROJECT: "${GOOGLE_CLOUD_PROJECT:-}"
       GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION:-global}"
@@ -71,6 +72,11 @@ services:
       VERTEX_AI_RAG_CORPORA: "${VERTEX_AI_RAG_CORPORA:-}"
       VERTEX_AI_RAG_SIMILARITY_TOP_K: "${VERTEX_AI_RAG_SIMILARITY_TOP_K:-5}"
       VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD: "${VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD:-}"
+      MICROSOFT_CLIENT_ID: "${MICROSOFT_CLIENT_ID:-}"
+      MICROSOFT_CLIENT_SECRET: "${MICROSOFT_CLIENT_SECRET:-}"
+      MICROSOFT_AUTHORITY: "${MICROSOFT_AUTHORITY:-https://login.microsoftonline.com/common}"
+      MICROSOFT_REDIRECT_PATH: "${MICROSOFT_REDIRECT_PATH:-/api/v1/auth/callback/microsoft}"
+      MICROSOFT_OAUTH_TRANSACTION_MINUTES: "${MICROSOFT_OAUTH_TRANSACTION_MINUTES:-10}"
       CHAT_INFLIGHT_LOCK_TTL_SECONDS: "${CHAT_INFLIGHT_LOCK_TTL_SECONDS:-180}"
       CHAT_RATE_LIMIT_PER_MINUTE: "${CHAT_RATE_LIMIT_PER_MINUTE:-10}"
       CHAT_RATE_LIMIT_PER_HOUR: "${CHAT_RATE_LIMIT_PER_HOUR:-30}"
@@ -111,9 +117,6 @@ services:
     depends_on:
       proxy-api:
         condition: service_healthy
-    networks:
-      - default
-#      - edge-net
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
       interval: 10s
@@ -124,7 +127,3 @@ services:
 
 volumes:
   postgres-data:
-
-#networks:
-#  edge-net:
-#    external: true

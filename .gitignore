@@ -25,6 +25,7 @@ __pycache__/
 *.pyc
 .venv/
 .env
+.env.local
 !.env.example
 
 # Node
@@ -48,7 +49,3 @@ gcp-service-account.json
 # Build artifacts
 build/
 coverage/
-
-# remove later
-docker-compose.local.yml
-README-LOCAL.md

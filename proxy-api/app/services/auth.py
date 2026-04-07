@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import settings
 from app.config.time import utc_now
-from app.db.postgres.models.auth import AuthIdentity, AuthProviderSession, AuthSession
+from app.db.postgres.models.auth import AuthIdentity, AuthProviderSession, AuthSession, OAuthTransaction
 from app.db.postgres.models.user import User
 from app.services.auth_security import build_guest_display_name, generate_session_key, hash_session_key
 
@@ -250,6 +250,18 @@ def purge_expired_auth_data(
     deleted_count = 0
     for auth_session in expired_sessions:
         _delete_session_row(db, auth_session)
+        deleted_count += 1
+
+    expired_transactions = db.execute(
+        select(OAuthTransaction).where(
+            or_(
+                OAuthTransaction.expires_at <= current_time,
+                OAuthTransaction.consumed_at.is_not(None),
+            )
+        )
+    ).scalars().all()
+    for transaction in expired_transactions:
+        db.delete(transaction)
         deleted_count += 1
 
     db.commit()

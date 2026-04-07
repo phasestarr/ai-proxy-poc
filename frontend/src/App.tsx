@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
-import { fetchCurrentSession, loginAsGuest, logoutCurrentSession, type AuthSession } from "./services/authService";
+import {
+  beginMicrosoftLogin,
+  consumeAuthErrorFromLocation,
+  fetchCurrentSession,
+  loginAsGuest,
+  logoutCurrentSession,
+  type AuthSession,
+} from "./services/authService";
 
 type AuthStatus = "booting" | "anonymous" | "guest" | "microsoft";
 
@@ -14,9 +21,14 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isLoginVisible, setIsLoginVisible] = useState(false);
   const [isGuestLoginPending, setIsGuestLoginPending] = useState(false);
+  const [isMicrosoftLoginPending, setIsMicrosoftLoginPending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    const locationAuthError = consumeAuthErrorFromLocation();
+    if (locationAuthError) {
+      setAuthError(locationAuthError);
+    }
 
     const bootstrap = async () => {
       try {
@@ -90,6 +102,16 @@ export default function App() {
     }
   };
 
+  const handleMicrosoftLogin = () => {
+    if (isMicrosoftLoginPending) {
+      return;
+    }
+
+    setAuthError(null);
+    setIsMicrosoftLoginPending(true);
+    beginMicrosoftLogin();
+  };
+
   const handleLogout = async () => {
     try {
       await logoutCurrentSession();
@@ -113,7 +135,9 @@ export default function App() {
         authStatus={authStatus === "anonymous" ? "anonymous" : "booting"}
         isGuestLoginPending={isGuestLoginPending}
         isLoginVisible={isLoginVisible}
+        isMicrosoftLoginPending={isMicrosoftLoginPending}
         onGuestLogin={handleGuestLogin}
+        onMicrosoftLogin={handleMicrosoftLogin}
       />
     );
   }

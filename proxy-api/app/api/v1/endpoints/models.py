@@ -14,8 +14,8 @@ Notes:
 
 from fastapi import APIRouter
 
+from app.providers.catalog import list_available_models
 from app.schemas.model import ModelListResponse
-from app.services.model_registry import list_available_models
 
 router = APIRouter(prefix="/models", tags=["models"])
 

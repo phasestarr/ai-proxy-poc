@@ -1,61 +1,56 @@
 # Architecture
 
-## Runtime
-- Browser -> upstream `root-proxy` NGINX for TLS termination
-- upstream `root-proxy` -> host `8081` -> `frontend` NGINX container over HTTP
-- `frontend` NGINX -> `proxy-api` for `/api/*` and `/health`
-- `proxy-api` -> PostgreSQL
-- `proxy-api` -> Redis
-- `proxy-api` -> Vertex AI
-- `proxy-api` -> Vertex AI RAG Engine when RAG corpora are configured
+Current integrated runtime for `ai-proxy-poc`.
 
-Active NGINX config:
+## Edge Path
+- Browser -> `root-proxy` on `80/443`
+- `root-proxy` terminates TLS
+- `root-proxy` routes `ai.nextinsol.com` to `http://ai-proxy-frontend:8080`
+- `frontend` NGINX serves the SPA and proxies `/api/*` and `/health` to `proxy-api:8000`
+- `proxy-api` uses PostgreSQL, Redis, and Vertex AI
+
+## Frontend Flow
+1. `frontend/src/App.tsx` boots and calls `GET /api/v1/auth/me`.
+2. Anonymous users stay on `LoginPage`.
+3. Guest login calls `POST /api/v1/auth/login/guest`.
+4. Microsoft login redirects the whole page to `GET /api/v1/auth/login/microsoft`.
+5. The backend redirects to Microsoft, handles the callback, and returns to the SPA after issuing a local session cookie.
+6. Authenticated users land on `ChatPage`.
+7. `ChatPage` loads the backend-owned model catalog from `GET /api/v1/models`.
+8. `ChatPage` sends `POST /api/v1/chat/completions` and reads SSE events `start`, `delta`, `done`, and `error`.
+
+## Backend Flow
+1. `proxy-api/app/main.py` starts FastAPI, verifies Redis, initializes PostgreSQL tables, purges expired sessions, and starts auth cleanup.
+2. `proxy-api/app/api/v1/endpoints/auth.py` handles current session lookup, guest login, Microsoft login redirects, and logout.
+3. `proxy-api/app/api/v1/endpoints/models.py` exposes the backend model catalog.
+4. `proxy-api/app/api/v1/endpoints/chat.py` validates chat requests and enforces authenticated capability `chat:send`.
+5. `proxy-api/app/services/chat/preparation.py` resolves `model_id` and `tool_ids` into a provider route.
+6. `proxy-api/app/db/redis/chat_coordination.py` enforces one in-flight chat per session plus per-user rate limits.
+7. `proxy-api/app/providers/dispatcher.py` dispatches to the selected provider.
+8. `proxy-api/app/providers/vertex/stream.py` streams Vertex output and attaches `rag` when selected.
+
+## Auth and Data
+- Browser auth uses only the `HttpOnly` `session_id` cookie.
+- Backend stores a hash of the raw session key, not the raw key.
+- Guest session idle timeout: `6 hours`
+- Guest session absolute lifetime: `24 hours`
+- Database bootstrap currently uses `Base.metadata.create_all()`.
+
+## Active and Inactive Areas
+- Active: guest login, backend-owned Microsoft login, model listing, streaming chat, Vertex `gemini`, optional `rag`
+- Scaffold only: usage schemas, services, and models
+- Placeholder only: public `chatgpt` model entry exists, but execution is not wired
+
+## Important Files
 - `frontend/nginx/default.conf`
-
-Supported run mode:
-- Docker Compose only
-
-## Backend Layout
-- `proxy-api/app/main.py`: FastAPI app entrypoint and startup/shutdown hooks
-- `proxy-api/app/api/`: route composition
-- `proxy-api/app/api/v1/dependencies/`: FastAPI dependency helpers
-- `proxy-api/app/api/v1/endpoints/`: HTTP endpoints
-- `proxy-api/app/schemas/`: API contracts
-- `proxy-api/app/services/`: business logic
-- `proxy-api/app/db/postgres/`: SQLAlchemy base, session, ORM models
-- `proxy-api/app/db/redis/`: Redis client and Redis-backed coordination
-- `proxy-api/app/providers/vertex/`: Vertex SDK adapter
-- `proxy-api/app/core/`: shared config and security helpers
-
-## Main Flows
-
-### Guest Session
-1. Frontend calls `GET /api/v1/auth/me`.
-2. If no session exists, the login page is shown.
-3. `POST /api/v1/auth/login/guest` creates a guest user and auth session in PostgreSQL.
-4. Backend sets the `HttpOnly` `session_id` cookie.
-
-### Chat Stream
-1. `POST /api/v1/chat/completions` enters `app/api/v1/endpoints/chat.py`.
-2. `app/api/v1/dependencies/auth.py` resolves the session and capability.
-3. `app/services/chat/preparation.py` validates and normalizes the request, including the optional `use_rag` flag.
-4. `app/services/model_registry.py` resolves the public model id.
-5. `app/db/redis/chat_coordination.py` acquires the single-flight lock and rate-limit state.
-6. `app/providers/vertex/stream.py` opens the provider stream and adds a Vertex RAG retrieval tool only when `use_rag=true` and RAG corpora are configured.
-7. `app/services/chat/stream.py` maps provider chunks into SSE `start`, `delta`, `done`, `error`.
-
-### Startup
-1. `app/main.py` verifies Redis.
-2. `app/db/postgres/session.py` runs `init_database()`.
-3. `app/services/auth.py` purges expired auth data.
-4. Background auth cleanup loop starts.
-
-## Current Notes
-- Active login mode is guest login only.
-- Frontend NGINX serves static assets and proxies backend routes only; TLS termination is handled outside this repo.
-- The frontend NGINX preserves upstream forwarded host/proto/port headers when proxying to the backend.
-- RAG corpus creation/import is not handled inside this repo yet; the backend expects pre-created corpus resource names through environment variables.
-- `usage` endpoint/service/schema are scaffolded and not registered.
-- Microsoft-related DB fields exist, but callback/login flow is not active.
-- Database initialization still uses `Base.metadata.create_all()`.
-- `proxy-api/alembic/` exists but is currently empty.
+- `frontend/src/App.tsx`
+- `frontend/src/services/authService.ts`
+- `frontend/src/pages/ChatPage.tsx`
+- `frontend/src/services/chatService.ts`
+- `proxy-api/app/main.py`
+- `proxy-api/app/services/auth.py`
+- `proxy-api/app/services/microsoft_auth.py`
+- `proxy-api/app/services/chat/stream.py`
+- `proxy-api/app/providers/catalog.py`
+- `proxy-api/app/providers/dispatcher.py`
+- `proxy-api/app/providers/vertex/`

@@ -10,11 +10,19 @@ Responsibilities:
 from pydantic import BaseModel
 
 
+class ToolInfo(BaseModel):
+    id: str
+    display_name: str
+    available: bool
+
+
 class ModelInfo(BaseModel):
     id: str
     provider: str
     display_name: str
     available: bool
+    default: bool = False
+    tools: list[ToolInfo]
 
 
 class ModelListResponse(BaseModel):

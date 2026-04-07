@@ -1,0 +1,9 @@
+services:
+  frontend:
+    networks:
+      - default
+      - edge-net
+
+networks:
+  edge-net:
+    external: true

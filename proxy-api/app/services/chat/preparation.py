@@ -4,7 +4,7 @@ Purpose:
 
 Current responsibilities:
 - Validate request values at business-rule level
-- Resolve the public model ID into a provider model binding
+- Resolve the public model and tool selections into a provider route
 - Normalize the request into a stream-ready structure
 
 Notes:
@@ -16,16 +16,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.providers.catalog import resolve_provider_route
+from app.providers.types import ProviderRoute
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
 from app.services.auth import SessionContext
-from app.services.model_registry import ModelDefinition, get_model_definition
 
 
 @dataclass(slots=True, frozen=True)
 class PreparedChatCompletionRequest:
-    model: ModelDefinition
+    route: ProviderRoute
     messages: list[ChatMessage]
-    use_rag: bool
 
 
 def prepare_chat_completion_request(
@@ -35,17 +35,15 @@ def prepare_chat_completion_request(
 ) -> PreparedChatCompletionRequest:
     del session
 
-    model = get_model_definition(payload.model)
-    if model is None:
-        raise ValueError(f"unsupported model: {payload.model}")
-
     if not payload.messages:
         raise ValueError("messages must not be empty")
 
     return PreparedChatCompletionRequest(
-        model=model,
+        route=resolve_provider_route(
+            model_id=payload.model_id,
+            tool_ids=payload.tool_ids,
+        ),
         messages=list(payload.messages),
-        use_rag=payload.use_rag,
     )
 
 

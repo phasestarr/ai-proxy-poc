@@ -13,7 +13,7 @@ Notes:
 
 from __future__ import annotations
 
-from app.providers.vertex.types import VertexStreamChunk, VertexUsageMetadata
+from app.providers.types import ProviderStreamChunk, ProviderUsageMetadata
 from app.schemas.chat import ChatMessage
 
 
@@ -40,7 +40,7 @@ def map_chat_messages_to_vertex_contents(messages: list[ChatMessage]) -> tuple[s
     return system_instruction, contents
 
 
-def map_vertex_stream_chunk(chunk) -> VertexStreamChunk:
+def map_vertex_stream_chunk(chunk) -> ProviderStreamChunk:
     usage = getattr(chunk, "usage_metadata", None)
     candidates = getattr(chunk, "candidates", None) or []
     finish_reason = None
@@ -50,13 +50,13 @@ def map_vertex_stream_chunk(chunk) -> VertexStreamChunk:
         if finish_reason_value is not None:
             finish_reason = getattr(finish_reason_value, "name", None) or str(finish_reason_value)
 
-    return VertexStreamChunk(
+    return ProviderStreamChunk(
         text=getattr(chunk, "text", None) or "",
         response_id=getattr(chunk, "response_id", None),
         model_version=getattr(chunk, "model_version", None),
         finish_reason=finish_reason,
         usage=(
-            VertexUsageMetadata(
+            ProviderUsageMetadata(
                 prompt_token_count=getattr(usage, "prompt_token_count", None),
                 candidates_token_count=getattr(usage, "candidates_token_count", None),
                 total_token_count=getattr(usage, "total_token_count", None),

@@ -1,5 +1,5 @@
 ## Inspect PostgreSQL
-If you want to check whether guest users and sessions are being cleaned up correctly, use the commands below.
+Use these commands against the running server deployment when you need to inspect guest users and session cleanup behavior.
 
 Open an interactive PostgreSQL shell inside the running container:
 
@@ -7,7 +7,7 @@ Open an interactive PostgreSQL shell inside the running container:
 docker exec -it ai-proxy-postgres psql -U postgres -d ai_proxy
 ```
 
-If you do not want to use the shell, run these copy-paste commands directly from PowerShell.
+If you do not want to use the interactive shell, run the copy-paste commands directly from PowerShell.
 
 Show recent users:
 
@@ -31,7 +31,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.di
 If the last query returns `0 rows`, there are currently no orphaned guest users.
 
 ## Cleanup Smoke Test
-If you want to force a guest session to expire and then verify cleanup:
+To force a guest session to expire and verify cleanup:
 
 1. Find the guest `user_id` from the `Show recent users` command.
 2. Expire that guest's session manually:

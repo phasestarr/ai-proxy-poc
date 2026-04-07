@@ -32,9 +32,20 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = Field(default="vertex-default", min_length=1)
+    model_id: str | None = Field(default=None, min_length=1)
+    tool_ids: list[str] = Field(default_factory=list, max_length=16)
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=100)
-    use_rag: bool = False
+
+    @field_validator("tool_ids")
+    @classmethod
+    def validate_tool_ids(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            trimmed = item.strip()
+            if not trimmed:
+                raise ValueError("tool ids must not be blank")
+            normalized.append(trimmed)
+        return normalized
 
     @model_validator(mode="after")
     def validate_messages(self) -> "ChatCompletionRequest":

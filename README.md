@@ -1,68 +1,54 @@
 # AI Proxy PoC
 
-Monorepo proof of concept for an internal AI proxy.
+Internal AI proxy stack behind sibling `root-proxy`.
 
-## Supported Run Mode
-- Docker Compose only
-- Direct local backend/frontend runs are not part of the supported workflow
+## Runtime
+- Public entrypoint: `root-proxy`
+- Public host: `ai.nextinsol.com`
+- Edge upstream: `ai-proxy-frontend:8080` on external Docker network `edge-net`
+- Frontend: NGINX serving the SPA and proxying `/api/*` and `/health`
+- Backend: FastAPI
+- State: PostgreSQL for auth/session data, Redis for chat coordination and rate limits
+- Model execution: Vertex AI
 
-## Stack
-- `frontend/`: React app built with Vite and served by containerized NGINX
-- `proxy-api/`: FastAPI backend
-- `deploy/`: Docker Compose runtime files
-- `.env.example`: Compose env template copied to repo-root `.env`
-- `docs/`: reference docs
-- `secrets/`: local secret mount point for containerized runs
-
-## Current Scope
-Implemented now:
+## Active Scope
 - guest login
-- server-side session storage in PostgreSQL
-- `HttpOnly` `session_id` cookie
-- protected chat route
-- Redis-backed single-flight chat coordination
-- Redis-backed request rate limits for chat
-- model listing
-- Vertex AI streaming chat integration when configured
-- optional Vertex AI RAG Engine grounding when one or more RAG corpora are configured
+- optional Microsoft login through backend-owned OAuth redirect flow
+- `HttpOnly` `session_id` cookie auth
+- protected streaming chat endpoint
+- Redis-backed single in-flight chat per session
+- Redis-backed minute and hourly chat rate limits
+- public model catalog at `/api/v1/models`
+- Vertex-backed `gemini` public model
+- optional Vertex RAG tool exposed as `rag`
 
-Planned next:
-- Microsoft SSO with MSAL-compatible backend flow
-- usage reporting and richer quota tracking
+## In Repo
+- `frontend/`: Vite + React frontend packaged behind NGINX
+- `proxy-api/`: FastAPI backend
+- `deploy/`: container deployment files for this stack
+- `docs/`: architecture, API, environment, and extension notes
+- `secrets/`: mounted secret files such as the GCP service account JSON
 
-## Host Prerequisites
-- Docker Engine `29.2.1`
-- Docker Compose `v5.0.2`
-- Git `2.53.0.windows.1`
+## Required Setup
+1. Copy `.env.example` to `.env`.
+2. Set `GOOGLE_CLOUD_PROJECT`.
+3. If needed, adjust `GOOGLE_CLOUD_LOCATION`, `VERTEX_AI_MODEL`, and `VERTEX_AI_RAG_*`.
+4. Place the service account JSON under `secrets/`.
+5. Keep `GOOGLE_APPLICATION_CREDENTIALS` aligned with that mounted file path.
+6. Keep `AI_PROXY_CONTAINER_NAME=ai-proxy-frontend` unless the sibling `root-proxy` upstream name changes too.
 
-## Docker Compose
-Create the env file:
+## Notes
+- This repo does not terminate TLS.
+- Server deployment assumes sibling `root-proxy` is the only public entrypoint.
+- Current `root-proxy` route is `ai.nextinsol.com -> ai-proxy-frontend:8080`.
+- Microsoft login remains optional until the Microsoft env vars are configured.
+- usage logging remains scaffold-only.
 
-```powershell
-Copy-Item .env.example .env
-```
-
-Before first startup:
-- set `GOOGLE_CLOUD_PROJECT` in `.env`
-- confirm `GOOGLE_APPLICATION_CREDENTIALS` points at a real file under `secrets/`
-- put the service account JSON at `secrets/gcp-service-account.json` unless you change the path
-- set `AI_PROXY_CONTAINER_NAME` in `.env` to match your edge routing plan
-- if you want grounded RAG responses, create a Vertex AI RAG corpus separately and set
-  `VERTEX_AI_RAG_CORPORA` to one or more corpus resource names
-
-Operational commands:
-- [deploy/README.md](deploy/README.md)
+## Docs
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/API.md](docs/API.md)
 - [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
-
-Host entrypoints:
-- `root-proxy` is the public entrypoint for this stack
-- in the integrated deployment, sibling `root-proxy` terminates TLS and forwards HTTPS traffic to `http://ai-proxy-frontend:8080` over `edge-net`
-- the frontend is no longer published directly on a host port
-
-Default smoke test:
-1. Start `root-proxy`
-2. Open the upstream HTTPS host
-3. Wait for the login card
-4. Click `Guest Login`
-5. Send a prompt
-6. Click `Log Out`
+- [docs/WORKING_GUIDELINES.md](docs/WORKING_GUIDELINES.md)
+- [docs/NOTEPAD.md](docs/NOTEPAD.md)
+- [docs/VENDOR_EXTENSION.md](docs/VENDOR_EXTENSION.md)
+- [docs/FOR_QUERY_NOOBS.md](docs/FOR_QUERY_NOOBS.md)
