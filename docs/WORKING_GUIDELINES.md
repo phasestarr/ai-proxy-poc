@@ -19,6 +19,8 @@
 
 ## Verification
 - After backend Python changes, run `python -m compileall proxy-api/app`.
+- After frontend TypeScript changes, run `npm run typecheck` from `frontend/`.
+- After frontend build-affecting changes, run `npm run build` from `frontend/`.
 - After backend API changes, re-check `docs/API.md`.
 - After backend routing changes, confirm `proxy-api/app/api/v1/api.py` still registers the intended endpoints.
 - After auth changes, verify `GET /health`, `GET /api/v1/models`, `GET /api/v1/auth/me`, unauthenticated chat, and authenticated guest chat.
