@@ -3,7 +3,7 @@ Purpose:
 - Build Vertex-specific tool payloads.
 
 Responsibilities:
-- Keep Vertex tool wiring inside the Vertex provider package
+- Keep Vertex hosted tool wiring inside the Vertex provider package
 - Preserve the tool selection pipeline even while no tools are enabled
 
 Notes:
@@ -21,22 +21,44 @@ class VertexToolConfigurationError(RuntimeError):
     """Raised when a selected Vertex tool cannot be configured."""
 
 
-def build_vertex_tools(
+def build_vertex_hosted_tools(
     *,
     selected_tool_ids: Iterable[str],
     types_module=None,
 ) -> list[object]:
-    normalized_tool_ids = {tool_id.strip() for tool_id in selected_tool_ids if tool_id.strip()}
     configured_tools: list[object] = []
+    tool_builders = {
+        "web_search": _build_vertex_web_search_tool,
+        "retrieval": _build_vertex_retrieval_tool,
+        "code_execution": _build_vertex_code_execution_tool,
+    }
 
-    if "rag" in normalized_tool_ids:
-        configured_tools.append(_build_vertex_rag_tool(types_module=types_module))
+    for tool_id in _normalize_selected_tool_ids(selected_tool_ids):
+        builder = tool_builders.get(tool_id)
+        if builder is None:
+            continue
+        configured_tools.append(builder(types_module=types_module))
 
     return configured_tools
 
 
-def _build_vertex_rag_tool(*, types_module=None) -> object:
-    _ensure_vertex_rag_tool_ready()
+def _build_vertex_web_search_tool(*, types_module=None) -> object:
+    tool_payload = {
+        "google_search": {},
+    }
+
+    tool_type = getattr(types_module, "Tool", None) if types_module is not None else None
+    if tool_type is None:
+        return tool_payload
+
+    try:
+        return tool_type(**tool_payload)
+    except Exception as exc:
+        raise VertexToolConfigurationError("vertex web search tool payload could not be constructed") from exc
+
+
+def _build_vertex_retrieval_tool(*, types_module=None) -> object:
+    _ensure_vertex_retrieval_tool_ready()
 
     rag_store: dict[str, object] = {
         "rag_resources": [{"rag_corpus": corpus} for corpus in vertex_settings.rag_corpora],
@@ -59,19 +81,46 @@ def _build_vertex_rag_tool(*, types_module=None) -> object:
     try:
         return tool_type(**tool_payload)
     except Exception as exc:
-        raise VertexToolConfigurationError("vertex rag tool payload could not be constructed") from exc
+        raise VertexToolConfigurationError("vertex retrieval tool payload could not be constructed") from exc
 
 
-def _ensure_vertex_rag_tool_ready() -> None:
+def _build_vertex_code_execution_tool(*, types_module=None) -> object:
+    tool_payload = {
+        "code_execution": {},
+    }
+
+    tool_type = getattr(types_module, "Tool", None) if types_module is not None else None
+    if tool_type is None:
+        return tool_payload
+
+    try:
+        return tool_type(**tool_payload)
+    except Exception as exc:
+        raise VertexToolConfigurationError("vertex code execution tool payload could not be constructed") from exc
+
+
+def _ensure_vertex_retrieval_tool_ready() -> None:
     if not vertex_settings.rag_corpora:
-        raise VertexToolConfigurationError("vertex rag tool is selected but no rag corpora are configured")
+        raise VertexToolConfigurationError("vertex retrieval tool is selected but no retrieval corpora are configured")
 
     if any(not corpus.strip() for corpus in vertex_settings.rag_corpora):
-        raise VertexToolConfigurationError("vertex rag corpus resource names must not be blank")
+        raise VertexToolConfigurationError("vertex retrieval corpus resource names must not be blank")
 
     if vertex_settings.rag_similarity_top_k < 1:
-        raise VertexToolConfigurationError("vertex rag similarity_top_k must be at least 1")
+        raise VertexToolConfigurationError("vertex retrieval similarity_top_k must be at least 1")
 
     threshold = vertex_settings.rag_vector_distance_threshold
     if threshold is not None and threshold < 0:
-        raise VertexToolConfigurationError("vertex rag vector distance threshold must be non-negative")
+        raise VertexToolConfigurationError("vertex retrieval vector distance threshold must be non-negative")
+
+
+def _normalize_selected_tool_ids(selected_tool_ids: Iterable[str]) -> list[str]:
+    normalized_tool_ids: list[str] = []
+    seen_tool_ids: set[str] = set()
+    for tool_id in selected_tool_ids:
+        normalized_tool_id = tool_id.strip()
+        if not normalized_tool_id or normalized_tool_id in seen_tool_ids:
+            continue
+        normalized_tool_ids.append(normalized_tool_id)
+        seen_tool_ids.add(normalized_tool_id)
+    return normalized_tool_ids

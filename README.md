@@ -19,8 +19,9 @@ Internal AI proxy stack behind sibling `root-proxy`.
 - Redis-backed single in-flight chat per session
 - Redis-backed minute and hourly chat rate limits
 - public model catalog at `/api/v1/models`
-- Vertex-backed `gemini` public model
-- optional Vertex RAG tool exposed as `rag`
+- Vertex-backed public Gemini model variants
+- optional provider-neutral tools exposed as `web_search`, `retrieval`, and `code_execution`
+- placeholder OpenAI public model `gpt-4.2` exposed as unavailable
 
 ## In Repo
 - `frontend/`: Vite + React frontend packaged behind NGINX
@@ -32,7 +33,7 @@ Internal AI proxy stack behind sibling `root-proxy`.
 ## Required Setup
 1. Copy `.env.example` to `.env`.
 2. Set `GOOGLE_CLOUD_PROJECT`.
-3. If needed, adjust `GOOGLE_CLOUD_LOCATION`, `VERTEX_AI_MODEL`, and `VERTEX_AI_RAG_*`.
+3. If needed, adjust `VERTEX_AI_RAG_*`.
 4. Place the service account JSON under `secrets/`.
 5. Keep `GOOGLE_APPLICATION_CREDENTIALS` aligned with that mounted file path.
 6. Keep `AI_PROXY_CONTAINER_NAME=ai-proxy-frontend` unless the sibling `root-proxy` upstream name changes too.
@@ -42,6 +43,7 @@ Internal AI proxy stack behind sibling `root-proxy`.
 - Server deployment assumes sibling `root-proxy` is the only public entrypoint.
 - Current `root-proxy` route is `ai.nextinsol.com -> ai-proxy-frontend:8080`.
 - Microsoft login remains optional until the Microsoft env vars are configured.
+- frontend does not auto-select a model; clients must choose one from the backend catalog before sending chat.
 - usage logging remains scaffold-only.
 
 ## Docs

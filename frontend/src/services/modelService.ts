@@ -9,7 +9,6 @@ type ModelApiPayload = {
   provider: string;
   display_name: string;
   available: boolean;
-  default: boolean;
   tools: ModelToolApiPayload[];
 };
 
@@ -32,7 +31,6 @@ export type ChatModelOption = {
   provider: string;
   label: string;
   available: boolean;
-  default: boolean;
   toolOptions: ChatToolOption[];
 };
 
@@ -61,23 +59,12 @@ export function getChatModelOption(
   return models.find((option) => option.id === modelId);
 }
 
-export function getDefaultChatModelId(models: ChatModelOption[]): string | null {
-  const defaultModel = models.find((model) => model.default && model.available);
-  if (defaultModel) {
-    return defaultModel.id;
-  }
-
-  const firstAvailableModel = models.find((model) => model.available);
-  return firstAvailableModel ? firstAvailableModel.id : null;
-}
-
 function mapModel(payload: ModelApiPayload): ChatModelOption {
   return {
     id: payload.id,
     provider: payload.provider,
     label: payload.display_name,
     available: payload.available,
-    default: payload.default,
     toolOptions: payload.tools.map((tool) => ({
       id: tool.id,
       label: tool.display_name,

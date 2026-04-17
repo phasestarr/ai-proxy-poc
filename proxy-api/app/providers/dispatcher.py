@@ -35,6 +35,9 @@ def ensure_provider_ready(*, provider: str) -> None:
         if provider == VERTEX_PROVIDER_ID:
             ensure_vertex_provider_ready()
             return
+        if provider == "openai":
+            # Intentional placeholder for future OpenAI wiring.
+            raise ProviderConfigurationError("provider is not configured: openai")
     except VertexProviderConfigurationError as exc:
         raise ProviderConfigurationError(str(exc)) from exc
 
@@ -49,12 +52,16 @@ async def stream_provider_chat_completion(
     try:
         if route.model.provider == VERTEX_PROVIDER_ID:
             async for chunk in stream_vertex_chat_completion(
-                model_name=route.model.provider_model,
+                public_model_id=route.model.public_id,
                 messages=messages,
                 selected_tool_ids=route.tool_ids,
+                function_declarations=route.function_declarations,
             ):
                 yield chunk
             return
+        if route.model.provider == "openai":
+            # Intentional placeholder for future OpenAI wiring.
+            raise ProviderExecutionError("provider is not configured: openai")
     except VertexProviderError as exc:
         raise ProviderExecutionError(str(exc)) from exc
 

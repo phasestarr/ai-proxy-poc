@@ -35,8 +35,6 @@ Server-deployment view of repo-root `.env`.
   - in-container path to the mounted service account JSON
 - `GOOGLE_CLOUD_PROJECT`
   - required
-- `GOOGLE_CLOUD_LOCATION`
-- `VERTEX_AI_MODEL`
 - `VERTEX_AI_API_VERSION`
 - `VERTEX_AI_RAG_CORPORA`
   - optional
@@ -84,6 +82,9 @@ Server-deployment view of repo-root `.env`.
 - default service account path: `/run/secrets/gcp-service-account.json`
 
 ## Current Notes
+- public Gemini model ids are code-defined, not env-selected
+- Vertex model locations are code-defined per model, not env-selected
+- Google Search is exposed as a native Vertex tool and does not add env requirements
 - RAG stays inactive unless `VERTEX_AI_RAG_CORPORA` contains valid corpus resource names
 - Microsoft auth becomes active only after `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, and `AUTH_DATA_ENCRYPTION_KEY` are set
 - usage logging scaffolding exists in code but does not add env requirements yet

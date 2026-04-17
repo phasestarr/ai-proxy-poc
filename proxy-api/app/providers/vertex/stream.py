@@ -14,8 +14,11 @@ import logging
 from collections.abc import AsyncIterator, Iterable
 
 from app.providers.vertex.client import build_vertex_ai_client
+from app.providers.vertex.config import build_vertex_generate_content_config
+from app.providers.vertex.models import resolve_vertex_model_runtime
 from app.providers.vertex.mapper import map_chat_messages_to_vertex_contents, map_vertex_stream_chunk
-from app.providers.vertex.tools import VertexToolConfigurationError, build_vertex_tools
+from app.providers.types import ProviderFunctionDeclaration
+from app.providers.vertex.tools import VertexToolConfigurationError
 from app.schemas.chat import ChatMessage
 
 logger = logging.getLogger("uvicorn.error")
@@ -27,25 +30,28 @@ class VertexProviderError(RuntimeError):
 
 async def stream_vertex_chat_completion(
     *,
-    model_name: str,
+    public_model_id: str,
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
+    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ) -> AsyncIterator:
-    client = build_vertex_ai_client()
+    model_runtime = resolve_vertex_model_runtime(public_model_id=public_model_id)
+    client = build_vertex_ai_client(location=model_runtime.location)
 
     try:
         from google.genai import types
 
-        system_instruction, contents = map_chat_messages_to_vertex_contents(messages)
-        config = _build_generate_content_config(
+        request_system_instruction, contents = map_chat_messages_to_vertex_contents(messages)
+        config = build_vertex_generate_content_config(
             types=types,
-            system_instruction=system_instruction,
+            request_system_instruction=request_system_instruction,
             selected_tool_ids=selected_tool_ids,
+            function_declarations=function_declarations,
         )
 
         async with client.aio as aio_client:
             stream = await aio_client.models.generate_content_stream(
-                model=model_name,
+                model=model_runtime.provider_model,
                 contents=contents,
                 config=config,
             )
@@ -72,24 +78,6 @@ def _map_vertex_exception(exc: Exception) -> VertexProviderError:
             return VertexProviderError(detail)
 
     return VertexProviderError("vertex ai request failed")
-
-
-def _build_generate_content_config(*, types, system_instruction: str | None, selected_tool_ids: Iterable[str]):
-    config_kwargs: dict[str, object] = {}
-    if system_instruction:
-        config_kwargs["system_instruction"] = system_instruction
-
-    configured_tools = build_vertex_tools(
-        selected_tool_ids=selected_tool_ids,
-        types_module=types,
-    )
-    if configured_tools:
-        config_kwargs["tools"] = configured_tools
-
-    if not config_kwargs:
-        return None
-
-    return types.GenerateContentConfig(**config_kwargs)
 
 
 def _format_vertex_api_error(exc) -> str:

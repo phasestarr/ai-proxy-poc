@@ -24,10 +24,6 @@ class VertexProviderConfigurationError(RuntimeError):
 def ensure_vertex_provider_ready() -> None:
     if not vertex_settings.project:
         raise VertexProviderConfigurationError("vertex ai project is not configured")
-    if not vertex_settings.location:
-        raise VertexProviderConfigurationError("vertex ai location is not configured")
-    if not vertex_settings.model:
-        raise VertexProviderConfigurationError("vertex ai model is not configured")
 
     try:
         from google import genai  # noqa: F401
@@ -36,7 +32,7 @@ def ensure_vertex_provider_ready() -> None:
         raise VertexProviderConfigurationError("google-genai is not installed") from exc
 
 
-def build_vertex_ai_client():
+def build_vertex_ai_client(*, location: str):
     ensure_vertex_provider_ready()
 
     from google import genai
@@ -45,6 +41,6 @@ def build_vertex_ai_client():
     return genai.Client(
         vertexai=True,
         project=vertex_settings.project,
-        location=vertex_settings.location,
+        location=location,
         http_options=types.HttpOptions(api_version=vertex_settings.api_version),
     )

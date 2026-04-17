@@ -4,7 +4,7 @@ import { getRandomCompletionNote, getRandomWelcomeText } from "../config/chatCon
 import MarkdownMessage from "../components/MarkdownMessage";
 import { AuthenticationRequiredError, type AuthSession } from "../services/authService";
 import { streamChatReply, type ChatSelection } from "../services/chatService";
-import { fetchAvailableModels, getChatModelOption, getDefaultChatModelId, type ChatModelOption } from "../services/modelService";
+import { fetchAvailableModels, getChatModelOption, type ChatModelOption } from "../services/modelService";
 import {
   appendAssistantDelta,
   buildRequestMessages,
@@ -70,7 +70,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired }: ChatPa
         setModelsError(null);
         setSelectedModelId((current) => {
           const currentModel = getChatModelOption(nextModels, current);
-          return currentModel?.available ? current : getDefaultChatModelId(nextModels);
+          return currentModel?.available ? current ?? null : null;
         });
       } catch (error) {
         if (cancelled) {
@@ -315,7 +315,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired }: ChatPa
                   }}
                   type="button"
                 >
-                  <span>{`Model: ${selectedModel?.label ?? "None"}`}</span>
+                  <span>{`Model: ${selectedModel?.label ?? "Select Model"}`}</span>
                   <span aria-hidden="true" className="composer-action-caret">
                     ▾
                   </span>

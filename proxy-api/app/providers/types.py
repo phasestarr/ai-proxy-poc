@@ -31,13 +31,18 @@ class ProviderToolDefinition:
 
 
 @dataclass(slots=True, frozen=True)
+class ProviderFunctionDeclaration:
+    name: str
+    description: str
+    parameters_json_schema: dict[str, object]
+
+
+@dataclass(slots=True, frozen=True)
 class ProviderModelDefinition:
     public_id: str
     provider: str
-    provider_model: str
     display_name: str
     available: bool = True
-    default: bool = False
     supported_tools: tuple[ProviderToolDefinition, ...] = ()
 
     @property
@@ -49,3 +54,4 @@ class ProviderModelDefinition:
 class ProviderRoute:
     model: ProviderModelDefinition
     tool_ids: tuple[str, ...] = ()
+    function_declarations: tuple[ProviderFunctionDeclaration, ...] = ()

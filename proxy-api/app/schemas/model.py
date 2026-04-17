@@ -21,7 +21,6 @@ class ModelInfo(BaseModel):
     provider: str
     display_name: str
     available: bool
-    default: bool = False
     tools: list[ToolInfo]
 
 

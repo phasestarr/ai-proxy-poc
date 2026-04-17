@@ -17,7 +17,8 @@ Current integrated runtime for `ai-proxy-poc`.
 5. The backend redirects to Microsoft, handles the callback, and returns to the SPA after issuing a local session cookie.
 6. Authenticated users land on `ChatPage`.
 7. `ChatPage` loads the backend-owned model catalog from `GET /api/v1/models`.
-8. `ChatPage` sends `POST /api/v1/chat/completions` and reads SSE events `start`, `delta`, `done`, and `error`.
+8. The frontend leaves model selection empty until the user explicitly chooses one from the catalog.
+9. `ChatPage` sends `POST /api/v1/chat/completions` with the selected `model_id` and `tool_ids`, then reads SSE events `start`, `delta`, `done`, and `error`.
 
 ## Backend Flow
 1. `proxy-api/app/main.py` starts FastAPI, verifies Redis, initializes PostgreSQL tables, purges expired sessions, and starts auth cleanup.
@@ -27,7 +28,8 @@ Current integrated runtime for `ai-proxy-poc`.
 5. `proxy-api/app/services/chat/preparation.py` resolves `model_id` and `tool_ids` into a provider route.
 6. `proxy-api/app/db/redis/chat_coordination.py` enforces one in-flight chat per session plus per-user rate limits.
 7. `proxy-api/app/providers/dispatcher.py` dispatches to the selected provider.
-8. `proxy-api/app/providers/vertex/stream.py` streams Vertex output and attaches `rag` when selected.
+8. `proxy-api/app/providers/vertex/tools.py` maps backend-owned tool ids like `web_search`, `retrieval`, and `code_execution` into Vertex tool payloads.
+9. `proxy-api/app/providers/vertex/stream.py` streams Vertex output for the selected Gemini variant.
 
 ## Auth and Data
 - Browser auth uses only the `HttpOnly` `session_id` cookie.
@@ -37,9 +39,9 @@ Current integrated runtime for `ai-proxy-poc`.
 - Database bootstrap currently uses `Base.metadata.create_all()`.
 
 ## Active and Inactive Areas
-- Active: guest login, backend-owned Microsoft login, model listing, streaming chat, Vertex `gemini`, optional `rag`
+- Active: guest login, backend-owned Microsoft login, model listing, explicit Gemini variant selection, streaming chat, optional `web_search`, optional `retrieval`, optional `code_execution`
 - Scaffold only: usage schemas, services, and models
-- Placeholder only: public `chatgpt` model entry exists, but execution is not wired
+- Placeholder only: public `gpt-4.2` model entry exists, but execution is not wired
 
 ## Important Files
 - `frontend/nginx/default.conf`

@@ -96,8 +96,8 @@ Where it is validated:
 - `proxy-api/app/schemas/chat.py`
 
 Provider route resolution:
-- public model id `gemini` resolves to provider `vertex_ai`
-- provider model comes from `VERTEX_AI_MODEL`
+- public model ids like `gemini-2.5-flash` resolve to provider `vertex_ai`
+- Vertex runtime model id and location come from backend-owned provider metadata
 - public tool id `rag` is validated here as a backend-owned alias
 
 Where it is resolved:
@@ -111,9 +111,8 @@ Internal route shape after resolution:
 {
   "route": {
     "model": {
-      "public_id": "gemini",
-      "provider": "vertex_ai",
-      "provider_model": "gemini-2.5-flash"
+      "public_id": "gemini-2.5-flash",
+      "provider": "vertex_ai"
     },
     "tool_ids": ["rag"]
   },

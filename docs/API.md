@@ -29,25 +29,79 @@ Example:
 {
   "data": [
     {
-      "id": "gemini",
+      "id": "gemini-2.5-pro",
       "provider": "vertex_ai",
-      "display_name": "Gemini",
+      "display_name": "Gemini 2.5 Pro",
       "available": true,
-      "default": true,
       "tools": [
         {
-          "id": "rag",
-          "display_name": "RAG",
+          "id": "web_search",
+          "display_name": "Web Search",
+          "available": true
+        },
+        {
+          "id": "retrieval",
+          "display_name": "Retrieval",
+          "available": true
+        },
+        {
+          "id": "code_execution",
+          "display_name": "Code Execution",
           "available": true
         }
       ]
     },
     {
-      "id": "chatgpt",
+      "id": "gemini-2.5-flash",
+      "provider": "vertex_ai",
+      "display_name": "Gemini 2.5 Flash",
+      "available": true,
+      "tools": [
+        {
+          "id": "web_search",
+          "display_name": "Web Search",
+          "available": true
+        },
+        {
+          "id": "retrieval",
+          "display_name": "Retrieval",
+          "available": true
+        },
+        {
+          "id": "code_execution",
+          "display_name": "Code Execution",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "gemini-3-flash-preview",
+      "provider": "vertex_ai",
+      "display_name": "Gemini 3 Flash Preview",
+      "available": true,
+      "tools": [
+        {
+          "id": "web_search",
+          "display_name": "Web Search",
+          "available": true
+        },
+        {
+          "id": "retrieval",
+          "display_name": "Retrieval",
+          "available": true
+        },
+        {
+          "id": "code_execution",
+          "display_name": "Code Execution",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "gpt-4.2",
       "provider": "openai",
-      "display_name": "ChatGPT",
+      "display_name": "GPT 4.2",
       "available": false,
-      "default": false,
       "tools": []
     }
   ]
@@ -113,8 +167,8 @@ Anonymous example:
 
 ```json
 {
-  "model_id": "gemini",
-  "tool_ids": ["rag"],
+  "model_id": "gemini-2.5-flash",
+  "tool_ids": ["web_search", "retrieval"],
   "messages": [
     {
       "role": "system",
@@ -129,7 +183,7 @@ Anonymous example:
 ```
 
 Rules:
-- `model_id` may be omitted or `null`
+- `model_id` is required at request time
 - `tool_ids` is optional
 - at least one `user` message is required
 - the last message must be a `user` message
@@ -141,7 +195,7 @@ Events:
 
 ```text
 event: start
-data: {"model":"gemini","provider":"vertex_ai"}
+data: {"model":"gemini-2.5-pro","provider":"vertex_ai"}
 ```
 
 ```text
@@ -151,7 +205,7 @@ data: {"delta_text":"partial output"}
 
 ```text
 event: done
-data: {"model":"gemini","provider":"vertex_ai","finish_reason":"STOP","usage":{"input_tokens":12,"output_tokens":34,"total_tokens":46}}
+data: {"model":"gemini-2.5-pro","provider":"vertex_ai","finish_reason":"STOP","usage":{"input_tokens":12,"output_tokens":34,"total_tokens":46}}
 ```
 
 ```text
@@ -168,8 +222,11 @@ Status codes:
 - `503`: Redis coordination unavailable or provider not configured
 
 ## Tool and Provider Notes
-- `rag` is the only exposed tool id
-- `rag` only works when `VERTEX_AI_RAG_CORPORA` is configured
-- `chatgpt` appears in the catalog as a placeholder only
+- exposed hosted tool ids are `web_search`, `retrieval`, and `code_execution`
+- `web_search` maps to the provider-native web search tool
+- `retrieval` only works when `VERTEX_AI_RAG_CORPORA` is configured and the selected model exposes it
+- `code_execution` maps to the provider-native code execution tool
+- exposed Gemini public model ids are `gemini-2.5-pro`, `gemini-2.5-flash`, and `gemini-3-flash-preview`
+- `gpt-4.2` appears in the catalog as an intentional placeholder only
 - Microsoft auth is backend-owned and optional until its env vars are configured
 - usage endpoints are not registered

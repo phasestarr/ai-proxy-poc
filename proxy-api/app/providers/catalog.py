@@ -22,7 +22,6 @@ def list_available_models() -> list[ModelInfo]:
             provider=model.provider,
             display_name=model.display_name,
             available=model.available,
-            default=model.default,
             tools=[
                 ToolInfo(
                     id=tool.public_id,
@@ -54,13 +53,11 @@ def resolve_provider_route(
 def _list_provider_models() -> list[ProviderModelDefinition]:
     return [
         *list_vertex_models(),
-        ProviderModelDefinition( # placeholder, should be handled by app.providers.<provider>.provider.py
-            public_id="chatgpt",
+        ProviderModelDefinition(  # intentional placeholder for future OpenAI wiring
+            public_id="gpt-4.2",
             provider="openai",
-            provider_model="gpt-4.1",
-            display_name="ChatGPT",
+            display_name="GPT 4.2",
             available=False,
-            default=False,
             supported_tools=(),
         ),
     ]
@@ -68,24 +65,16 @@ def _list_provider_models() -> list[ProviderModelDefinition]:
 
 def _resolve_model(*, models: list[ProviderModelDefinition], model_id: str | None) -> ProviderModelDefinition:
     normalized_model_id = (model_id or "").strip()
-    if normalized_model_id:
-        for model in models:
-            if model.public_id == normalized_model_id:
-                if not model.available:
-                    raise ValueError(f"model is not available: {normalized_model_id}")
-                return model
-        raise ValueError(f"unsupported model: {normalized_model_id}")
+    if not normalized_model_id:
+        raise ValueError("model selection is required")
 
     for model in models:
-        if model.default and model.available:
+        if model.public_id == normalized_model_id:
+            if not model.available:
+                raise ValueError(f"model is not available: {normalized_model_id}")
             return model
 
-    if models:
-        for model in models:
-            if model.available:
-                return model
-
-    raise ValueError("no models are configured")
+    raise ValueError(f"unsupported model: {normalized_model_id}")
 
 
 def _normalize_tool_ids(tool_ids: list[str] | None) -> tuple[str, ...]:

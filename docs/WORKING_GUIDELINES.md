@@ -25,7 +25,9 @@
 
 ## Model and Tool Extension Rule
 - Backend model/tool exposure starts in `proxy-api/app/providers/catalog.py`.
+- Vertex public model definitions currently live in `proxy-api/app/providers/vertex/provider.py`.
 - Provider-specific wiring belongs under `proxy-api/app/providers/<provider>/`.
 - `GET /api/v1/models` is the frontend source of truth for selectable public models and tools.
 - If a new public model or tool is added, update backend exposure first and keep the frontend mapping aligned with that response contract.
+- Do not reintroduce frontend-side default model selection; model choice should come from the backend catalog and explicit user selection.
 - Keep `docs/VENDOR_EXTENSION.md` updated when changing provider, model, or tool integration rules.

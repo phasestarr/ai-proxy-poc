@@ -21,11 +21,6 @@ class VertexProviderSettings(BaseSettings):
         default="",
         validation_alias=AliasChoices("VERTEX_AI_PROJECT", "GOOGLE_CLOUD_PROJECT"),
     )
-    location: str = Field(
-        default="global",
-        validation_alias=AliasChoices("VERTEX_AI_LOCATION", "GOOGLE_CLOUD_LOCATION"),
-    )
-    model: str = Field(default="gemini-2.5-flash", validation_alias="VERTEX_AI_MODEL")
     api_version: str = Field(default="v1", validation_alias="VERTEX_AI_API_VERSION")
     rag_corpora_value: str = Field(default="", validation_alias="VERTEX_AI_RAG_CORPORA", exclude=True)
     rag_similarity_top_k: int = Field(default=5, validation_alias="VERTEX_AI_RAG_SIMILARITY_TOP_K")
