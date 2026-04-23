@@ -31,6 +31,17 @@ logger = logging.getLogger("uvicorn.error")
 class AnthropicProviderError(RuntimeError):
     """Raised when an Anthropic request fails while streaming."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.error_code = error_code
+        super().__init__(message)
+
 
 async def stream_anthropic_chat_completion(
     *,
@@ -88,11 +99,17 @@ def _map_anthropic_exception(exc: Exception) -> AnthropicProviderError:
 
     if APIStatusError is not None and isinstance(exc, APIStatusError):
         status_code = getattr(exc, "status_code", None)
+        error_code = getattr(exc, "code", None)
         message = getattr(exc, "message", None) or str(exc)
-        return AnthropicProviderError(f"anthropic request failed ({status_code}): {message}")
+        return AnthropicProviderError(
+            f"anthropic request failed ({status_code}): {message}",
+            status_code=status_code,
+            error_code=error_code,
+        )
 
     if APIError is not None and isinstance(exc, APIError):
+        error_code = getattr(exc, "code", None)
         message = getattr(exc, "message", None) or str(exc)
-        return AnthropicProviderError(f"anthropic request failed: {message}")
+        return AnthropicProviderError(f"anthropic request failed: {message}", error_code=error_code)
 
     return AnthropicProviderError("anthropic request failed")

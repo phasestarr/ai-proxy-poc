@@ -15,6 +15,7 @@ export type TranscriptMessage = {
   status?: MessageStatus;
   completionNote?: string;
   detail?: string;
+  resultCode?: string | null;
   excludedFromRequest?: boolean;
 };
 
@@ -85,7 +86,7 @@ export function appendAssistantDelta(
 export function completeAssistantMessage(
   messages: TranscriptMessage[],
   assistantMessageId: number,
-  completionNote: string,
+  resultMessage: string,
   finishReason: string | null,
 ): TranscriptMessage[] {
   return messages.map((message) =>
@@ -93,7 +94,8 @@ export function completeAssistantMessage(
       ? {
           ...message,
           status: "done",
-          completionNote,
+          completionNote: resultMessage,
+          resultCode: "success",
           detail: finishReason ? `finish reason: ${finishReason}` : undefined,
         }
       : message,
@@ -116,8 +118,9 @@ export function excludeFailedExchange(
         ? {
             ...message,
             detail,
-            content: message.content || "An error happened while processing your request.",
+            content: message.content,
             status: "error",
+            resultCode: null,
             excludedFromRequest: true,
           }
         : message,
@@ -165,11 +168,11 @@ function mapHistoryMessageToTranscriptMessage(
   message: ChatHistoryMessage,
   id: number,
 ): TranscriptMessage {
-  const status = message.status === "streaming" ? "error" : message.status;
+  const status = message.status;
   const detail =
+    message.resultMessage ??
     message.errorDetail ??
-    (message.finishReason ? `finish reason: ${message.finishReason}` : undefined) ??
-    (message.status === "streaming" ? "Incomplete response." : undefined);
+    (message.finishReason ? `finish reason: ${message.finishReason}` : undefined);
 
   return {
     id,
@@ -183,8 +186,9 @@ function mapHistoryMessageToTranscriptMessage(
           }
         : undefined,
     status: message.role === "assistant" ? status : undefined,
-    detail,
+    completionNote: message.role === "assistant" && message.status === "done" ? message.resultMessage ?? undefined : undefined,
+    detail: message.role === "assistant" && status === "error" ? detail : undefined,
+    resultCode: message.resultCode,
     excludedFromRequest: message.excludedFromContext || message.status === "streaming",
   };
 }
-

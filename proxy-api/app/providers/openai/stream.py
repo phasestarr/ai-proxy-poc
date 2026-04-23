@@ -31,6 +31,17 @@ logger = logging.getLogger("uvicorn.error")
 class OpenAIProviderError(RuntimeError):
     """Raised when an OpenAI request fails while streaming."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.error_code = error_code
+        super().__init__(message)
+
 
 async def stream_openai_chat_completion(
     *,
@@ -85,12 +96,17 @@ def _map_openai_exception(exc: Exception) -> OpenAIProviderError:
 
     if APIStatusError is not None and isinstance(exc, APIStatusError):
         status_code = getattr(exc, "status_code", None)
+        error_code = getattr(exc, "code", None)
         message = getattr(exc, "message", None) or str(exc)
-        return OpenAIProviderError(f"openai request failed ({status_code}): {message}")
+        return OpenAIProviderError(
+            f"openai request failed ({status_code}): {message}",
+            status_code=status_code,
+            error_code=error_code,
+        )
 
     if APIError is not None and isinstance(exc, APIError):
+        error_code = getattr(exc, "code", None)
         message = getattr(exc, "message", None) or str(exc)
-        return OpenAIProviderError(f"openai request failed: {message}")
+        return OpenAIProviderError(f"openai request failed: {message}", error_code=error_code)
 
     return OpenAIProviderError("openai request failed")
-

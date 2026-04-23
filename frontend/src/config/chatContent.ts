@@ -16,10 +16,6 @@ export const chatContentConfig = {
     { text: "Go ahead, ask the dumb question.", weight: 10 },
     { text: "Where else are you gonna find a pro like me?", weight: 10 },
   ],
-  completionNotes: [
-    { text: "Done! You got more questions?", weight: 10 },
-    { text: "Text generation completed", weight: 10 },
-  ],
 } as const;
 
 function pickWeightedItem<T extends { weight: number }>(items: readonly T[]): T {
@@ -40,8 +36,4 @@ function pickWeightedItem<T extends { weight: number }>(items: readonly T[]): T 
 
 export function getRandomWelcomeText(): string {
   return pickWeightedItem(chatContentConfig.welcomeTexts).text;
-}
-
-export function getRandomCompletionNote(): string {
-  return pickWeightedItem(chatContentConfig.completionNotes).text;
 }

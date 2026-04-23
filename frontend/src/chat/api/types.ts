@@ -11,8 +11,8 @@ export type ChatSelection = {
 };
 
 export type ChatStreamStart = {
-  model: string;
-  provider: string;
+  model: string | null;
+  provider: string | null;
   chatHistoryId: string;
   userMessageId: string;
   assistantMessageId: string;
@@ -38,7 +38,14 @@ export type ChatHistoryMessage = {
   provider: string | null;
   toolIds: string[];
   finishReason: string | null;
+  resultCode: string | null;
+  resultMessage: string | null;
+  errorOrigin: string | null;
+  errorHttpStatus: number | null;
+  providerErrorCode: string | null;
+  retryAfterSeconds: number | null;
   errorDetail: string | null;
+  completedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -49,8 +56,10 @@ export type ChatHistory = {
 };
 
 export type ChatStreamDone = {
-  model: string;
-  provider: string;
+  model: string | null;
+  provider: string | null;
+  resultCode: string;
+  resultMessage: string;
   finishReason: string | null;
   usage: {
     inputTokens: number | null;
@@ -68,4 +77,3 @@ export type StreamChatReplyOptions = {
   onDelta?: (deltaText: string) => void;
   onDone?: (event: ChatStreamDone) => void;
 };
-

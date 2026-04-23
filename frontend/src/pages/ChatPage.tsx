@@ -1,6 +1,6 @@
 import { FormEvent, startTransition, useEffect, useRef, useState } from "react";
 
-import { getRandomCompletionNote, getRandomWelcomeText } from "../config/chatContent";
+import { getRandomWelcomeText } from "../config/chatContent";
 import { AuthenticationRequiredError, SessionConflictError } from "../auth/authErrors";
 import type { AuthSession, SessionConflictInfo } from "../auth/authTypes";
 import {
@@ -227,7 +227,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
         },
         onDone: (completion) => {
           setMessages((current) =>
-            completeAssistantMessage(current, assistantMessageId, getRandomCompletionNote(), completion.finishReason),
+            completeAssistantMessage(current, assistantMessageId, completion.resultMessage, completion.finishReason),
           );
         },
       });

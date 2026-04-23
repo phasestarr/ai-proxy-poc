@@ -65,8 +65,8 @@ class ChatUsageSummary(BaseModel):
 
 
 class ChatStreamStartEvent(BaseModel):
-    model: str
-    provider: str
+    model: str | None = None
+    provider: str | None = None
     chat_history_id: str
     user_message_id: str
     assistant_message_id: str
@@ -77,13 +77,22 @@ class ChatStreamDeltaEvent(BaseModel):
 
 
 class ChatStreamDoneEvent(BaseModel):
-    model: str
-    provider: str
+    model: str | None = None
+    provider: str | None = None
+    result_code: str
+    result_message: str
     finish_reason: str | None = None
     usage: ChatUsageSummary | None = None
 
 
 class ChatStreamErrorEvent(BaseModel):
+    result_code: str
+    result_message: str
+    error_origin: str
+    error_http_status: int | None = None
+    provider: str | None = None
+    provider_error_code: str | None = None
+    retry_after_seconds: int | None = None
     detail: str
 
 
@@ -131,8 +140,15 @@ class ChatHistoryMessageView(BaseModel):
     provider: str | None = None
     tool_ids: list[str]
     finish_reason: str | None = None
+    result_code: str | None = None
+    result_message: str | None = None
+    error_origin: str | None = None
+    error_http_status: int | None = None
+    provider_error_code: str | None = None
+    retry_after_seconds: int | None = None
     error_detail: str | None = None
     usage: ChatHistoryUsageSummary | None = None
+    completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

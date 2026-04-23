@@ -411,6 +411,7 @@ Rules:
 - at least one `user` message is required
 - the last message must be a `user` message
 - when `chat_history_id` is present, the backend rebuilds provider context from stored non-error messages and treats the request's last user message as the new turn
+- after a turn is created, the backend owns provider execution and persists the final success or error outcome even if the browser SSE connection closes
 
 Response type:
 - `text/event-stream`
@@ -429,22 +430,23 @@ data: {"delta_text":"partial output"}
 
 ```text
 event: done
-data: {"model":"gemini-2.5-flash","provider":"vertex_ai","finish_reason":"STOP","usage":{"input_tokens":12,"output_tokens":34,"total_tokens":46}}
+data: {"model":"gemini-2.5-flash","provider":"vertex_ai","result_code":"success","result_message":"Response ready.","finish_reason":"STOP","usage":{"input_tokens":12,"output_tokens":34,"total_tokens":46}}
 ```
 
 ```text
 event: error
-data: {"detail":"vertex ai request failed"}
+data: {"result_code":"provider_rate_limited","result_message":"The selected provider is rate limiting requests.","error_origin":"provider","error_http_status":429,"provider":"vertex_ai","provider_error_code":"RESOURCE_EXHAUSTED","retry_after_seconds":null,"detail":"vertex ai request failed (429 RESOURCE_EXHAUSTED): quota exceeded"}
 ```
 
 Status codes:
-- `400`: invalid payload, unsupported model, unsupported tool selection
+- `400`: request validation that fails before a chat turn can be created
 - `401`: no valid session
 - `403`: missing capability
 - `404`: `chat_history_id` does not belong to the current user
-- `409`: chat already in progress for the same session, or auth session conflict
-- `429`: chat rate limit exceeded
-- `503`: Redis coordination unavailable or provider not configured
+- `409`: auth session conflict
+- `422`: schema validation failure, such as message content exceeding the request limit
+
+After a chat turn is created, request-in-progress, Redis rate-limit, provider-configuration, and provider-execution failures are returned as SSE `error` events and persisted on the assistant `chat_messages` row with `result_code`, `result_message`, `error_origin`, `error_http_status`, `provider_error_code`, and `retry_after_seconds`.
 
 ## Tool and Provider Notes
 - exposed hosted tool ids are model-specific and currently include `web_search`, `retrieval`, `code_execution`, and `url_context`

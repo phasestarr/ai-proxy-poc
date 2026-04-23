@@ -22,6 +22,9 @@ class PersistedChatTurn:
     history_id: str
     user_message_id: str
     assistant_message_id: str
+    model_id: str | None
+    provider: str | None
+    tool_ids: list[str]
     provider_messages: list[RequestChatMessage]
 
 
@@ -30,7 +33,7 @@ def persist_chat_turn_start(
     *,
     payload: ChatCompletionRequest,
     session: SessionContext,
-    route: ProviderRoute,
+    route: ProviderRoute | None = None,
 ) -> PersistedChatTurn:
     latest_user_message = payload.messages[-1]
     if latest_user_message.role != "user":
@@ -56,9 +59,9 @@ def persist_chat_turn_start(
         content=latest_user_message.content,
         status="done",
         excluded_from_context=False,
-        model_id=route.model.public_id,
-        provider=route.model.provider,
-        tool_ids=list(route.tool_ids),
+        model_id=route.model.public_id if route else payload.model_id,
+        provider=route.model.provider if route else None,
+        tool_ids=list(route.tool_ids if route else payload.tool_ids),
         created_at=now,
         updated_at=now,
     )
@@ -70,9 +73,9 @@ def persist_chat_turn_start(
         content="",
         status="streaming",
         excluded_from_context=False,
-        model_id=route.model.public_id,
-        provider=route.model.provider,
-        tool_ids=list(route.tool_ids),
+        model_id=route.model.public_id if route else payload.model_id,
+        provider=route.model.provider if route else None,
+        tool_ids=list(route.tool_ids if route else payload.tool_ids),
         created_at=now,
         updated_at=now,
     )
@@ -90,8 +93,30 @@ def persist_chat_turn_start(
         history_id=history.id,
         user_message_id=user_message.id,
         assistant_message_id=assistant_message.id,
+        model_id=route.model.public_id if route else payload.model_id,
+        provider=route.model.provider if route else None,
+        tool_ids=list(route.tool_ids if route else payload.tool_ids),
         provider_messages=provider_messages,
     )
+
+
+def persist_chat_turn_route(
+    db: Session,
+    *,
+    user_message_id: str,
+    assistant_message_id: str,
+    route: ProviderRoute,
+) -> None:
+    now = utc_now()
+    for message_id in (user_message_id, assistant_message_id):
+        message = db.get(ChatMessage, message_id)
+        if message is None:
+            continue
+        message.model_id = route.model.public_id
+        message.provider = route.model.provider
+        message.tool_ids = list(route.tool_ids)
+        message.updated_at = now
+    db.commit()
 
 
 def persist_chat_turn_success(
@@ -102,6 +127,8 @@ def persist_chat_turn_success(
     content: str,
     finish_reason: str | None,
     usage: ProviderUsageMetadata | None,
+    result_code: str,
+    result_message: str,
 ) -> None:
     now = utc_now()
     assistant_message = db.get(ChatMessage, assistant_message_id)
@@ -111,7 +138,10 @@ def persist_chat_turn_success(
     assistant_message.content = content
     assistant_message.status = "done"
     assistant_message.finish_reason = finish_reason
+    assistant_message.result_code = result_code
+    assistant_message.result_message = result_message
     assistant_message.usage = _serialize_usage(usage)
+    assistant_message.completed_at = now
     assistant_message.updated_at = now
     _touch_history(db, history_id=history_id, now=now)
     db.commit()
@@ -124,7 +154,13 @@ def persist_chat_turn_failure(
     user_message_id: str,
     assistant_message_id: str,
     content: str,
+    result_code: str,
+    result_message: str,
+    error_origin: str,
     detail: str,
+    error_http_status: int | None = None,
+    provider_error_code: str | None = None,
+    retry_after_seconds: int | None = None,
 ) -> None:
     now = utc_now()
     user_message = db.get(ChatMessage, user_message_id)
@@ -134,10 +170,17 @@ def persist_chat_turn_failure(
 
     assistant_message = db.get(ChatMessage, assistant_message_id)
     if assistant_message is not None:
-        assistant_message.content = content or "An error happened while processing your request."
+        assistant_message.content = content
         assistant_message.status = "error"
         assistant_message.excluded_from_context = True
+        assistant_message.result_code = result_code
+        assistant_message.result_message = result_message
+        assistant_message.error_origin = error_origin
+        assistant_message.error_http_status = error_http_status
+        assistant_message.provider_error_code = provider_error_code
+        assistant_message.retry_after_seconds = retry_after_seconds
         assistant_message.error_detail = detail
+        assistant_message.completed_at = now
         assistant_message.updated_at = now
 
     _touch_history(db, history_id=history_id, now=now)
@@ -195,4 +238,3 @@ def _serialize_usage(usage: ProviderUsageMetadata | None) -> dict | None:
         "output_tokens": usage.candidates_token_count,
         "total_tokens": usage.total_token_count,
     }
-

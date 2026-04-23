@@ -1,4 +1,4 @@
-import { readJson } from "../../api/http";
+import { getApiErrorMessage, readJson } from "../../api/http";
 import { AuthenticationRequiredError, SessionConflictError } from "../../auth/authErrors";
 import { readSseStream } from "../../services/sse";
 import type {
@@ -45,14 +45,12 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
       });
     }
 
-    const detail = payload?.detail ? payload.detail : "request failed";
-    throw new Error(`HTTP ${response.status}: ${detail}`);
+    throw new Error(getApiErrorMessage(response, payload, "request failed"));
   }
 
   if (!response.ok) {
     const payload = (await readJson(response)) as ChatCompletionApiError | null;
-    const detail = payload?.detail ? payload.detail : "request failed";
-    throw new Error(`HTTP ${response.status}: ${detail}`);
+    throw new Error(getApiErrorMessage(response, payload, "request failed"));
   }
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -84,7 +82,7 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
       }
       case "error": {
         const payload = JSON.parse(event.data) as ChatStreamErrorApiEvent;
-        throw new Error(payload.detail || "chat streaming failed");
+        throw new Error(payload.result_message || payload.detail || "chat streaming failed");
       }
       default:
         return;
@@ -97,4 +95,3 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
 
   return completion;
 }
-

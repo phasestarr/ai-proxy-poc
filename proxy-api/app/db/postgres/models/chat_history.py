@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config.time import utc_now
@@ -69,8 +69,15 @@ class ChatMessage(Base):
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tool_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     finish_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    result_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_origin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error_http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    retry_after_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

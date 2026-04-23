@@ -30,11 +30,7 @@ from app.schemas.chat import (
     ChatHistoryListEnvelope,
 )
 from app.services.chat.stream import (
-    ChatCoordinationUnavailableError,
     ChatHistoryUnavailableError,
-    ChatProviderUnavailableError,
-    ChatRateLimitExceededError,
-    ChatRequestInProgressError,
     create_chat_completion_stream,
 )
 from app.services.chat.errors import ChatHistoryNotFoundError
@@ -118,28 +114,6 @@ async def chat_completions(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    except ChatRequestInProgressError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="chat request already in progress",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
-    except ChatRateLimitExceededError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(exc),
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
-    except ChatCoordinationUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except ChatProviderUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
     except ChatHistoryUnavailableError as exc:

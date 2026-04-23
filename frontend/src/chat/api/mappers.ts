@@ -8,8 +8,8 @@ import type { ChatHistoryMessage, ChatHistorySummary, ChatStreamDone, ChatStream
 
 export function mapStartEvent(payload: ChatStreamStartApiEvent): ChatStreamStart {
   return {
-    model: payload.model,
-    provider: payload.provider,
+    model: payload.model ?? null,
+    provider: payload.provider ?? null,
     chatHistoryId: payload.chat_history_id,
     userMessageId: payload.user_message_id,
     assistantMessageId: payload.assistant_message_id,
@@ -18,8 +18,10 @@ export function mapStartEvent(payload: ChatStreamStartApiEvent): ChatStreamStart
 
 export function mapDoneEvent(payload: ChatStreamDoneApiEvent): ChatStreamDone {
   return {
-    model: payload.model,
-    provider: payload.provider,
+    model: payload.model ?? null,
+    provider: payload.provider ?? null,
+    resultCode: payload.result_code,
+    resultMessage: payload.result_message,
     finishReason: payload.finish_reason ?? null,
     usage: payload.usage
       ? {
@@ -54,9 +56,15 @@ export function mapHistoryMessage(payload: ChatHistoryMessageApiPayload): ChatHi
     provider: payload.provider ?? null,
     toolIds: payload.tool_ids,
     finishReason: payload.finish_reason ?? null,
+    resultCode: payload.result_code ?? null,
+    resultMessage: payload.result_message ?? null,
+    errorOrigin: payload.error_origin ?? null,
+    errorHttpStatus: payload.error_http_status ?? null,
+    providerErrorCode: payload.provider_error_code ?? null,
+    retryAfterSeconds: payload.retry_after_seconds ?? null,
     errorDetail: payload.error_detail ?? null,
+    completedAt: payload.completed_at ?? null,
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
   };
 }
-

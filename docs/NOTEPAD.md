@@ -38,6 +38,8 @@ Short reference for the current codebase.
 - `DELETE /api/v1/chat/histories/{id}` deletes the history and cascades messages
 - `POST /api/v1/chat/completions` auto-creates a history when `chat_history_id` is absent
 - SSE `start` returns `chat_history_id`, `user_message_id`, and `assistant_message_id`
+- SEND creates a backend-owned turn; provider execution continues even if the browser SSE connection closes
+- success and error outcome strings are backend-owned and stored as `result_code` and `result_message`
 - stream failures are persisted for rendering but marked `excluded_from_context=true`
 - future provider payload excludes failed/error messages
 
@@ -48,6 +50,7 @@ Transcript message shape in the UI:
 - role: `user | assistant`
 - each send creates one pending user message and one empty assistant placeholder
 - saved DB messages are mapped back into this local shape when a history is loaded
+- final success/error notes are rendered from DB-backed `result_message`
 - failed exchanges remain visible but are excluded from future request context
 
 Where it happens:

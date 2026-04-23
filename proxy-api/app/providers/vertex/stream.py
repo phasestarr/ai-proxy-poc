@@ -27,6 +27,17 @@ logger = logging.getLogger("uvicorn.error")
 class VertexProviderError(RuntimeError):
     """Raised when a Vertex AI request fails while streaming."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.error_code = error_code
+        super().__init__(message)
+
 
 async def stream_vertex_chat_completion(
     *,
@@ -75,7 +86,13 @@ def _map_vertex_exception(exc: Exception) -> VertexProviderError:
     else:
         if isinstance(exc, errors.APIError):
             detail = _format_vertex_api_error(exc)
-            return VertexProviderError(detail)
+            code = getattr(exc, "code", None)
+            status = getattr(exc, "status", None)
+            return VertexProviderError(
+                detail,
+                status_code=code if isinstance(code, int) else None,
+                error_code=str(status) if status else None,
+            )
 
     return VertexProviderError("vertex ai request failed")
 

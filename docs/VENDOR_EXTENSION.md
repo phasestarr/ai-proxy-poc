@@ -1,356 +1,291 @@
 # Vendor Extension Guide
 
-현재 구조에서 모델, tool, vendor를 추가하거나 변경할 때 어디를 수정해야 하는지 정리한 문서다.
+This guide explains where to change the code when adding or modifying models,
+tools, or providers.
 
-## 핵심 원칙
-- 프런트는 provider 내부 구현을 모른다.
-- `/api/v1/models`가 프런트의 단일 소스 오브 트루스다.
-- 공통 레이어는 public model id, provider id, display name, available, tools만 안다.
-- provider-native 정보는 각 provider 패키지 안에만 둔다.
-- 실제 SDK 호출 세부사항은 각 provider의 `stream.py`, `client.py`, `config.py`, `tools.py`, `functions.py`, `mapper.py`가 책임진다.
+## Principles
 
-## 현재 경계
+- The frontend does not know provider internals.
+- `GET /api/v1/models` is the frontend source of truth for model and tool choices.
+- Shared provider code only knows public model ids, provider ids, display names,
+  availability, and exposed tool ids.
+- Provider-native request details stay inside `proxy-api/app/providers/<provider>/`.
+- SDK client creation, request assembly, tool payloads, response mapping, and
+  provider error handling belong to the provider package.
+- Chat outcome strings are backend-owned. Success messages and error messages
+  are selected in `proxy-api/app/config/chat_outcomes.py` and persisted on
+  `chat_messages`.
 
-공통 레이어:
+## Package Boundaries
+
+Shared provider layer:
+
 - `proxy-api/app/providers/types.py`
-  - 공통 dataclass 정의
+  - shared dataclasses for models, tools, routes, stream chunks, and usage
 - `proxy-api/app/providers/catalog.py`
-  - public model 목록 노출
-  - 요청 `model_id`, `tool_ids` 검증
-  - `ProviderRoute` 생성
+  - exposes the public model catalog
+  - validates requested `model_id` and `tool_ids`
+  - creates `ProviderRoute`
 - `proxy-api/app/providers/dispatcher.py`
-  - provider별 readiness 확인
-  - provider별 stream 함수 호출
+  - checks provider readiness
+  - dispatches stream execution to Vertex, OpenAI, or Anthropic
+  - maps provider errors into shared execution errors
+
+Chat orchestration layer:
+
 - `proxy-api/app/services/chat/stream.py`
-  - SSE start/delta/done/error 이벤트 생성
-- `proxy-api/app/services/chat/history_queries.py`
-  - chat history 생성/조회/삭제
+  - creates backend-owned chat turns
+  - starts background provider execution
+  - emits live SSE events when the browser is still connected
+  - persists final success or error outcomes
 - `proxy-api/app/services/chat/turns.py`
-  - user/assistant turn 저장 및 성공/실패 상태 반영
+  - stores user/assistant messages
+  - updates assistant rows with final content, result code, result message,
+    usage, finish reason, and structured error fields
 - `proxy-api/app/services/chat/provider_context.py`
-  - 기존 history의 provider context 재구성
+  - rebuilds provider context from stored non-error messages
+- `proxy-api/app/services/chat/history_queries.py`
+  - lists, loads, creates, and deletes chat histories
 
-Vertex 내부 레이어:
-- `proxy-api/app/providers/vertex/models.py`
-  - public model id -> Vertex runtime model id, location, supported tools
-- `proxy-api/app/providers/vertex/client.py`
-  - `google.genai.Client(vertexai=True, ...)` 생성
-- `proxy-api/app/providers/vertex/config.py`
-  - provider request config 조립
-  - system instruction, hosted tools, function scaffold, provider defaults 결합
-- `proxy-api/app/providers/vertex/stream.py`
-  - Vertex runtime model 해석
-  - contents 조립
-  - `generate_content_stream(...)` 호출
-- `proxy-api/app/providers/vertex/mapper.py`
-  - 공통 chat message -> Vertex `contents`
-  - Vertex chunk -> 공통 stream chunk
-- `proxy-api/app/providers/vertex/tools.py`
-  - backend hosted tool id -> Vertex tool payload
-  - current hosted mappings include `google_search`, `retrieval.vertex_rag_store`, `code_execution`, and `url_context`
-- `proxy-api/app/providers/vertex/functions.py`
-  - future custom function declaration payload scaffold
+Frontend integration points:
 
-OpenAI 내부 레이어:
-- `proxy-api/app/providers/openai/models.py`
-  - public model id -> OpenAI Responses API runtime model id, supported tools
-- `proxy-api/app/providers/openai/client.py`
-  - `AsyncOpenAI(...)` 생성
-- `proxy-api/app/providers/openai/config.py`
-  - Responses API request kwargs 조립
-  - instructions, input, hosted tools, provider defaults 결합
-- `proxy-api/app/providers/openai/stream.py`
-  - OpenAI runtime model 해석
-  - `responses.create(..., stream=True)` 호출
-- `proxy-api/app/providers/openai/mapper.py`
-  - 공통 chat message -> OpenAI `input`
-  - OpenAI stream event -> 공통 stream chunk
-- `proxy-api/app/providers/openai/tools.py`
-  - backend hosted tool id -> OpenAI Responses API tool payload
-  - current hosted mappings include `web_search`, `file_search`, and `code_interpreter`
-
-Anthropic 내부 레이어:
-- `proxy-api/app/providers/anthropic/models.py`
-  - public model id -> Anthropic Messages API runtime model id, supported tools
-- `proxy-api/app/providers/anthropic/client.py`
-  - `AsyncAnthropic(...)` 생성
-- `proxy-api/app/providers/anthropic/config.py`
-  - Messages API request kwargs 조립
-  - system, messages, hosted tools, max token defaults 결합
-- `proxy-api/app/providers/anthropic/stream.py`
-  - Anthropic runtime model 해석
-  - `beta.messages.create(..., stream=True)` 호출
-- `proxy-api/app/providers/anthropic/mapper.py`
-  - 공통 chat message -> Anthropic `system` + `messages`
-  - Anthropic stream event -> 공통 stream chunk
-- `proxy-api/app/providers/anthropic/tools.py`
-  - backend hosted tool id -> Anthropic Messages API tool payload
-  - current hosted mappings include `web_search_20250305` and `code_execution_20250825`
-
-프런트:
 - `frontend/src/chat/api/modelApi.ts`
-  - `/api/v1/models` 응답 파싱
+  - parses `/api/v1/models`
+- `frontend/src/chat/api/streamChatApi.ts`
+  - sends chat requests and reads SSE events
 - `frontend/src/pages/ChatPage.tsx`
-  - chat page 상태와 submit 흐름 조립
-- `frontend/src/pages/chat/hooks/useChatModelSelection.ts`
-  - 모델 목록 로드
-  - 모델별 tool 목록 재계산
+  - coordinates submit, live deltas, and history refresh
+- `frontend/src/pages/chat/state/transcript.ts`
+  - maps persisted messages into the local transcript shape
 - `frontend/src/pages/chat/components/Composer.tsx`
-  - 모델/tool 선택 UI 렌더링
-  - 선택한 `model_id`, `tool_ids`를 서버로 전송
+  - renders model and tool selection
 
-## SDK 요청 조립 흐름
+## Provider Packages
 
-실제 요청이 조립되는 흐름은 아래 순서다.
+Vertex:
 
-1. `frontend`가 `chat_history_id`, `model_id`, `tool_ids`, `messages`를 보낸다.
-2. `proxy-api/app/services/chat/preparation.py`
-   - 요청 스키마 검증 후 `ProviderRoute`를 만든다.
-3. `proxy-api/app/providers/catalog.py`
-   - public model id를 찾고
-   - 해당 모델에서 허용된 tool id만 통과시킨다.
-4. `proxy-api/app/providers/dispatcher.py`
-   - `route.model.provider`를 보고 알맞은 provider로 보낸다.
-5. `proxy-api/app/services/chat/turns.py`
-   - user/assistant turn을 저장한다.
-6. `proxy-api/app/services/chat/provider_context.py`
-   - `chat_history_id`가 있으면 PostgreSQL의 기존 non-error messages로 provider context를 다시 만든다.
-7. 선택된 provider의 `stream.py`
-   - `route.model.public_id`로 provider runtime spec을 찾는다.
-   - runtime model id와 provider-specific execution settings를 결정한다.
-8. 선택된 provider의 `client.py`
-   - SDK client를 만든다.
-9. 선택된 provider의 `mapper.py`
-   - 내부 `messages`를 provider-native message/input payload로 바꾼다.
-10. 선택된 provider의 `config.py`
-   - system instruction과 provider config를 조립한다.
-11. 선택된 provider의 `tools.py`
-   - 선택된 hosted tool id를 provider-native tool payload로 바꾼다.
-12. 선택된 provider의 `stream.py`
-   - provider SDK streaming API를 호출한다.
-13. 선택된 provider의 `mapper.py`
-   - provider stream chunk/event를 공통 chunk로 바꾼다.
-14. `proxy-api/app/services/chat/stream.py`
-   - SSE 이벤트로 감싸서 클라이언트에 스트리밍한다.
-
-즉 "실제 SDK 요청을 누가 조립하느냐"를 짧게 말하면:
-- 모델별 실행 스펙 선택: `<provider>/models.py`
-- SDK client 생성: `<provider>/client.py`
-- provider config 조립: `<provider>/config.py`
-- hosted tool payload 변환: `<provider>/tools.py`
-- future function payload scaffold: `vertex/functions.py`
-- SDK 호출: `<provider>/stream.py`
-- 메시지와 chunk 변환: `<provider>/mapper.py`
-
-## 새 Vertex 모델 추가
-
-기존 Vertex provider 안에 Gemini 같은 새 모델을 추가할 때 기본 수정 지점은 아래다.
-
-1. `proxy-api/app/providers/vertex/models.py`
-   - `_VERTEX_MODELS`에 새 항목 추가
-   - `public_id`
-   - `provider_model`
-   - `display_name`
-   - `location`
-   - `available`
-   - `supported_tools`
-2. 필요하면 `docs/API.md`, `README.md` 업데이트
-3. 모델 특이점이 있으면 `proxy-api/app/providers/vertex/stream.py` 수정
-   - 예: 특정 모델만 다른 config 필요
-4. 모델 특이 hosted tool payload가 있으면 `proxy-api/app/providers/vertex/tools.py` 수정
-
-대부분의 단순 모델 추가는 `vertex/models.py`만 바꾸면 끝난다.
-
-## 기존 Vertex 모델 순서 변경
-
-프런트에 보이는 모델 순서는 현재 `list_vertex_models()`가 반환하는 순서를 그대로 따른다.
-
-지금 구현에서는:
-- `proxy-api/app/providers/vertex/models.py`의 `_VERTEX_MODELS` 순서
-- `proxy-api/app/providers/catalog.py`의 `list_available_models()` 순서
-
-가 그대로 `/api/v1/models` 응답 순서가 된다.
-
-그래서 `gemini-3-flash-preview`를 맨 위로 올리고 싶으면 현재 기준으로는 `_VERTEX_MODELS`에서 그 항목 순서만 바꾸면 된다.
-
-전제:
-- 다른 곳에서 별도 정렬을 하지 않아야 한다.
-- 지금 코드에는 추가 정렬이 없다.
-
-## 새 Vertex tool 추가
-
-Vertex 모델에만 붙는 새 tool을 추가할 때는 아래 순서로 본다.
-
-1. `proxy-api/app/providers/vertex/models.py`
-   - 새 `ProviderToolDefinition` 추가
-   - 어떤 모델에 노출할지 `supported_tools`에 연결
-2. `proxy-api/app/providers/vertex/tools.py`
-   - public hosted tool id -> Vertex payload builder 추가
-3. 필요하면 `proxy-api/app/config/providers/vertex.py`
-   - tool용 env/config 추가
-4. provider request default를 바꾸려면 `proxy-api/app/providers/vertex/config.py`
-   - system instruction 외 provider config 조립
-5. 필요하면 `docs/ENVIRONMENT.md`
-   - 새 env 문서화
-
-중요:
-- tool은 전역 공통 개념이 아니다.
-- 모델 종속으로 본다.
-- 어떤 tool이 보일지는 각 모델의 `supported_tools`가 결정한다.
-
-## 새 OpenAI 모델 추가
-
-기존 OpenAI provider 안에 새 모델을 추가할 때 기본 수정 지점은 아래다.
-
-1. `proxy-api/app/providers/openai/models.py`
-   - `_OPENAI_MODELS`에 새 항목 추가
-   - `public_id`
-   - `provider_model`
-   - `display_name`
-   - `available`
-   - `supported_tools`
-2. 필요하면 `docs/API.md`, `README.md` 업데이트
-3. 모델 특이 Responses API request config가 있으면 `proxy-api/app/providers/openai/config.py` 수정
-4. 모델 특이 hosted tool payload가 있으면 `proxy-api/app/providers/openai/tools.py` 수정
-
-## 새 OpenAI tool 추가
-
-OpenAI Responses API hosted tool을 추가할 때는 아래 순서로 본다.
-
-1. `proxy-api/app/providers/openai/models.py`
-   - 새 `ProviderToolDefinition` 추가
-   - 어떤 모델에 노출할지 `supported_tools`에 연결
-2. `proxy-api/app/providers/openai/tools.py`
-   - public hosted tool id -> OpenAI tool payload builder 추가
-3. 필요하면 `proxy-api/app/config/providers/openai.py`
-   - tool용 env/config 추가
-4. provider request default를 바꾸려면 `proxy-api/app/providers/openai/config.py`
-5. 필요하면 `docs/ENVIRONMENT.md`
-
-## 새 Anthropic 모델 추가
-
-기존 Anthropic provider 안에 새 모델을 추가할 때 기본 수정 지점은 아래다.
-
-1. `proxy-api/app/providers/anthropic/models.py`
-   - `_ANTHROPIC_MODELS`에 새 항목 추가
-   - `public_id`
-   - `provider_model`
-   - `display_name`
-   - `available`
-   - `supported_tools`
-2. 필요하면 `docs/API.md`, `README.md` 업데이트
-3. 모델 특이 Messages API request config가 있으면 `proxy-api/app/providers/anthropic/config.py` 수정
-4. 모델 특이 hosted tool payload가 있으면 `proxy-api/app/providers/anthropic/tools.py` 수정
-
-## 새 Anthropic tool 추가
-
-Anthropic Messages API hosted tool을 추가할 때는 아래 순서로 본다.
-
-1. `proxy-api/app/providers/anthropic/models.py`
-   - 새 `ProviderToolDefinition` 추가
-   - 어떤 모델에 노출할지 `supported_tools`에 연결
-2. `proxy-api/app/providers/anthropic/tools.py`
-   - public hosted tool id -> Anthropic tool payload builder 추가
-   - 필요한 beta header가 있으면 같은 파일에서 관리
-3. 필요하면 `proxy-api/app/config/providers/anthropic.py`
-   - tool용 env/config 추가
-4. provider request default를 바꾸려면 `proxy-api/app/providers/anthropic/config.py`
-5. 필요하면 `docs/ENVIRONMENT.md`
-
-## 새 vendor 추가
-
-새 provider를 처음 추가할 때는 공통 레이어와 provider 레이어를 같이 만든다.
-
-필수 작업:
-1. `proxy-api/app/providers/<provider>/` 디렉터리 생성
-2. `<provider>/provider.py`
-   - 공개 entry point 작성
-3. `<provider>/client.py`
-   - SDK client 생성 책임 분리
-4. `<provider>/stream.py`
-   - 실제 SDK 호출 구현
-5. 필요하면 `<provider>/models.py`
-   - provider 내부 runtime model metadata 관리
-6. 필요하면 `<provider>/mapper.py`
-   - 공통 요청/응답 <-> provider payload 변환
-7. 필요하면 `<provider>/tools.py`
-   - provider-native tool payload 조립
-8. `proxy-api/app/providers/dispatcher.py`
-   - readiness branch 추가
-   - stream branch 추가
-9. `proxy-api/app/providers/catalog.py`
-   - public model 목록에 새 provider 모델 노출
-
-공통 타입을 늘릴지 말지는 마지막에 판단한다.
-provider 내부에서만 해결 가능한 정보는 공통 타입에 올리지 않는다.
-
-## 새 vendor의 새 모델 추가
-
-이미 provider가 있는 상태에서 그 vendor의 모델만 추가한다면 보통 수정 범위는 작다.
-
-예상 수정 지점:
-- `<provider>/models.py` 또는 `<provider>/provider.py`
-- 필요한 경우만 `<provider>/stream.py`
-- 문서
-
-공통 레이어 수정이 필요한 경우:
-- `/api/v1/models` 응답 스키마 자체가 바뀔 때
-- 공통 `ProviderRoute` 정보가 정말 늘어나야 할 때
-
-그 외에는 공통 레이어를 건드리지 않는 쪽이 맞다.
-
-## 새 vendor의 새 tool 추가
-
-새 vendor가 자기 전용 tool을 갖는다면 그 tool은 그 vendor 패키지 안에서 정의하고 조립한다.
-
-예상 수정 지점:
-- `<provider>/models.py` 또는 `<provider>/provider.py`
-- `<provider>/tools.py`
-- 필요 시 `<provider>/stream.py`
-
-프런트는 `/api/v1/models`에 그 tool이 보이면 렌더링만 한다.
-
-## 체크리스트
-
-모델 추가 후:
-- `/api/v1/models`에 노출되는지 확인
-- 선택 가능한 tool 목록이 맞는지 확인
-- 실제 provider 호출이 성공하는지 확인
-- 문서가 현재 public model ids와 맞는지 확인
-
-tool 추가 후:
-- 잘못된 모델에서 선택 불가능한지 확인
-- provider payload가 기대한 모양인지 확인
-- 필요한 env/config가 빠지지 않았는지 확인
-
-vendor 추가 후:
-- readiness 실패 메시지가 분리되어 있는지 확인
-- dispatcher branch가 연결됐는지 확인
-- stream error가 공통 에러로 매핑되는지 확인
-
-## 현재 Vertex 모델 위치
-
-현재 Vertex public model 목록과 실행 스펙은 여기서 관리한다:
 - `proxy-api/app/providers/vertex/models.py`
-
-현재 Vertex SDK 호출 진입점은 여기다:
+  - public model id to Vertex runtime model id, location, and supported tools
+- `proxy-api/app/providers/vertex/client.py`
+  - `google.genai.Client(vertexai=True, ...)`
+- `proxy-api/app/providers/vertex/config.py`
+  - `GenerateContentConfig` assembly
 - `proxy-api/app/providers/vertex/stream.py`
+  - runtime model resolution
+  - `generate_content_stream(...)`
+  - Vertex API error mapping
+- `proxy-api/app/providers/vertex/mapper.py`
+  - internal chat messages to Vertex contents
+  - Vertex chunks to shared stream chunks
+- `proxy-api/app/providers/vertex/tools.py`
+  - backend tool ids to Vertex hosted tool payloads
+- `proxy-api/app/providers/vertex/functions.py`
+  - custom function declaration scaffold
 
-## 현재 OpenAI 모델 위치
+OpenAI:
 
-현재 OpenAI public model 목록과 실행 스펙은 여기서 관리한다:
 - `proxy-api/app/providers/openai/models.py`
-
-현재 OpenAI Responses API 호출 진입점은 여기다:
+  - public model id to OpenAI Responses API runtime model id and supported tools
+- `proxy-api/app/providers/openai/client.py`
+  - `AsyncOpenAI(...)`
+- `proxy-api/app/providers/openai/config.py`
+  - Responses API request kwargs assembly
 - `proxy-api/app/providers/openai/stream.py`
+  - `responses.create(..., stream=True)`
+  - OpenAI API error mapping
+- `proxy-api/app/providers/openai/mapper.py`
+  - internal chat messages to OpenAI input
+  - OpenAI events to shared stream chunks
+- `proxy-api/app/providers/openai/tools.py`
+  - backend tool ids to OpenAI hosted tools
 
-## 현재 Anthropic 모델 위치
+Anthropic:
 
-현재 Anthropic public model 목록과 실행 스펙은 여기서 관리한다:
 - `proxy-api/app/providers/anthropic/models.py`
-
-현재 Anthropic Messages API 호출 진입점은 여기다:
+  - public model id to Anthropic Messages API runtime model id and supported tools
+- `proxy-api/app/providers/anthropic/client.py`
+  - `AsyncAnthropic(...)`
+- `proxy-api/app/providers/anthropic/config.py`
+  - Messages API request kwargs assembly
 - `proxy-api/app/providers/anthropic/stream.py`
+  - `beta.messages.create(..., stream=True)`
+  - Anthropic API error mapping
+- `proxy-api/app/providers/anthropic/mapper.py`
+  - internal chat messages to Anthropic system/messages payload
+  - Anthropic events to shared stream chunks
+- `proxy-api/app/providers/anthropic/tools.py`
+  - backend tool ids to Anthropic hosted tools and beta headers
 
-현재 SSE 응답 조립은 여기다:
-- `proxy-api/app/services/chat/stream.py`
+## Chat Request Flow
+
+1. The frontend sends `chat_history_id`, `model_id`, `tool_ids`, and `messages`.
+2. `services/chat/turns.py` creates a user message and an assistant placeholder.
+3. `services/chat/stream.py` starts a background task for provider execution.
+4. `services/chat/preparation.py` resolves `model_id` and `tool_ids`.
+5. `providers/catalog.py` validates the public model and selected tools.
+6. `services/chat/turns.py` updates the persisted turn with the resolved route.
+7. `db/redis/chat_coordination.py` enforces one in-flight request per session and
+   per-user rate limits.
+8. `providers/dispatcher.py` checks provider readiness and dispatches execution.
+9. The selected provider package maps messages, config, tools, and SDK calls.
+10. Provider chunks are normalized into shared stream chunks.
+11. `services/chat/stream.py` emits live SSE deltas to connected clients.
+12. On success, the assistant row is updated with content, usage, finish reason,
+    `result_code="success"`, and a backend-selected `result_message`.
+13. On failure, the assistant row is updated with `status="error"`,
+    `result_code`, `result_message`, `error_origin`, provider/status metadata,
+    and `excluded_from_context=true`.
+
+If the browser disconnects after the turn is created, provider execution continues
+in the backend and the final outcome is still persisted.
+
+## Adding A Model
+
+For an existing provider, most model additions only touch the provider's
+`models.py`.
+
+Vertex:
+
+1. Add an entry to `_VERTEX_MODELS` in `proxy-api/app/providers/vertex/models.py`.
+2. Set `public_id`, `provider_model`, `display_name`, `location`, `available`,
+   and `supported_tools`.
+3. Update `docs/API.md` and `README.md` if the public catalog changes.
+4. Only change `vertex/stream.py`, `vertex/config.py`, or `vertex/tools.py` when
+   the model needs special runtime behavior.
+
+OpenAI:
+
+1. Add an entry to `_OPENAI_MODELS` in `proxy-api/app/providers/openai/models.py`.
+2. Set `public_id`, `provider_model`, `display_name`, `available`, and
+   `supported_tools`.
+3. Update docs if the public catalog changes.
+4. Only change OpenAI config/stream/tool files when the model needs special
+   request assembly.
+
+Anthropic:
+
+1. Add an entry to `_ANTHROPIC_MODELS` in
+   `proxy-api/app/providers/anthropic/models.py`.
+2. Set `public_id`, `provider_model`, `display_name`, `available`, and
+   `supported_tools`.
+3. Update docs if the public catalog changes.
+4. Only change Anthropic config/stream/tool files when the model needs special
+   request assembly.
+
+## Changing Model Order
+
+The frontend shows models in the order returned by `GET /api/v1/models`.
+
+Current order comes from:
+
+- provider model tuple order in each provider's `models.py`
+- provider concatenation order in `proxy-api/app/providers/catalog.py`
+
+There is no extra frontend sort. To move a model higher in the UI, move it higher
+in the backend catalog.
+
+## Adding A Tool
+
+Tools are model-specific, not global.
+
+For an existing provider:
+
+1. Add a `ProviderToolDefinition` in the provider's `models.py`.
+2. Add it to `supported_tools` only for models that should expose it.
+3. Add a backend tool-id to provider-native payload builder in the provider's
+   `tools.py`.
+4. Add provider settings in `proxy-api/app/config/providers/<provider>.py` if the
+   tool needs env-backed configuration.
+5. Update `docs/ENVIRONMENT.md` if new env vars are added.
+
+The frontend only renders tools returned from `/api/v1/models`.
+
+## Adding A Provider
+
+Create a new provider package under `proxy-api/app/providers/<provider>/`.
+
+Minimum files:
+
+1. `provider.py`
+   - public entry points for catalog and dispatcher imports
+2. `client.py`
+   - SDK client construction and readiness checks
+3. `stream.py`
+   - SDK streaming call and provider error mapping
+4. `models.py`
+   - provider runtime model metadata
+5. `mapper.py`
+   - internal messages to provider payloads and provider events to shared chunks
+6. `tools.py`
+   - provider-native hosted tool payloads, if supported
+
+Shared-layer changes:
+
+1. Add readiness and stream branches in `proxy-api/app/providers/dispatcher.py`.
+2. Add provider model listing to `proxy-api/app/providers/catalog.py`.
+3. Add provider config under `proxy-api/app/config/providers/` if needed.
+4. Update docs and env documentation.
+
+Only extend shared provider dataclasses when information truly has to cross
+provider boundaries. Provider-native details should stay inside the provider
+package.
+
+## Error Mapping
+
+Provider stream modules should preserve enough metadata for the dispatcher and
+chat layer to classify failures.
+
+Expected mapping targets:
+
+- provider 429 -> `provider_rate_limited`
+- provider 401/403 -> `provider_auth_failed`
+- provider 4xx -> `provider_bad_request`
+- provider 5xx/network -> `provider_unavailable`
+- provider unknown -> `provider_failed`
+- proxy/provider tool configuration -> `provider_not_configured`
+
+The persisted assistant row should carry:
+
+- `result_code`
+- `result_message`
+- `error_origin`
+- `error_http_status`
+- `provider_error_code`
+- `retry_after_seconds`
+- `error_detail`
+
+## Checklists
+
+After adding a model:
+
+- Confirm it appears in `GET /api/v1/models`.
+- Confirm unavailable models cannot be selected.
+- Confirm supported tools are correct for that model.
+- Run an actual provider request.
+- Update docs that list public model ids.
+
+After adding a tool:
+
+- Confirm it appears only on supported models.
+- Confirm unsupported selections fail before provider execution.
+- Confirm provider-native payload shape is valid.
+- Confirm required env/config is documented.
+
+After adding a provider:
+
+- Confirm readiness failures are provider-specific.
+- Confirm dispatcher branches are connected.
+- Confirm provider errors map into structured chat outcomes.
+- Confirm final success/error outcomes are persisted in `chat_messages`.
+
+## Current Runtime Entry Points
+
+- Vertex models: `proxy-api/app/providers/vertex/models.py`
+- Vertex SDK call: `proxy-api/app/providers/vertex/stream.py`
+- OpenAI models: `proxy-api/app/providers/openai/models.py`
+- OpenAI SDK call: `proxy-api/app/providers/openai/stream.py`
+- Anthropic models: `proxy-api/app/providers/anthropic/models.py`
+- Anthropic SDK call: `proxy-api/app/providers/anthropic/stream.py`
+- Shared SSE/background orchestration: `proxy-api/app/services/chat/stream.py`
+- Persisted chat turns and outcomes: `proxy-api/app/services/chat/turns.py`
+- Outcome message catalog: `proxy-api/app/config/chat_outcomes.py`

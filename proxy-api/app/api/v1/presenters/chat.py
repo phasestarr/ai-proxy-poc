@@ -34,9 +34,15 @@ def build_chat_history_message_view(message) -> ChatHistoryMessageView:
         provider=message.provider,
         tool_ids=list(message.tool_ids or []),
         finish_reason=message.finish_reason,
+        result_code=message.result_code,
+        result_message=message.result_message,
+        error_origin=message.error_origin,
+        error_http_status=message.error_http_status,
+        provider_error_code=message.provider_error_code,
+        retry_after_seconds=message.retry_after_seconds,
         error_detail=message.error_detail,
         usage=usage,
+        completed_at=message.completed_at,
         created_at=message.created_at,
         updated_at=message.updated_at,
     )
-

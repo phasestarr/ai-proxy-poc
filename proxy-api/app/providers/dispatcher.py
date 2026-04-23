@@ -43,6 +43,19 @@ class ProviderConfigurationError(RuntimeError):
 class ProviderExecutionError(RuntimeError):
     """Raised when a provider request fails during execution."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        status_code: int | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        self.provider = provider
+        self.status_code = status_code
+        self.error_code = error_code
+        super().__init__(message)
+
 
 def ensure_provider_ready(*, provider: str) -> None:
     try:
@@ -99,10 +112,28 @@ async def stream_provider_chat_completion(
                 yield chunk
             return
     except VertexProviderError as exc:
-        raise ProviderExecutionError(str(exc)) from exc
+        raise ProviderExecutionError(
+            str(exc),
+            provider=VERTEX_PROVIDER_ID,
+            status_code=exc.status_code,
+            error_code=exc.error_code,
+        ) from exc
     except OpenAIProviderError as exc:
-        raise ProviderExecutionError(str(exc)) from exc
+        raise ProviderExecutionError(
+            str(exc),
+            provider=OPENAI_PROVIDER_ID,
+            status_code=exc.status_code,
+            error_code=exc.error_code,
+        ) from exc
     except AnthropicProviderError as exc:
-        raise ProviderExecutionError(str(exc)) from exc
+        raise ProviderExecutionError(
+            str(exc),
+            provider=ANTHROPIC_PROVIDER_ID,
+            status_code=exc.status_code,
+            error_code=exc.error_code,
+        ) from exc
 
-    raise ProviderExecutionError(f"provider is not configured: {route.model.provider}")
+    raise ProviderExecutionError(
+        f"provider is not configured: {route.model.provider}",
+        provider=route.model.provider,
+    )
