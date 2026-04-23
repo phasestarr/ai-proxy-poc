@@ -6,11 +6,10 @@ Purpose:
 """
 
 from app.db.postgres.base import Base
-from app.db.postgres.session import SessionLocal, engine, init_database
+from app.db.postgres.session import SessionLocal, engine
 
 __all__ = [
     "Base",
     "SessionLocal",
     "engine",
-    "init_database",
 ]

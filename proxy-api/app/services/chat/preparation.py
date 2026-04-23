@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from app.providers.catalog import resolve_provider_route
 from app.providers.types import ProviderRoute
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
-from app.services.auth import SessionContext
+from app.auth.types import SessionContext
 
 
 @dataclass(slots=True, frozen=True)

@@ -13,6 +13,7 @@ Notes:
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -32,6 +33,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
+    chat_history_id: str | None = Field(default=None, min_length=1, max_length=36)
     model_id: str | None = Field(default=None, min_length=1)
     tool_ids: list[str] = Field(default_factory=list, max_length=16)
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=100)
@@ -65,6 +67,9 @@ class ChatUsageSummary(BaseModel):
 class ChatStreamStartEvent(BaseModel):
     model: str
     provider: str
+    chat_history_id: str
+    user_message_id: str
+    assistant_message_id: str
 
 
 class ChatStreamDeltaEvent(BaseModel):
@@ -80,3 +85,58 @@ class ChatStreamDoneEvent(BaseModel):
 
 class ChatStreamErrorEvent(BaseModel):
     detail: str
+
+
+class ChatHistoryCreateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("title must not be blank")
+        return trimmed
+
+
+class ChatHistorySummary(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    last_message_at: datetime | None = None
+    message_count: int
+
+
+class ChatHistoryListEnvelope(BaseModel):
+    histories: list[ChatHistorySummary]
+
+
+class ChatHistoryUsageSummary(BaseModel):
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+
+class ChatHistoryMessageView(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    status: Literal["done", "streaming", "error"]
+    sequence: int
+    excluded_from_context: bool
+    model_id: str | None = None
+    provider: str | None = None
+    tool_ids: list[str]
+    finish_reason: str | None = None
+    error_detail: str | None = None
+    usage: ChatHistoryUsageSummary | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatHistoryEnvelope(BaseModel):
+    history: ChatHistorySummary
+    messages: list[ChatHistoryMessageView]

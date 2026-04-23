@@ -10,6 +10,8 @@ Responsibilities:
 
 from __future__ import annotations
 
+from app.providers.anthropic.provider import list_anthropic_models
+from app.providers.openai.provider import list_openai_models
 from app.providers.types import ProviderModelDefinition, ProviderRoute
 from app.providers.vertex.provider import list_vertex_models
 from app.schemas.model import ModelInfo, ToolInfo
@@ -53,13 +55,8 @@ def resolve_provider_route(
 def _list_provider_models() -> list[ProviderModelDefinition]:
     return [
         *list_vertex_models(),
-        ProviderModelDefinition(  # intentional placeholder for future OpenAI wiring
-            public_id="gpt-4.2",
-            provider="openai",
-            display_name="GPT 4.2",
-            available=False,
-            supported_tools=(),
-        ),
+        *list_openai_models(),
+        *list_anthropic_models(),
     ]
 
 

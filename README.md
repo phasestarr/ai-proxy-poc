@@ -8,20 +8,22 @@ Internal AI proxy stack behind sibling `root-proxy`.
 - Edge upstream: `ai-proxy-frontend:8080` on external Docker network `edge-net`
 - Frontend: NGINX serving the SPA and proxying `/api/*` and `/health`
 - Backend: FastAPI
-- State: PostgreSQL for auth/session data, Redis for chat coordination and rate limits
-- Model execution: Vertex AI
+- State: PostgreSQL for auth, session, OAuth, conflict ticket, and chat history data; Redis for chat coordination and rate limits
+- Model execution: Vertex AI, OpenAI, and Anthropic
 
 ## Active Scope
 - guest login
 - optional Microsoft login through backend-owned OAuth redirect flow
 - `HttpOnly` `session_id` cookie auth
 - protected streaming chat endpoint
+- backend-owned chat history with persisted user/assistant messages
 - Redis-backed single in-flight chat per session
 - Redis-backed minute and hourly chat rate limits
 - public model catalog at `/api/v1/models`
 - Vertex-backed public Gemini model variants
-- optional provider-neutral tools exposed as `web_search`, `retrieval`, and `code_execution`
-- placeholder OpenAI public model `gpt-4.2` exposed as unavailable
+- OpenAI-backed public GPT model variants
+- Anthropic-backed public Claude model variants
+- optional provider-neutral tools exposed per model, including `web_search`, `retrieval`, `code_execution`, and `url_context`
 
 ## In Repo
 - `frontend/`: Vite + React frontend packaged behind NGINX
@@ -41,10 +43,13 @@ Internal AI proxy stack behind sibling `root-proxy`.
 1. Copy `.env.example` to `.env`.
 2. Set `GOOGLE_CLOUD_PROJECT`.
 3. If needed, adjust `VERTEX_AI_RAG_*`.
-4. Place the service account JSON under `secrets/`.
-5. Keep `GOOGLE_APPLICATION_CREDENTIALS` aligned with that mounted file path.
-6. Keep `AI_PROXY_CONTAINER_NAME=ai-proxy-frontend` unless the sibling `root-proxy` upstream name changes too.
-7. Use `deploy/README-SERVER.md` for server startup and `deploy/README-LOCAL.md` for localhost startup.
+4. Set `OPENAI_API_KEY`.
+5. Set `OPENAI_VECTOR_STORE_IDS` if using OpenAI retrieval.
+6. Set `ANTHROPIC_API_KEY` if using Claude models.
+7. Place the service account JSON under `secrets/`.
+8. Keep `GOOGLE_APPLICATION_CREDENTIALS` aligned with that mounted file path.
+9. Keep `AI_PROXY_CONTAINER_NAME=ai-proxy-frontend` unless the sibling `root-proxy` upstream name changes too.
+10. Use `deploy/README-SERVER.md` for server startup and `deploy/README-LOCAL.md` for localhost startup.
 
 ## Local IDE Setup
 - This section is only for editor support, smoke tests, and syntax/type checks. Runtime remains Docker-only.
@@ -81,6 +86,8 @@ npm run build
 - Current `root-proxy` route is `ai.nextinsol.com -> ai-proxy-frontend:8080`.
 - Microsoft login remains optional until the Microsoft env vars are configured.
 - frontend does not auto-select a model; clients must choose one from the backend catalog before sending chat.
+- database schema is managed by Alembic migrations at backend startup.
+- guest users are keyed by raw IP address in `guest_identities`; local Docker usually reports the Docker bridge IP such as `172.18.0.1`.
 - usage logging remains scaffold-only.
 
 ## Docs

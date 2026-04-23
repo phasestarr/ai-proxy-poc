@@ -11,6 +11,20 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+from app.providers.anthropic.provider import (
+    ANTHROPIC_PROVIDER_ID,
+    AnthropicProviderConfigurationError,
+    AnthropicProviderError,
+    ensure_anthropic_provider_ready,
+    stream_anthropic_chat_completion,
+)
+from app.providers.openai.provider import (
+    OPENAI_PROVIDER_ID,
+    OpenAIProviderConfigurationError,
+    OpenAIProviderError,
+    ensure_openai_provider_ready,
+    stream_openai_chat_completion,
+)
 from app.providers.types import ProviderRoute, ProviderStreamChunk
 from app.providers.vertex.provider import (
     VERTEX_PROVIDER_ID,
@@ -35,10 +49,17 @@ def ensure_provider_ready(*, provider: str) -> None:
         if provider == VERTEX_PROVIDER_ID:
             ensure_vertex_provider_ready()
             return
-        if provider == "openai":
-            # Intentional placeholder for future OpenAI wiring.
-            raise ProviderConfigurationError("provider is not configured: openai")
+        if provider == OPENAI_PROVIDER_ID:
+            ensure_openai_provider_ready()
+            return
+        if provider == ANTHROPIC_PROVIDER_ID:
+            ensure_anthropic_provider_ready()
+            return
     except VertexProviderConfigurationError as exc:
+        raise ProviderConfigurationError(str(exc)) from exc
+    except OpenAIProviderConfigurationError as exc:
+        raise ProviderConfigurationError(str(exc)) from exc
+    except AnthropicProviderConfigurationError as exc:
         raise ProviderConfigurationError(str(exc)) from exc
 
     raise ProviderConfigurationError(f"provider is not configured: {provider}")
@@ -59,10 +80,29 @@ async def stream_provider_chat_completion(
             ):
                 yield chunk
             return
-        if route.model.provider == "openai":
-            # Intentional placeholder for future OpenAI wiring.
-            raise ProviderExecutionError("provider is not configured: openai")
+        if route.model.provider == OPENAI_PROVIDER_ID:
+            async for chunk in stream_openai_chat_completion(
+                public_model_id=route.model.public_id,
+                messages=messages,
+                selected_tool_ids=route.tool_ids,
+                function_declarations=route.function_declarations,
+            ):
+                yield chunk
+            return
+        if route.model.provider == ANTHROPIC_PROVIDER_ID:
+            async for chunk in stream_anthropic_chat_completion(
+                public_model_id=route.model.public_id,
+                messages=messages,
+                selected_tool_ids=route.tool_ids,
+                function_declarations=route.function_declarations,
+            ):
+                yield chunk
+            return
     except VertexProviderError as exc:
+        raise ProviderExecutionError(str(exc)) from exc
+    except OpenAIProviderError as exc:
+        raise ProviderExecutionError(str(exc)) from exc
+    except AnthropicProviderError as exc:
         raise ProviderExecutionError(str(exc)) from exc
 
     raise ProviderExecutionError(f"provider is not configured: {route.model.provider}")

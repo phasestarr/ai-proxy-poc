@@ -23,6 +23,12 @@
   - provider별 stream 함수 호출
 - `proxy-api/app/services/chat/stream.py`
   - SSE start/delta/done/error 이벤트 생성
+- `proxy-api/app/services/chat/history_queries.py`
+  - chat history 생성/조회/삭제
+- `proxy-api/app/services/chat/turns.py`
+  - user/assistant turn 저장 및 성공/실패 상태 반영
+- `proxy-api/app/services/chat/provider_context.py`
+  - 기존 history의 provider context 재구성
 
 Vertex 내부 레이어:
 - `proxy-api/app/providers/vertex/models.py`
@@ -41,22 +47,63 @@ Vertex 내부 레이어:
   - Vertex chunk -> 공통 stream chunk
 - `proxy-api/app/providers/vertex/tools.py`
   - backend hosted tool id -> Vertex tool payload
+  - current hosted mappings include `google_search`, `retrieval.vertex_rag_store`, `code_execution`, and `url_context`
 - `proxy-api/app/providers/vertex/functions.py`
   - future custom function declaration payload scaffold
 
+OpenAI 내부 레이어:
+- `proxy-api/app/providers/openai/models.py`
+  - public model id -> OpenAI Responses API runtime model id, supported tools
+- `proxy-api/app/providers/openai/client.py`
+  - `AsyncOpenAI(...)` 생성
+- `proxy-api/app/providers/openai/config.py`
+  - Responses API request kwargs 조립
+  - instructions, input, hosted tools, provider defaults 결합
+- `proxy-api/app/providers/openai/stream.py`
+  - OpenAI runtime model 해석
+  - `responses.create(..., stream=True)` 호출
+- `proxy-api/app/providers/openai/mapper.py`
+  - 공통 chat message -> OpenAI `input`
+  - OpenAI stream event -> 공통 stream chunk
+- `proxy-api/app/providers/openai/tools.py`
+  - backend hosted tool id -> OpenAI Responses API tool payload
+  - current hosted mappings include `web_search`, `file_search`, and `code_interpreter`
+
+Anthropic 내부 레이어:
+- `proxy-api/app/providers/anthropic/models.py`
+  - public model id -> Anthropic Messages API runtime model id, supported tools
+- `proxy-api/app/providers/anthropic/client.py`
+  - `AsyncAnthropic(...)` 생성
+- `proxy-api/app/providers/anthropic/config.py`
+  - Messages API request kwargs 조립
+  - system, messages, hosted tools, max token defaults 결합
+- `proxy-api/app/providers/anthropic/stream.py`
+  - Anthropic runtime model 해석
+  - `beta.messages.create(..., stream=True)` 호출
+- `proxy-api/app/providers/anthropic/mapper.py`
+  - 공통 chat message -> Anthropic `system` + `messages`
+  - Anthropic stream event -> 공통 stream chunk
+- `proxy-api/app/providers/anthropic/tools.py`
+  - backend hosted tool id -> Anthropic Messages API tool payload
+  - current hosted mappings include `web_search_20250305` and `code_execution_20250825`
+
 프런트:
-- `frontend/src/services/modelService.ts`
+- `frontend/src/chat/api/modelApi.ts`
   - `/api/v1/models` 응답 파싱
 - `frontend/src/pages/ChatPage.tsx`
-  - 모델 목록 렌더링
+  - chat page 상태와 submit 흐름 조립
+- `frontend/src/pages/chat/hooks/useChatModelSelection.ts`
+  - 모델 목록 로드
   - 모델별 tool 목록 재계산
+- `frontend/src/pages/chat/components/Composer.tsx`
+  - 모델/tool 선택 UI 렌더링
   - 선택한 `model_id`, `tool_ids`를 서버로 전송
 
 ## SDK 요청 조립 흐름
 
 실제 요청이 조립되는 흐름은 아래 순서다.
 
-1. `frontend`가 `model_id`, `tool_ids`, `messages`를 보낸다.
+1. `frontend`가 `chat_history_id`, `model_id`, `tool_ids`, `messages`를 보낸다.
 2. `proxy-api/app/services/chat/preparation.py`
    - 요청 스키마 검증 후 `ProviderRoute`를 만든다.
 3. `proxy-api/app/providers/catalog.py`
@@ -64,32 +111,36 @@ Vertex 내부 레이어:
    - 해당 모델에서 허용된 tool id만 통과시킨다.
 4. `proxy-api/app/providers/dispatcher.py`
    - `route.model.provider`를 보고 알맞은 provider로 보낸다.
-5. `proxy-api/app/providers/vertex/stream.py`
-   - `route.model.public_id`로 Vertex runtime spec을 찾는다.
-   - runtime model id와 location을 결정한다.
-6. `proxy-api/app/providers/vertex/client.py`
-   - 해당 location으로 Vertex client를 만든다.
-7. `proxy-api/app/providers/vertex/mapper.py`
-   - 내부 `messages`를 Vertex `contents`로 바꾼다.
-8. `proxy-api/app/providers/vertex/config.py`
+5. `proxy-api/app/services/chat/turns.py`
+   - user/assistant turn을 저장한다.
+6. `proxy-api/app/services/chat/provider_context.py`
+   - `chat_history_id`가 있으면 PostgreSQL의 기존 non-error messages로 provider context를 다시 만든다.
+7. 선택된 provider의 `stream.py`
+   - `route.model.public_id`로 provider runtime spec을 찾는다.
+   - runtime model id와 provider-specific execution settings를 결정한다.
+8. 선택된 provider의 `client.py`
+   - SDK client를 만든다.
+9. 선택된 provider의 `mapper.py`
+   - 내부 `messages`를 provider-native message/input payload로 바꾼다.
+10. 선택된 provider의 `config.py`
    - system instruction과 provider config를 조립한다.
-9. `proxy-api/app/providers/vertex/tools.py`
-   - 선택된 hosted tool id를 Vertex tool payload로 바꾼다.
-10. `proxy-api/app/providers/vertex/stream.py`
-   - `aio_client.models.generate_content_stream(...)`를 호출한다.
-11. `proxy-api/app/providers/vertex/mapper.py`
-   - Vertex stream chunk를 공통 chunk로 바꾼다.
-12. `proxy-api/app/services/chat/stream.py`
+11. 선택된 provider의 `tools.py`
+   - 선택된 hosted tool id를 provider-native tool payload로 바꾼다.
+12. 선택된 provider의 `stream.py`
+   - provider SDK streaming API를 호출한다.
+13. 선택된 provider의 `mapper.py`
+   - provider stream chunk/event를 공통 chunk로 바꾼다.
+14. `proxy-api/app/services/chat/stream.py`
    - SSE 이벤트로 감싸서 클라이언트에 스트리밍한다.
 
 즉 "실제 SDK 요청을 누가 조립하느냐"를 짧게 말하면:
-- 모델별 실행 스펙 선택: `vertex/models.py`
-- SDK client 생성: `vertex/client.py`
-- provider config 조립: `vertex/config.py`
-- hosted tool payload 변환: `vertex/tools.py`
+- 모델별 실행 스펙 선택: `<provider>/models.py`
+- SDK client 생성: `<provider>/client.py`
+- provider config 조립: `<provider>/config.py`
+- hosted tool payload 변환: `<provider>/tools.py`
 - future function payload scaffold: `vertex/functions.py`
-- SDK 호출: `vertex/stream.py`
-- 메시지와 chunk 변환: `vertex/mapper.py`
+- SDK 호출: `<provider>/stream.py`
+- 메시지와 chunk 변환: `<provider>/mapper.py`
 
 ## 새 Vertex 모델 추가
 
@@ -146,6 +197,65 @@ Vertex 모델에만 붙는 새 tool을 추가할 때는 아래 순서로 본다.
 - tool은 전역 공통 개념이 아니다.
 - 모델 종속으로 본다.
 - 어떤 tool이 보일지는 각 모델의 `supported_tools`가 결정한다.
+
+## 새 OpenAI 모델 추가
+
+기존 OpenAI provider 안에 새 모델을 추가할 때 기본 수정 지점은 아래다.
+
+1. `proxy-api/app/providers/openai/models.py`
+   - `_OPENAI_MODELS`에 새 항목 추가
+   - `public_id`
+   - `provider_model`
+   - `display_name`
+   - `available`
+   - `supported_tools`
+2. 필요하면 `docs/API.md`, `README.md` 업데이트
+3. 모델 특이 Responses API request config가 있으면 `proxy-api/app/providers/openai/config.py` 수정
+4. 모델 특이 hosted tool payload가 있으면 `proxy-api/app/providers/openai/tools.py` 수정
+
+## 새 OpenAI tool 추가
+
+OpenAI Responses API hosted tool을 추가할 때는 아래 순서로 본다.
+
+1. `proxy-api/app/providers/openai/models.py`
+   - 새 `ProviderToolDefinition` 추가
+   - 어떤 모델에 노출할지 `supported_tools`에 연결
+2. `proxy-api/app/providers/openai/tools.py`
+   - public hosted tool id -> OpenAI tool payload builder 추가
+3. 필요하면 `proxy-api/app/config/providers/openai.py`
+   - tool용 env/config 추가
+4. provider request default를 바꾸려면 `proxy-api/app/providers/openai/config.py`
+5. 필요하면 `docs/ENVIRONMENT.md`
+
+## 새 Anthropic 모델 추가
+
+기존 Anthropic provider 안에 새 모델을 추가할 때 기본 수정 지점은 아래다.
+
+1. `proxy-api/app/providers/anthropic/models.py`
+   - `_ANTHROPIC_MODELS`에 새 항목 추가
+   - `public_id`
+   - `provider_model`
+   - `display_name`
+   - `available`
+   - `supported_tools`
+2. 필요하면 `docs/API.md`, `README.md` 업데이트
+3. 모델 특이 Messages API request config가 있으면 `proxy-api/app/providers/anthropic/config.py` 수정
+4. 모델 특이 hosted tool payload가 있으면 `proxy-api/app/providers/anthropic/tools.py` 수정
+
+## 새 Anthropic tool 추가
+
+Anthropic Messages API hosted tool을 추가할 때는 아래 순서로 본다.
+
+1. `proxy-api/app/providers/anthropic/models.py`
+   - 새 `ProviderToolDefinition` 추가
+   - 어떤 모델에 노출할지 `supported_tools`에 연결
+2. `proxy-api/app/providers/anthropic/tools.py`
+   - public hosted tool id -> Anthropic tool payload builder 추가
+   - 필요한 beta header가 있으면 같은 파일에서 관리
+3. 필요하면 `proxy-api/app/config/providers/anthropic.py`
+   - tool용 env/config 추가
+4. provider request default를 바꾸려면 `proxy-api/app/providers/anthropic/config.py`
+5. 필요하면 `docs/ENVIRONMENT.md`
 
 ## 새 vendor 추가
 
@@ -225,6 +335,22 @@ vendor 추가 후:
 
 현재 Vertex SDK 호출 진입점은 여기다:
 - `proxy-api/app/providers/vertex/stream.py`
+
+## 현재 OpenAI 모델 위치
+
+현재 OpenAI public model 목록과 실행 스펙은 여기서 관리한다:
+- `proxy-api/app/providers/openai/models.py`
+
+현재 OpenAI Responses API 호출 진입점은 여기다:
+- `proxy-api/app/providers/openai/stream.py`
+
+## 현재 Anthropic 모델 위치
+
+현재 Anthropic public model 목록과 실행 스펙은 여기서 관리한다:
+- `proxy-api/app/providers/anthropic/models.py`
+
+현재 Anthropic Messages API 호출 진입점은 여기다:
+- `proxy-api/app/providers/anthropic/stream.py`
 
 현재 SSE 응답 조립은 여기다:
 - `proxy-api/app/services/chat/stream.py`

@@ -16,13 +16,17 @@ from contextlib import suppress
 import logging
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.api.health import router as health_router
 from app.api.router import api_router
+from app.api.v1.errors.authentication import AuthResponseError
+from app.auth.cleanup import purge_expired_auth_data
+from app.auth.cookies import clear_session_conflict_cookie, clear_session_cookie
 from app.config.settings import settings
-from app.db.postgres.session import SessionLocal, init_database
+from app.db.postgres.migrations import run_database_migrations
+from app.db.postgres.session import SessionLocal
 from app.db.redis.client import close_redis_client, verify_redis_connection
-from app.services.auth import purge_expired_auth_data
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -30,6 +34,19 @@ app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
 )
+
+
+@app.exception_handler(AuthResponseError)
+async def handle_auth_response_error(_, exc: AuthResponseError) -> JSONResponse:
+    response = JSONResponse(
+        status_code=exc.status_code,
+        content=exc.payload.model_dump(mode="json"),
+    )
+    if exc.clear_cookie:
+        clear_session_cookie(response)
+    if exc.clear_conflict_cookie:
+        clear_session_conflict_cookie(response)
+    return response
 
 
 @app.on_event("startup")
@@ -77,7 +94,7 @@ async def _initialize_dependencies() -> None:
     for attempt in range(1, max_attempts + 1):
         try:
             verify_redis_connection()
-            init_database()
+            run_database_migrations()
             with SessionLocal() as db:
                 purge_expired_auth_data(db)
             logger.info("Application dependencies are ready.")

@@ -20,10 +20,11 @@ class AppSettings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
 
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/ai_proxy"
+    database_url: str = "postgresql+psycopg://postgres:post@localhost:5432/ai_proxy"
     redis_url: str = "redis://localhost:6379/0"
 
     auth_session_cookie_name: str = "session_id"
+    auth_conflict_cookie_name: str = "session_conflict_id"
     auth_cookie_secure: bool = False
     auth_cookie_samesite: Literal["lax", "strict", "none"] = "strict"
     auth_cookie_path: str = "/"
@@ -32,8 +33,12 @@ class AppSettings(BaseSettings):
 
     auth_guest_idle_minutes: int = 360
     auth_guest_absolute_hours: int = 24
+    auth_guest_max_sessions: int = 2
     auth_microsoft_idle_minutes: int = 1440
     auth_microsoft_absolute_days: int = 1
+    auth_microsoft_max_sessions: int = 4
+    auth_session_limit_strategy: Literal["reject", "evict_oldest"] = "reject"
+    auth_conflict_ticket_minutes: int = 5
     auth_cleanup_interval_minutes: int = 60
     microsoft_oauth_transaction_minutes: int = 10
 

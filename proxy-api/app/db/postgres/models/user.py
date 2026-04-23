@@ -39,7 +39,17 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    identities: Mapped[list["AuthIdentity"]] = relationship(
+    microsoft_identity: Mapped["MicrosoftIdentity | None"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    guest_identity: Mapped["GuestIdentity | None"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    chat_histories: Mapped[list["ChatHistory"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )

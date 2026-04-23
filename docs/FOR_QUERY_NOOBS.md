@@ -1,18 +1,6 @@
-## PostgreSQL Quick Context
+# PostgreSQL Query Cheat Sheet
 
-Runtime 기준 실제 Postgres ORM 테이블은 아래 5개입니다.
-
-1. `users`
-2. `auth_identities`
-3. `auth_sessions`
-4. `auth_provider_sessions`
-5. `oauth_transactions`
-
-`chat_request.py`, `usage_log.py`는 현재 placeholder라서 테이블이 생성되지 않습니다.
-
-코드 기준 근거:
-- `Base.metadata.create_all()`로 현재 ORM 모델만 생성함
-- `auth`/`user` 모델 파일에만 실제 컬럼 정의가 있음
+Docker Compose 기준으로 실제 PostgreSQL을 inspect할 때 쓰는 문서입니다.
 
 접속:
 
@@ -20,243 +8,447 @@ Runtime 기준 실제 Postgres ORM 테이블은 아래 5개입니다.
 docker exec -it ai-proxy-postgres psql -U postgres -d ai_proxy
 ```
 
-비대화형으로 바로 실행하려면 아래 형식 그대로 쓰면 됩니다.
+비대화형 실행:
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT NOW();"
 ```
 
+## Safety Rules
+
+- 직접 특정 row를 지우는 `DELETE` 예시는 FK cascade root인 `users`, `auth_sessions`, `chat_histories`에만 둡니다.
+- `ms_identities`, `guest_identities`, `auth_provider_sessions`, `auth_conflict_tickets`, `oauth_transactions`, `chat_messages`는 보통 부모 row 삭제나 앱 cleanup으로 정리합니다.
+- 운영 DB에서 `DELETE` 전에는 같은 `WHERE`로 `SELECT`를 먼저 실행하세요.
+- guest user는 IP 기준 identity를 재사용합니다. 로컬 Docker에서는 실제 LAN IP가 아니라 nginx가 보는 Docker bridge IP, 예: `172.18.0.1`, 로 보일 수 있습니다.
+
+## Current Tables
+
+Application tables:
+
+1. `users`
+2. `ms_identities`
+3. `guest_identities`
+4. `auth_sessions`
+5. `auth_provider_sessions`
+6. `auth_conflict_tickets`
+7. `oauth_transactions`
+8. `chat_histories`
+9. `chat_messages`
+
+Migration metadata:
+
+10. `alembic_version`
+
+`chat_request.py`, `usage_log.py`는 scaffold-only라 현재 테이블을 만들지 않습니다.
+
+## Whole-Database Inspect
+
+테이블 목록:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;"
+```
+
+row count:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages ORDER BY table_name;"
+```
+
+FK cascade 확인:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name, ccu.column_name AS foreign_column_name, rc.delete_rule FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema JOIN information_schema.referential_constraints rc ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public' ORDER BY tc.table_name, kcu.column_name;"
+```
+
+Alembic head:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT version_num FROM alembic_version;"
+```
+
 ## 1. users
 
 역할:
-- 게스트 사용자와 Microsoft 로그인 사용자 모두 저장
-- 게스트는 `POST /api/v1/auth/login/guest` 때 생성
-- Microsoft 사용자는 첫 로그인 성공 시 생성
 
-좀비 적체 가능성:
-- `guest`는 낮음
-- 세션 삭제 시 `_delete_orphan_guest_user()`가 세션/identity 없는 guest user를 같이 삭제함
-- 세션 정리는 요청 처리 중에도 되고, startup/백그라운드 cleanup 루프에서도 됨
-- `human`은 앱에서 자동 삭제하지 않음
-- 따라서 "안 쓰는 human user"는 남을 수 있지만, 현재 로직상 의도된 영속 데이터에 가깝고 좀비라고 보긴 애매함
+- guest와 Microsoft human user의 공통 parent table
+- guest는 `guest_identities.ip_address`와 1:1로 묶임
+- Microsoft user는 `ms_identities`와 1:1로 묶임
+- user 삭제 시 identity, session, chat history가 cascade로 삭제됨
+
+좀비 가능성:
+
+- guest orphan 가능성은 낮음. session 삭제 시 orphan guest 정리 로직이 있음.
+- human user는 자동 삭제하지 않음. 오래 남아도 의도된 계정 데이터입니다.
+- user가 사라지면 하위 row는 FK cascade 대상입니다.
 
 inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, account_type, status, display_name, email, created_at, last_seen_at FROM users ORDER BY created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, account_type, status, display_name, email, created_at, updated_at, last_seen_at FROM users ORDER BY created_at DESC;"
 ```
 
-고아 guest user 확인:
+user별 하위 row count:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.display_name, u.created_at FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN auth_identities i ON i.user_id = u.id WHERE u.account_type = 'guest' AND s.id IS NULL AND i.id IS NULL ORDER BY u.created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.account_type, u.display_name, u.email, COUNT(DISTINCT s.id) AS sessions, COUNT(DISTINCT ch.id) AS chat_histories, COUNT(DISTINCT mi.id) AS ms_identity_count, COUNT(DISTINCT gi.id) AS guest_identity_count FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN chat_histories ch ON ch.user_id = u.id LEFT JOIN ms_identities mi ON mi.user_id = u.id LEFT JOIN guest_identities gi ON gi.user_id = u.id GROUP BY u.id ORDER BY u.created_at DESC;"
 ```
 
-세션도 identity도 없는 human user 확인:
+guest orphan 확인:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.display_name, u.email, u.created_at FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN auth_identities i ON i.user_id = u.id WHERE u.account_type = 'human' AND s.id IS NULL AND i.id IS NULL ORDER BY u.created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.display_name, u.created_at FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_histories ch ON ch.user_id = u.id WHERE u.account_type = 'guest' AND s.id IS NULL AND gi.id IS NULL AND ch.id IS NULL ORDER BY u.created_at DESC;"
 ```
 
-cleanup:
-- guest orphan만 안전하게 일괄 삭제 가능
-- human user는 제품 정책 없이 지우면 안 됨
+특정 user 삭제:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM users u WHERE u.account_type = 'guest' AND NOT EXISTS (SELECT 1 FROM auth_sessions s WHERE s.user_id = u.id) AND NOT EXISTS (SELECT 1 FROM auth_identities i WHERE i.user_id = u.id) RETURNING u.id, u.display_name;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM users WHERE id = 'PUT_USER_ID_HERE' RETURNING id, account_type, display_name, email;"
 ```
 
-## 2. auth_identities
+cascade 영향:
+
+- `ms_identities`
+- `guest_identities`
+- `auth_sessions`
+- `auth_provider_sessions`, via `auth_sessions`
+- `auth_conflict_tickets`
+- `chat_histories`
+- `chat_messages`, via `chat_histories`
+
+## 2. ms_identities
 
 역할:
-- Microsoft 계정과 내부 `users` row를 묶는 영구 바인딩
-- 첫 Microsoft 로그인 성공 시 생성
-- 같은 `(provider, tenant_id, subject)` 조합은 unique
 
-좀비 적체 가능성:
-- 일반적인 의미의 zombie 가능성은 매우 낮음
-- `users.id` FK + `ON DELETE CASCADE`라서 user 삭제 시 같이 삭제됨
-- 앱 로직에는 identity 자동 삭제가 없으므로, 오래된 human identity는 계속 남을 수 있음
-- 다만 이건 현재 로그인 재연결을 위해 의도된 보존 데이터에 가깝다
+- Microsoft account와 내부 `users` row를 묶는 영구 identity table
+- `(provider, tenant_id, subject)` unique
+- `user_id`는 unique라 현재 구조에서는 user당 Microsoft identity 1개
+
+좀비 가능성:
+
+- 낮음. `users.id` FK `ON DELETE CASCADE`.
+- 앱이 human user를 자동 삭제하지 않으므로 오래된 Microsoft identity는 계정 보존 데이터로 남습니다.
 
 inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT i.id, i.user_id, i.provider, i.tenant_id, i.subject, i.preferred_username, i.created_at, i.updated_at FROM auth_identities i ORDER BY i.created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, provider, tenant_id, subject, home_account_id, preferred_username, created_at, updated_at FROM ms_identities ORDER BY created_at DESC;"
 ```
 
-FK 상으론 거의 없어야 하는 이상 징후 확인:
+FK 이상 징후:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT i.* FROM auth_identities i LEFT JOIN users u ON u.id = i.user_id WHERE u.id IS NULL;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT mi.* FROM ms_identities mi LEFT JOIN users u ON u.id = mi.user_id WHERE u.id IS NULL;"
 ```
 
 cleanup:
-- 보통 bulk cleanup 하지 말 것
-- 특정 퇴사자/테스트 계정 정리처럼 명확한 사유가 있을 때만 user 기준으로 지우는 편이 안전함
-- user를 먼저 지우면 cascade로 같이 사라짐
 
-특정 user의 identity만 삭제:
+- 직접 삭제하지 말고 parent `users` row를 삭제하세요.
 
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM auth_identities WHERE user_id = 'PUT_USER_ID_HERE' RETURNING id, user_id, preferred_username;"
-```
-
-## 3. auth_sessions
+## 3. guest_identities
 
 역할:
-- 브라우저 쿠키의 실제 서버측 세션 메타데이터
-- guest 로그인 성공 시 생성
-- Microsoft 로그인 완료 시 생성
 
-좀비 적체 가능성:
-- 낮음
-- 삭제 경로가 3개 있음
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/auth/me` 또는 보호 API 접근 시 `resolve_session()`이 만료/비활성 세션 즉시 삭제
-- 앱 startup 1회 + 백그라운드 cleanup 루프가 만료 세션 정리
-- 다만 앱이 오래 꺼져 있거나, 만료 후 아무 요청이 없고 cleanup 주기 전이면 잠깐 쌓일 수는 있음
+- guest IP와 내부 `users` row를 묶는 identity table
+- IP는 해싱하지 않고 그대로 저장합니다.
+- 같은 IP는 같은 guest user로 재사용합니다.
+
+좀비 가능성:
+
+- 낮음. `users.id` FK `ON DELETE CASCADE`.
+- 로컬 Docker에서는 IP가 `172.18.0.1`처럼 Docker bridge 주소로 보일 수 있습니다.
+- 컴퓨터 재부팅 후에도 Docker volume이 유지되고 같은 IP로 잡히면 같은 guest user로 재사용됩니다.
 
 inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, state, created_at, last_seen_at, idle_expires_at, absolute_expires_at FROM auth_sessions ORDER BY created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.id, gi.user_id, gi.provider, gi.ip_address, u.display_name, u.created_at AS user_created_at, gi.created_at, gi.updated_at FROM guest_identities gi JOIN users u ON u.id = gi.user_id ORDER BY gi.created_at DESC;"
 ```
 
-이미 만료됐는데 아직 남아 있는 세션:
+IP별 active session:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, state, idle_expires_at, absolute_expires_at FROM auth_sessions WHERE idle_expires_at <= NOW() OR absolute_expires_at <= NOW() ORDER BY created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.ip_address, gi.user_id, COUNT(s.id) FILTER (WHERE s.state = 'active') AS active_sessions, COUNT(s.id) AS total_sessions FROM guest_identities gi LEFT JOIN auth_sessions s ON s.user_id = gi.user_id GROUP BY gi.ip_address, gi.user_id ORDER BY gi.ip_address;"
+```
+
+FK 이상 징후:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.* FROM guest_identities gi LEFT JOIN users u ON u.id = gi.user_id WHERE u.id IS NULL;"
 ```
 
 cleanup:
-- 만료 세션 삭제는 안전
-- guest user orphan는 후속 정리 한 번 더 돌리는 것이 안전
 
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM auth_sessions WHERE idle_expires_at <= NOW() OR absolute_expires_at <= NOW() RETURNING id, user_id, auth_type;"
-```
+- 직접 삭제하지 말고 parent `users` row를 삭제하세요.
 
-그 다음 guest orphan 정리:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM users u WHERE u.account_type = 'guest' AND NOT EXISTS (SELECT 1 FROM auth_sessions s WHERE s.user_id = u.id) AND NOT EXISTS (SELECT 1 FROM auth_identities i WHERE i.user_id = u.id) RETURNING u.id, u.display_name;"
-```
-
-## 4. auth_provider_sessions
+## 4. auth_sessions
 
 역할:
-- provider token cache 등 provider session artifact 저장용
-- 현재 설계상 Microsoft 세션 확장용 테이블
 
-좀비 적체 가능성:
-- 현재 코드 기준으로는 사실상 `0`
-- `issue_session()`은 `provider_artifacts`가 있을 때만 이 row를 생성하는데, 현재 Microsoft 로그인 완료 경로는 `provider_artifacts`를 넘기지 않음
-- 즉 현재 런타임에서는 테이블은 있어도 row가 안 쌓이는 상태로 보는 게 맞음
-- 나중에 사용되더라도 `auth_sessions.id` FK + `ON DELETE CASCADE`라서 부모 세션 삭제 시 같이 삭제됨
+- `session_id` HttpOnly cookie의 서버측 session metadata
+- DB에는 raw session key가 아니라 SHA-256 hash만 저장합니다.
+- guest max sessions default는 `2`, Microsoft max sessions default는 `4`.
+- limit 초과 시 기본 strategy는 `reject`; conflict resolve는 `evict_oldest`로 oldest active session을 revoke하고 새 session을 만듭니다.
+- oldest 기준은 `last_seen_at ASC NULLS FIRST`, tie-breaker는 `created_at ASC`.
+
+좀비 가능성:
+
+- 낮음.
+- logout, request-time validation, startup cleanup, background cleanup이 만료/비활성 session을 정리합니다.
+- evicted session은 원인 추적을 위해 잠깐 `revoked`로 남고 cleanup 대상이 됩니다.
 
 inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT session_id, provider, token_cache_version, access_token_expires_at, refresh_token_expires_at, tenant_id, home_account_id, created_at, updated_at FROM auth_provider_sessions ORDER BY created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, state, persistent, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at, revoked_reason_code, superseded_by_session_id, created_ip, last_ip FROM auth_sessions ORDER BY created_at DESC;"
 ```
 
-예상과 다르게 row가 있는지 count만 빠르게 확인:
+user/IP별 session count:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT COUNT(*) AS provider_session_count FROM auth_provider_sessions;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT COALESCE(gi.ip_address, u.email, u.display_name) AS owner, s.auth_type, s.state, COUNT(*) FROM auth_sessions s JOIN users u ON u.id = s.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id GROUP BY owner, s.auth_type, s.state ORDER BY owner, s.auth_type, s.state;"
 ```
 
-cleanup:
-- 보통 이 테이블을 직접 지우지 말고 부모 `auth_sessions`를 지우는 게 맞음
-- 부모 세션 삭제 시 cascade 처리됨
-- 정말 실험 데이터만 비워야 하면 직접 삭제 가능
-
-직접 비우기 전 inspect:
+만료 또는 revoked session:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT aps.session_id, aps.provider, s.auth_type, s.idle_expires_at, s.absolute_expires_at FROM auth_provider_sessions aps LEFT JOIN auth_sessions s ON s.id = aps.session_id ORDER BY aps.created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, state, idle_expires_at, absolute_expires_at, revoked_at, revoked_reason_code FROM auth_sessions WHERE state <> 'active' OR idle_expires_at <= NOW() OR absolute_expires_at <= NOW() ORDER BY created_at DESC;"
 ```
 
-직접 삭제:
+특정 session 삭제:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM auth_provider_sessions RETURNING session_id, provider;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM auth_sessions WHERE id = 'PUT_SESSION_ID_HERE' RETURNING id, user_id, auth_type, state;"
 ```
 
-## 5. oauth_transactions
+cascade 영향:
+
+- `auth_provider_sessions`
+- `superseded_by_session_id`를 참조하는 다른 `auth_sessions` row는 `SET NULL`
+
+## 5. auth_provider_sessions
 
 역할:
-- Microsoft OAuth redirect 시작 시 state/nonce/PKCE verifier 저장
-- callback 성공/실패/취소 처리 전에 쓰는 짧은 수명 임시 테이블
 
-좀비 적체 가능성:
-- 낮음
-- 생성은 로그인 redirect 시작 시 1회
-- 정상 callback 성공 시 삭제
-- callback error/cancel/invalid state 시도 삭제
-- 만료되거나 `consumed_at`이 찍힌 row는 startup/백그라운드 cleanup 루프에서 삭제
-- 실제로 쌓이더라도 최대한 짧게 남아야 정상
-- 예외는 "로그인 시작만 하고 callback 안 옴" 케이스인데, 이것도 만료 시간 지나면 cleanup 대상
+- provider token cache 같은 provider artifact 저장용 table
+- 현재는 Microsoft Graph API 확장을 위해 유지합니다.
+- 현재 login flow는 provider artifacts를 아직 저장하지 않으므로 보통 비어 있습니다.
+
+좀비 가능성:
+
+- 현재는 row 생성 자체가 사실상 없습니다.
+- 나중에 row가 생겨도 `auth_sessions.id` FK `ON DELETE CASCADE`.
 
 inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, provider, state, created_at, expires_at, consumed_at, return_to FROM oauth_transactions ORDER BY created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT session_id, provider, token_cache_version, access_token_expires_at, refresh_token_expires_at, tenant_id, home_account_id, scope, last_refresh_at, last_refresh_error, created_at, updated_at FROM auth_provider_sessions ORDER BY created_at DESC;"
 ```
 
-이미 만료됐거나 consumed인데 아직 남아 있는 row:
+부모 session 상태와 같이 보기:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, state, created_at, expires_at, consumed_at, return_to FROM oauth_transactions WHERE expires_at <= NOW() OR consumed_at IS NOT NULL ORDER BY created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT aps.session_id, aps.provider, s.user_id, s.auth_type, s.state, s.idle_expires_at, s.absolute_expires_at FROM auth_provider_sessions aps LEFT JOIN auth_sessions s ON s.id = aps.session_id ORDER BY aps.created_at DESC;"
 ```
 
 cleanup:
 
+- 직접 삭제하지 말고 parent `auth_sessions` row를 삭제하세요.
+
+## 6. auth_conflict_tickets
+
+역할:
+
+- Microsoft callback에서 session limit에 걸렸을 때 짧게 살아있는 conflict ticket을 저장합니다.
+- raw ticket은 `session_conflict_id` HttpOnly cookie에만 있고 DB에는 hash만 저장합니다.
+- resolve endpoint가 ticket을 소비해 oldest session을 evict하고 새 session을 발급합니다.
+
+좀비 가능성:
+
+- 낮음.
+- TTL default는 `5 minutes`.
+- expired/consumed row는 startup/background auth cleanup에서 삭제됩니다.
+- user 삭제 시 `ON DELETE CASCADE`.
+
+inspect:
+
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM oauth_transactions WHERE expires_at <= NOW() OR consumed_at IS NOT NULL RETURNING id, state, expires_at, consumed_at;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, reason, return_to, created_at, expires_at, consumed_at, requester_ip FROM auth_conflict_tickets ORDER BY created_at DESC;"
 ```
+
+cleanup 대상:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, expires_at, consumed_at FROM auth_conflict_tickets WHERE expires_at <= NOW() OR consumed_at IS NOT NULL ORDER BY created_at DESC;"
+```
+
+cleanup:
+
+- 직접 삭제하지 말고 app cleanup을 기다리거나 앱을 재시작해 startup cleanup을 태우세요.
+- 특정 계정 전체를 지울 때는 parent `users` row를 삭제하세요.
+
+## 7. oauth_transactions
+
+역할:
+
+- Microsoft OAuth redirect 시작 시 state/nonce/PKCE verifier를 저장하는 짧은 수명 transaction table
+- 정상 callback 성공/실패/취소 처리 시 삭제됩니다.
+
+좀비 가능성:
+
+- 낮음.
+- 로그인 시작 후 callback이 오지 않으면 만료 전까지 남을 수 있습니다.
+- expired/consumed row는 startup/background auth cleanup에서 삭제됩니다.
+
+inspect:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, provider, state, return_to, created_at, expires_at, consumed_at, requester_ip FROM oauth_transactions ORDER BY created_at DESC;"
+```
+
+cleanup 대상:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, state, expires_at, consumed_at, return_to FROM oauth_transactions WHERE expires_at <= NOW() OR consumed_at IS NOT NULL ORDER BY created_at DESC;"
+```
+
+cleanup:
+
+- 직접 삭제하지 말고 app cleanup을 기다리거나 앱을 재시작해 startup cleanup을 태우세요.
+
+## 8. chat_histories
+
+역할:
+
+- user별 chat history parent table
+- 새 chat은 첫 `/api/v1/chat/completions` 요청에서 자동 생성됩니다.
+- 프런트는 SSE `start` 이벤트의 `chat_history_id`를 저장해 다음 send에 이어 보냅니다.
+- history 삭제 시 messages가 cascade 삭제됩니다.
+
+좀비 가능성:
+
+- 낮음.
+- user가 삭제되면 history도 cascade 삭제됩니다.
+- 사용자가 삭제하지 않은 history는 제품 데이터라 좀비가 아닙니다.
+
+inspect:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, COALESCE(gi.ip_address, u.email, u.display_name) AS owner, ch.title, ch.created_at, ch.updated_at, ch.last_message_at, COUNT(cm.id) AS message_count FROM chat_histories ch JOIN users u ON u.id = ch.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_messages cm ON cm.chat_history_id = ch.id GROUP BY ch.id, gi.ip_address, u.email, u.display_name ORDER BY ch.updated_at DESC;"
+```
+
+특정 history 메시지 보기:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, left(content, 120) AS content_preview, model_id, provider, tool_ids, finish_reason, error_detail, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+```
+
+특정 chat history 삭제:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM chat_histories WHERE id = 'PUT_CHAT_HISTORY_ID_HERE' RETURNING id, user_id, title;"
+```
+
+cascade 영향:
+
+- `chat_messages`
+
+## 9. chat_messages
+
+역할:
+
+- chat history 하위 message table
+- user/assistant turn을 모두 저장합니다.
+- stream 실패 시 화면 렌더링은 위해 저장하되 `excluded_from_context=true`로 표시해 다음 provider payload에서 제외합니다.
+
+좀비 가능성:
+
+- 낮음.
+- parent `chat_histories` 삭제 시 cascade 삭제됩니다.
+- `status='streaming'`이 오래 남으면 중단된 stream 흔적일 수 있으니 inspect해야 합니다.
+
+inspect:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, status, excluded_from_context, left(content, 120) AS content_preview, model_id, provider, tool_ids, finish_reason, error_detail, usage, created_at, updated_at FROM chat_messages ORDER BY created_at DESC LIMIT 100;"
+```
+
+상태별 count:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, excluded_from_context, COUNT(*) FROM chat_messages GROUP BY status, excluded_from_context ORDER BY status, excluded_from_context;"
+```
+
+오래 남은 streaming row:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, length(content) AS content_length, created_at, updated_at FROM chat_messages WHERE status = 'streaming' AND updated_at < NOW() - INTERVAL '10 minutes' ORDER BY updated_at;"
+```
+
+cleanup:
+
+- 직접 삭제하지 말고 parent `chat_histories` row를 삭제하세요.
+- 특정 failed/streaming message만 수동 수정하는 것은 대화 재구성 순서를 깨뜨릴 수 있어 권장하지 않습니다.
+
+## 10. alembic_version
+
+역할:
+
+- Alembic migration head를 기록하는 metadata table
+- 앱 startup에서 `alembic upgrade head`가 실행됩니다.
+
+inspect:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT version_num FROM alembic_version;"
+```
+
+cleanup:
+
+- 직접 삭제하지 마세요.
 
 ## Quick Smoke Checks
 
-현재 로직이 정상인지 빠르게 보려면 이것만 보면 됩니다.
+현재 DB 상태가 정상인지 빠르게 보려면 아래만 확인하면 됩니다.
 
-1. guest orphan user가 0건인지 확인
+1. migration head:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.display_name, u.created_at FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN auth_identities i ON i.user_id = u.id WHERE u.account_type = 'guest' AND s.id IS NULL AND i.id IS NULL;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT version_num FROM alembic_version;"
 ```
 
-2. 만료 auth session이 남아 있는지 확인
+2. guest IP별 active session:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, idle_expires_at, absolute_expires_at FROM auth_sessions WHERE idle_expires_at <= NOW() OR absolute_expires_at <= NOW();"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.ip_address, COUNT(s.id) FILTER (WHERE s.state = 'active') AS active_sessions FROM guest_identities gi LEFT JOIN auth_sessions s ON s.user_id = gi.user_id GROUP BY gi.ip_address ORDER BY gi.ip_address;"
 ```
 
-3. 만료 또는 consumed OAuth transaction이 남아 있는지 확인
+3. 만료/revoked sessions:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, state, expires_at, consumed_at FROM oauth_transactions WHERE expires_at <= NOW() OR consumed_at IS NOT NULL;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, state, idle_expires_at, absolute_expires_at, revoked_reason_code FROM auth_sessions WHERE state <> 'active' OR idle_expires_at <= NOW() OR absolute_expires_at <= NOW();"
 ```
 
-4. `auth_provider_sessions`가 비어 있는지 확인
+4. expired/consumed OAuth/conflict rows:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT COUNT(*) AS provider_session_count FROM auth_provider_sessions;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'oauth_transactions' AS table_name, COUNT(*) FROM oauth_transactions WHERE expires_at <= NOW() OR consumed_at IS NOT NULL UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets WHERE expires_at <= NOW() OR consumed_at IS NOT NULL;"
+```
+
+5. stale streaming messages:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, updated_at FROM chat_messages WHERE status = 'streaming' AND updated_at < NOW() - INTERVAL '10 minutes';"
 ```
 
 ## Code Pointers
 
-로직 추적할 때 보면 되는 파일:
-- `proxy-api/app/db/postgres/models/user.py`
-- `proxy-api/app/db/postgres/models/auth.py`
-- `proxy-api/app/services/auth.py`
-- `proxy-api/app/services/microsoft_auth.py`
-- `proxy-api/app/main.py`
-
-핵심 포인트:
-- guest user 생성: `create_guest_session()`
-- auth session 생성: `issue_session()`
-- 세션 만료/삭제 + guest orphan 정리: `resolve_session()`, `delete_session()`, `_delete_orphan_guest_user()`
-- OAuth transaction 생성/삭제: `build_microsoft_authorization_url()`, `complete_microsoft_authorization()`, `_delete_transaction()`
-- 주기 cleanup: `purge_expired_auth_data()`, `_auth_cleanup_loop()`
+- PostgreSQL migrations: `proxy-api/alembic/versions/`
+- migration runner: `proxy-api/app/db/postgres/migrations.py`
+- auth/user models: `proxy-api/app/db/postgres/models/auth_sessions.py`, `proxy-api/app/db/postgres/models/auth_conflicts.py`, `proxy-api/app/db/postgres/models/identities.py`, `proxy-api/app/db/postgres/models/oauth_transactions.py`, `proxy-api/app/db/postgres/models/user.py`
+- chat history models: `proxy-api/app/db/postgres/models/chat_history.py`
+- auth/session logic: `proxy-api/app/auth/session_lifecycle.py`, `proxy-api/app/auth/guest_sessions.py`, `proxy-api/app/auth/conflict_tickets.py`
+- Microsoft OAuth logic: `proxy-api/app/auth/microsoft_oauth.py`
+- auth cleanup logic: `proxy-api/app/auth/cleanup.py`
+- chat persistence logic: `proxy-api/app/services/chat/history_queries.py`, `proxy-api/app/services/chat/turns.py`, `proxy-api/app/services/chat/provider_context.py`
+- chat stream orchestration: `proxy-api/app/services/chat/stream.py`

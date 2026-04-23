@@ -16,29 +16,105 @@ Notes:
 - Provider-specific implementation must live outside the router layer.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
-from app.api.v1.dependencies.auth import require_capability
-from app.schemas.chat import ChatCompletionRequest
+from app.api.v1.dependencies.session import require_authenticated_session, require_capability
+from app.api.v1.dependencies.db import get_db
+from app.api.v1.presenters.chat import build_chat_history_message_view, build_chat_history_summary
+from app.schemas.chat import (
+    ChatCompletionRequest,
+    ChatHistoryCreateRequest,
+    ChatHistoryEnvelope,
+    ChatHistoryListEnvelope,
+)
 from app.services.chat.stream import (
     ChatCoordinationUnavailableError,
+    ChatHistoryUnavailableError,
     ChatProviderUnavailableError,
     ChatRateLimitExceededError,
     ChatRequestInProgressError,
     create_chat_completion_stream,
 )
+from app.services.chat.errors import ChatHistoryNotFoundError
+from app.services.chat.history_queries import (
+    create_chat_history,
+    delete_chat_history,
+    get_chat_history,
+    list_chat_histories,
+)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+@router.get("/histories", response_model=ChatHistoryListEnvelope)
+def list_histories(
+    session=Depends(require_authenticated_session),
+    db: Session = Depends(get_db),
+) -> ChatHistoryListEnvelope:
+    return ChatHistoryListEnvelope(
+        histories=[
+            build_chat_history_summary(history, message_count)
+            for history, message_count in list_chat_histories(db, user_id=session.user_id)
+        ]
+    )
+
+
+@router.post("/histories", response_model=ChatHistoryEnvelope, status_code=status.HTTP_201_CREATED)
+def create_history(
+    payload: ChatHistoryCreateRequest,
+    session=Depends(require_authenticated_session),
+    db: Session = Depends(get_db),
+) -> ChatHistoryEnvelope:
+    history = create_chat_history(db, user_id=session.user_id, title=payload.title)
+    return ChatHistoryEnvelope(
+        history=build_chat_history_summary(history, 0),
+        messages=[],
+    )
+
+
+@router.get("/histories/{history_id}", response_model=ChatHistoryEnvelope)
+def get_history(
+    history_id: str,
+    session=Depends(require_authenticated_session),
+    db: Session = Depends(get_db),
+) -> ChatHistoryEnvelope:
+    try:
+        history, messages = get_chat_history(db, user_id=session.user_id, history_id=history_id)
+    except ChatHistoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
+
+    return ChatHistoryEnvelope(
+        history=build_chat_history_summary(history, len(messages)),
+        messages=[build_chat_history_message_view(message) for message in messages],
+    )
+
+
+@router.delete("/histories/{history_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_history(
+    history_id: str,
+    response: Response,
+    session=Depends(require_authenticated_session),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        delete_chat_history(db, user_id=session.user_id, history_id=history_id)
+    except ChatHistoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
+
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @router.post("/completions")
 async def chat_completions(
     payload: ChatCompletionRequest,
     session=Depends(require_capability("chat:send")),
+    db: Session = Depends(get_db),
 ) -> StreamingResponse:
     try:
-        event_stream = create_chat_completion_stream(payload, session=session)
+        event_stream = create_chat_completion_stream(payload, session=session, db=db)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,6 +140,11 @@ async def chat_completions(
     except ChatProviderUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except ChatHistoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
 

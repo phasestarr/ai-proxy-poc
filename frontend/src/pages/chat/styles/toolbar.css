@@ -1,0 +1,65 @@
+.chat-toolbar {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid #b8d8f6;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 34px rgba(114, 170, 224, 0.2);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-toolbar-copy {
+  min-width: 0;
+}
+
+.chat-toolbar-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6493ba;
+}
+
+.chat-toolbar-name {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #153d65;
+  overflow-wrap: anywhere;
+}
+
+.chat-toolbar-button {
+  margin-left: auto;
+  min-height: 40px;
+  border: 1px solid #a8d0f4;
+  border-radius: 999px;
+  background: linear-gradient(140deg, #edf7ff 0%, #dceeff 100%);
+  color: #174d80;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+.chat-toolbar-button:hover {
+  background: linear-gradient(140deg, #e6f3ff 0%, #d5eaff 100%);
+}
+
+@media (max-width: 720px) {
+  .chat-toolbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .chat-toolbar-button {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+

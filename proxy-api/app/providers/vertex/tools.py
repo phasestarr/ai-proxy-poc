@@ -31,6 +31,7 @@ def build_vertex_hosted_tools(
         "web_search": _build_vertex_web_search_tool,
         "retrieval": _build_vertex_retrieval_tool,
         "code_execution": _build_vertex_code_execution_tool,
+        "url_context": _build_vertex_url_context_tool,
     }
 
     for tool_id in _normalize_selected_tool_ids(selected_tool_ids):
@@ -97,6 +98,21 @@ def _build_vertex_code_execution_tool(*, types_module=None) -> object:
         return tool_type(**tool_payload)
     except Exception as exc:
         raise VertexToolConfigurationError("vertex code execution tool payload could not be constructed") from exc
+
+
+def _build_vertex_url_context_tool(*, types_module=None) -> object:
+    tool_payload = {
+        "url_context": {},
+    }
+
+    tool_type = getattr(types_module, "Tool", None) if types_module is not None else None
+    if tool_type is None:
+        return tool_payload
+
+    try:
+        return tool_type(**tool_payload)
+    except Exception as exc:
+        raise VertexToolConfigurationError("vertex url context tool payload could not be constructed") from exc
 
 
 def _ensure_vertex_retrieval_tool_ready() -> None:

@@ -14,7 +14,9 @@ import asyncio
 from collections.abc import AsyncIterator
 
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.db.postgres.session import SessionLocal
 from app.db.redis.chat_coordination import (
     ChatCoordinationUnavailableError,
     ChatRateLimitExceededError,
@@ -38,7 +40,14 @@ from app.schemas.chat import (
     ChatStreamStartEvent,
     ChatUsageSummary,
 )
-from app.services.auth import SessionContext
+from app.auth.types import SessionContext
+from app.services.chat.errors import ChatHistoryNotFoundError
+from app.services.chat.turns import (
+    PersistedChatTurn,
+    persist_chat_turn_failure,
+    persist_chat_turn_start,
+    persist_chat_turn_success,
+)
 from app.services.chat.preparation import prepare_chat_completion_request
 
 
@@ -46,10 +55,15 @@ class ChatProviderUnavailableError(RuntimeError):
     """Raised when a provider is not configured for streaming."""
 
 
+class ChatHistoryUnavailableError(RuntimeError):
+    """Raised when a requested chat history cannot be used."""
+
+
 def create_chat_completion_stream(
     payload: ChatCompletionRequest,
     *,
     session: SessionContext,
+    db: Session,
 ) -> AsyncIterator[bytes]:
     prepared = prepare_chat_completion_request(payload, session=session)
 
@@ -65,10 +79,25 @@ def create_chat_completion_stream(
         release_chat_execution_lease(lease)
         raise
 
+    try:
+        turn = persist_chat_turn_start(
+            db,
+            payload=payload,
+            session=session,
+            route=prepared.route,
+        )
+    except ChatHistoryNotFoundError as exc:
+        release_chat_execution_lease(lease)
+        raise ChatHistoryUnavailableError(str(exc)) from exc
+    except Exception:
+        release_chat_execution_lease(lease)
+        raise
+
     return _stream_chat_completion(
         prepared.route,
-        prepared.messages,
+        turn.provider_messages,
         lease,
+        turn,
     )
 
 
@@ -76,11 +105,19 @@ async def _stream_chat_completion(
     route: ProviderRoute,
     messages,
     lease,
+    turn: PersistedChatTurn,
 ) -> AsyncIterator[bytes]:
     last_chunk: ProviderStreamChunk | None = None
+    accumulated_text = ""
     yield _encode_sse_event(
         "start",
-        ChatStreamStartEvent(model=route.model.public_id, provider=route.model.provider),
+        ChatStreamStartEvent(
+            model=route.model.public_id,
+            provider=route.model.provider,
+            chat_history_id=turn.history_id,
+            user_message_id=turn.user_message_id,
+            assistant_message_id=turn.assistant_message_id,
+        ),
     )
 
     try:
@@ -90,19 +127,23 @@ async def _stream_chat_completion(
         ):
             last_chunk = chunk
             if chunk.text:
+                accumulated_text = f"{accumulated_text}{chunk.text}"
                 yield _encode_sse_event(
                     "delta",
                     ChatStreamDeltaEvent(delta_text=chunk.text),
                 )
     except asyncio.CancelledError:
+        _persist_turn_failure(turn, accumulated_text, "client disconnected")
         raise
     except ProviderExecutionError as exc:
+        _persist_turn_failure(turn, accumulated_text, str(exc))
         yield _encode_sse_event(
             "error",
             ChatStreamErrorEvent(detail=str(exc)),
         )
         return
     except Exception:
+        _persist_turn_failure(turn, accumulated_text, "chat streaming failed")
         yield _encode_sse_event(
             "error",
             ChatStreamErrorEvent(detail="chat streaming failed"),
@@ -111,6 +152,15 @@ async def _stream_chat_completion(
     finally:
         release_chat_execution_lease(lease)
 
+    with SessionLocal() as stream_db:
+        persist_chat_turn_success(
+            stream_db,
+            history_id=turn.history_id,
+            assistant_message_id=turn.assistant_message_id,
+            content=accumulated_text,
+            finish_reason=last_chunk.finish_reason if last_chunk else None,
+            usage=last_chunk.usage if last_chunk else None,
+        )
     yield _encode_sse_event(
         "done",
         ChatStreamDoneEvent(
@@ -132,12 +182,29 @@ def _map_usage_summary(chunk: ProviderStreamChunk | None) -> ChatUsageSummary | 
     )
 
 
+def _persist_turn_failure(
+    turn: PersistedChatTurn,
+    content: str,
+    detail: str,
+) -> None:
+    with SessionLocal() as stream_db:
+        persist_chat_turn_failure(
+            stream_db,
+            history_id=turn.history_id,
+            user_message_id=turn.user_message_id,
+            assistant_message_id=turn.assistant_message_id,
+            content=content,
+            detail=detail,
+        )
+
+
 def _encode_sse_event(event_name: str, payload: BaseModel) -> bytes:
     return f"event: {event_name}\ndata: {payload.model_dump_json()}\n\n".encode("utf-8")
 
 
 __all__ = [
     "ChatCoordinationUnavailableError",
+    "ChatHistoryUnavailableError",
     "ChatProviderUnavailableError",
     "ChatRateLimitExceededError",
     "ChatRequestInProgressError",

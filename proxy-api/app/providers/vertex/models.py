@@ -12,17 +12,22 @@ VERTEX_PROVIDER_ID = "vertex_ai"
 
 VERTEX_TOOL_WEB_SEARCH = ProviderToolDefinition(
     public_id="web_search",
-    display_name="Web Search",
+    display_name="Google Search",
     available=True,
 )
 VERTEX_TOOL_RETRIEVAL = ProviderToolDefinition(
     public_id="retrieval",
-    display_name="Retrieval",
+    display_name="Vertex RAG",
     available=True,
 )
 VERTEX_TOOL_CODE_EXECUTION = ProviderToolDefinition(
     public_id="code_execution",
     display_name="Code Execution",
+    available=True,
+)
+VERTEX_TOOL_URL_CONTEXT = ProviderToolDefinition(
+    public_id="url_context",
+    display_name="URL Context",
     available=True,
 )
 
@@ -48,6 +53,19 @@ class VertexModelRuntimeDefinition:
 
 _VERTEX_MODELS: tuple[VertexModelRuntimeDefinition, ...] = (
     VertexModelRuntimeDefinition(
+        public_id="gemini-3.1-pro-preview",
+        provider_model="gemini-3.1-pro-preview",
+        display_name="Gemini 3.1 Pro Preview",
+        location="global",
+        available=True,
+        supported_tools=(
+            VERTEX_TOOL_WEB_SEARCH,
+            VERTEX_TOOL_RETRIEVAL,
+            VERTEX_TOOL_CODE_EXECUTION,
+            VERTEX_TOOL_URL_CONTEXT,
+        ),
+    ),
+    VertexModelRuntimeDefinition(
         public_id="gemini-3-flash-preview",
         provider_model="gemini-3-flash-preview",
         display_name="Gemini 3 Flash Preview",
@@ -57,30 +75,20 @@ _VERTEX_MODELS: tuple[VertexModelRuntimeDefinition, ...] = (
             VERTEX_TOOL_WEB_SEARCH,
             VERTEX_TOOL_RETRIEVAL,
             VERTEX_TOOL_CODE_EXECUTION,
-        ),
-    ),
-    VertexModelRuntimeDefinition(
-        public_id="gemini-2.5-pro",
-        provider_model="gemini-2.5-pro",
-        display_name="Gemini 2.5 Pro",
-        location="global",
-        available=True,
-        supported_tools=(
-            VERTEX_TOOL_WEB_SEARCH,
-            VERTEX_TOOL_RETRIEVAL,
-            VERTEX_TOOL_CODE_EXECUTION,
+            VERTEX_TOOL_URL_CONTEXT,
         ),
     ),
     VertexModelRuntimeDefinition(
         public_id="gemini-2.5-flash",
         provider_model="gemini-2.5-flash",
         display_name="Gemini 2.5 Flash",
-        location="asia-northeast3",
+        location="global",
         available=True,
         supported_tools=(
             VERTEX_TOOL_WEB_SEARCH,
             VERTEX_TOOL_RETRIEVAL,
             VERTEX_TOOL_CODE_EXECUTION,
+            VERTEX_TOOL_URL_CONTEXT,
         ),
     )
 )

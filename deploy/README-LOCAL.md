@@ -27,7 +27,7 @@ docker compose --env-file ../.env.local -f docker-compose.yml -f docker-compose.
 Stop:
 
 ```powershell
-docker compose --env-file ../.env.local -f docker-compose.yml -f docker-compose.local.yml down
+docker compose --env-file ../.env.local -f docker-compose.yml -f docker-compose.local.yml down -v
 ```
 
 Restart:
