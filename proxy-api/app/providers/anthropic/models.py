@@ -6,21 +6,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.providers.anthropic.tools import get_anthropic_tool_definitions
 from app.providers.types import ProviderModelDefinition, ProviderToolDefinition
 
 ANTHROPIC_PROVIDER_ID = "anthropic"
 
-ANTHROPIC_TOOL_WEB_SEARCH = ProviderToolDefinition(
-    public_id="web_search",
-    display_name="Web Search",
-    available=True,
-)
-ANTHROPIC_TOOL_CODE_EXECUTION = ProviderToolDefinition(
-    public_id="code_execution",
-    display_name="Code Execution",
-    available=True,
-)
-
+# To change Anthropic model list, change `here` and `config.py` preset-mapping.
 
 @dataclass(slots=True, frozen=True)
 class AnthropicModelRuntimeDefinition:
@@ -46,9 +37,9 @@ _ANTHROPIC_MODELS: tuple[AnthropicModelRuntimeDefinition, ...] = (
         provider_model="claude-opus-4-7",
         display_name="Claude Opus 4.7",
         available=False,
-        supported_tools=(
-            ANTHROPIC_TOOL_WEB_SEARCH,
-            ANTHROPIC_TOOL_CODE_EXECUTION
+        supported_tools=get_anthropic_tool_definitions(
+            "web_search",
+            "code_execution",
         ),
     ),
     AnthropicModelRuntimeDefinition(
@@ -56,9 +47,9 @@ _ANTHROPIC_MODELS: tuple[AnthropicModelRuntimeDefinition, ...] = (
         provider_model="claude-sonnet-4-6",
         display_name="Claude Sonnet 4.6",
         available=True,
-        supported_tools=(
-            ANTHROPIC_TOOL_WEB_SEARCH,
-            ANTHROPIC_TOOL_CODE_EXECUTION,
+        supported_tools=get_anthropic_tool_definitions(
+            "web_search",
+            "code_execution",
         ),
     ),
     AnthropicModelRuntimeDefinition(
@@ -66,9 +57,9 @@ _ANTHROPIC_MODELS: tuple[AnthropicModelRuntimeDefinition, ...] = (
         provider_model="claude-haiku-4-5",
         display_name="Claude Haiku 4.5",
         available=True,
-        supported_tools=(
-            ANTHROPIC_TOOL_WEB_SEARCH,
-            ANTHROPIC_TOOL_CODE_EXECUTION,
+        supported_tools=get_anthropic_tool_definitions(
+            "web_search",
+            "code_execution",
         ),
     ),
 )

@@ -12,14 +12,14 @@ from __future__ import annotations
 import json
 import re
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class VertexProviderSettings(BaseSettings):
     project: str = Field(
         default="",
-        validation_alias=AliasChoices("VERTEX_AI_PROJECT", "GOOGLE_CLOUD_PROJECT"),
+        validation_alias="GOOGLE_CLOUD_PROJECT",
     )
     api_version: str = Field(default="v1", validation_alias="VERTEX_AI_API_VERSION")
     rag_corpora_value: str = Field(default="", validation_alias="VERTEX_AI_RAG_CORPORA", exclude=True)

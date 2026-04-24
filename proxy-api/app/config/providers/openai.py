@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,7 +20,7 @@ class OpenAIProviderSettings(BaseSettings):
     api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     vector_store_ids_value: str = Field(
         default="",
-        validation_alias=AliasChoices("OPENAI_VECTOR_STORE_IDS", "OPENAI_FILE_SEARCH_VECTOR_STORE_IDS"),
+        validation_alias="OPENAI_VECTOR_STORE_IDS",
         exclude=True,
     )
     file_search_max_num_results: int = Field(default=5, validation_alias="OPENAI_FILE_SEARCH_MAX_NUM_RESULTS")

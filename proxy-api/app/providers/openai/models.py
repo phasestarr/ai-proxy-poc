@@ -6,26 +6,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.providers.openai.tools import get_openai_tool_definitions
 from app.providers.types import ProviderModelDefinition, ProviderToolDefinition
 
 OPENAI_PROVIDER_ID = "openai"
 
-OPENAI_TOOL_WEB_SEARCH = ProviderToolDefinition(
-    public_id="web_search",
-    display_name="Web Search",
-    available=True,
-)
-OPENAI_TOOL_RETRIEVAL = ProviderToolDefinition(
-    public_id="retrieval",
-    display_name="File Search",
-    available=True,
-)
-OPENAI_TOOL_CODE_EXECUTION = ProviderToolDefinition(
-    public_id="code_execution",
-    display_name="Code Interpreter",
-    available=True,
-)
-
+# To change OpenAI model list, change `here` and `config.py` preset-mapping.
 
 @dataclass(slots=True, frozen=True)
 class OpenAIModelRuntimeDefinition:
@@ -50,10 +36,10 @@ _OPENAI_MODELS: tuple[OpenAIModelRuntimeDefinition, ...] = (
         provider_model="gpt-5.4",
         display_name="GPT 5.4",
         available=True,
-        supported_tools=(
-            OPENAI_TOOL_WEB_SEARCH,
-            OPENAI_TOOL_RETRIEVAL,
-            OPENAI_TOOL_CODE_EXECUTION,
+        supported_tools=get_openai_tool_definitions(
+            "web_search",
+            "retrieval",
+            "code_execution",
         ),
     ),
     OpenAIModelRuntimeDefinition(
@@ -61,21 +47,21 @@ _OPENAI_MODELS: tuple[OpenAIModelRuntimeDefinition, ...] = (
         provider_model="gpt-5.4-mini",
         display_name="GPT 5.4 Mini",
         available=True,
-        supported_tools=(
-            OPENAI_TOOL_WEB_SEARCH,
-            OPENAI_TOOL_RETRIEVAL,
-            OPENAI_TOOL_CODE_EXECUTION,
+        supported_tools=get_openai_tool_definitions(
+            "web_search",
+            "retrieval",
+            "code_execution",
         ),
     ),
     OpenAIModelRuntimeDefinition(
-        public_id="gpt-5-mini",
-        provider_model="gpt-5-mini",
-        display_name="GPT 5 Mini",
+        public_id="gpt-5.4-nano",
+        provider_model="gpt-5.4-nano",
+        display_name="GPT 5.4 Nano",
         available=True,
-        supported_tools=(
-            OPENAI_TOOL_WEB_SEARCH,
-            OPENAI_TOOL_RETRIEVAL,
-            OPENAI_TOOL_CODE_EXECUTION,
+        supported_tools=get_openai_tool_definitions(
+            "web_search",
+            "retrieval",
+            "code_execution",
         ),
     ),
 )

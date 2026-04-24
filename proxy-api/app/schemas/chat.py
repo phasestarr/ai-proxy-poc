@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
-    content: str = Field(..., min_length=1, max_length=8000)
+    content: str = Field(..., min_length=1, max_length=65535)
 
     @field_validator("content")
     @classmethod

@@ -19,7 +19,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AnthropicProviderSettings(BaseSettings):
     api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
     api_version: str = Field(default="2023-06-01", validation_alias="ANTHROPIC_VERSION")
-    max_tokens: int = Field(default=4096, validation_alias="ANTHROPIC_MAX_TOKENS")
     web_search_max_uses: int = Field(default=5, validation_alias="ANTHROPIC_WEB_SEARCH_MAX_USES")
     web_search_allowed_domains_value: str = Field(
         default="",
@@ -45,13 +44,6 @@ class AnthropicProviderSettings(BaseSettings):
         if not normalized:
             raise ValueError("ANTHROPIC_VERSION must not be blank")
         return normalized
-
-    @field_validator("max_tokens")
-    @classmethod
-    def validate_max_tokens(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("ANTHROPIC_MAX_TOKENS must be at least 1")
-        return value
 
     @field_validator("web_search_max_uses")
     @classmethod

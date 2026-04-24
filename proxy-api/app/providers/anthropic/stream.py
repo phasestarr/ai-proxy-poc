@@ -63,8 +63,14 @@ async def stream_anthropic_chat_completion(
             function_declarations=function_declarations,
         )
         beta_headers = build_anthropic_beta_headers(selected_tool_ids=selected_tool_ids)
-        if beta_headers:
-            request_kwargs["betas"] = beta_headers
+        existing_betas = [
+            str(item).strip()
+            for item in (request_kwargs.get("betas") or [])
+            if str(item).strip()
+        ]
+        merged_betas = list(dict.fromkeys([*existing_betas, *beta_headers]))
+        if merged_betas:
+            request_kwargs["betas"] = merged_betas
 
         stream = await client.beta.messages.create(
             **request_kwargs,
@@ -89,6 +95,8 @@ async def stream_anthropic_chat_completion(
 
 def _map_anthropic_exception(exc: Exception) -> AnthropicProviderError:
     if isinstance(exc, AnthropicToolConfigurationError):
+        return AnthropicProviderError(str(exc))
+    if isinstance(exc, ValueError):
         return AnthropicProviderError(str(exc))
 
     try:

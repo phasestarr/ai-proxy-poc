@@ -87,6 +87,8 @@ async def stream_openai_chat_completion(
 def _map_openai_exception(exc: Exception) -> OpenAIProviderError:
     if isinstance(exc, OpenAIToolConfigurationError):
         return OpenAIProviderError(str(exc))
+    if isinstance(exc, ValueError):
+        return OpenAIProviderError(str(exc))
 
     try:
         from openai import APIError, APIStatusError

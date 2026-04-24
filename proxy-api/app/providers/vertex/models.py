@@ -7,30 +7,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.providers.types import ProviderModelDefinition, ProviderToolDefinition
+from app.providers.vertex.tools import get_vertex_tool_definitions
 
 VERTEX_PROVIDER_ID = "vertex_ai"
 
-VERTEX_TOOL_WEB_SEARCH = ProviderToolDefinition(
-    public_id="web_search",
-    display_name="Google Search",
-    available=True,
-)
-VERTEX_TOOL_RETRIEVAL = ProviderToolDefinition(
-    public_id="retrieval",
-    display_name="Vertex RAG",
-    available=True,
-)
-VERTEX_TOOL_CODE_EXECUTION = ProviderToolDefinition(
-    public_id="code_execution",
-    display_name="Code Execution",
-    available=True,
-)
-VERTEX_TOOL_URL_CONTEXT = ProviderToolDefinition(
-    public_id="url_context",
-    display_name="URL Context",
-    available=True,
-)
-
+# To change Vertex model list, change `here` and `config.py` preset-mapping.
 
 @dataclass(slots=True, frozen=True)
 class VertexModelRuntimeDefinition:
@@ -58,11 +39,11 @@ _VERTEX_MODELS: tuple[VertexModelRuntimeDefinition, ...] = (
         display_name="Gemini 3.1 Pro Preview",
         location="global",
         available=True,
-        supported_tools=(
-            VERTEX_TOOL_WEB_SEARCH,
-            VERTEX_TOOL_RETRIEVAL,
-            VERTEX_TOOL_CODE_EXECUTION,
-            VERTEX_TOOL_URL_CONTEXT,
+        supported_tools=get_vertex_tool_definitions(
+            "web_search",
+            "retrieval",
+            "code_execution",
+            "url_context",
         ),
     ),
     VertexModelRuntimeDefinition(
@@ -71,26 +52,26 @@ _VERTEX_MODELS: tuple[VertexModelRuntimeDefinition, ...] = (
         display_name="Gemini 3 Flash Preview",
         location="global",
         available=True,
-        supported_tools=(
-            VERTEX_TOOL_WEB_SEARCH,
-            VERTEX_TOOL_RETRIEVAL,
-            VERTEX_TOOL_CODE_EXECUTION,
-            VERTEX_TOOL_URL_CONTEXT,
+        supported_tools=get_vertex_tool_definitions(
+            "web_search",
+            "retrieval",
+            "code_execution",
+            "url_context",
         ),
     ),
     VertexModelRuntimeDefinition(
-        public_id="gemini-2.5-flash",
-        provider_model="gemini-2.5-flash",
-        display_name="Gemini 2.5 Flash",
+        public_id="gemini-3.1-flash-lite-preview",
+        provider_model="gemini-3.1-flash-lite-preview",
+        display_name="Gemini 3.1 Flash-Lite Preview",
         location="global",
         available=True,
-        supported_tools=(
-            VERTEX_TOOL_WEB_SEARCH,
-            VERTEX_TOOL_RETRIEVAL,
-            VERTEX_TOOL_CODE_EXECUTION,
-            VERTEX_TOOL_URL_CONTEXT,
+        supported_tools=get_vertex_tool_definitions(
+            "web_search",
+            "retrieval",
+            "code_execution",
+            "url_context",
         ),
-    )
+    ),
 )
 
 

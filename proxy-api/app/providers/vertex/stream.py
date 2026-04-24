@@ -55,6 +55,7 @@ async def stream_vertex_chat_completion(
         request_system_instruction, contents = map_chat_messages_to_vertex_contents(messages)
         config = build_vertex_generate_content_config(
             types=types,
+            model=model_runtime.public_id,
             request_system_instruction=request_system_instruction,
             selected_tool_ids=selected_tool_ids,
             function_declarations=function_declarations,
@@ -77,6 +78,8 @@ async def stream_vertex_chat_completion(
 
 def _map_vertex_exception(exc: Exception) -> VertexProviderError:
     if isinstance(exc, VertexToolConfigurationError):
+        return VertexProviderError(str(exc))
+    if isinstance(exc, ValueError):
         return VertexProviderError(str(exc))
 
     try:

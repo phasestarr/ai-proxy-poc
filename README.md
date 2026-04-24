@@ -29,7 +29,7 @@ Internal AI proxy stack behind sibling `root-proxy`.
 - `frontend/`: Vite + React frontend packaged behind NGINX
 - `proxy-api/`: FastAPI backend
 - `deploy/`: container deployment files for this stack
-- `docs/`: architecture, API, environment, and extension notes
+- `docs/`: architecture, API, environment, maintenance, and query notes
 - `secrets/`: mounted secret files such as the GCP service account JSON
 
 ## Runtime Entry Points
@@ -94,7 +94,6 @@ npm run build
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/API.md](docs/API.md)
 - [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
+- [docs/MAINTENANCE.md](docs/MAINTENANCE.md)
 - [docs/WORKING_GUIDELINES.md](docs/WORKING_GUIDELINES.md)
-- [docs/NOTEPAD.md](docs/NOTEPAD.md)
-- [docs/VENDOR_EXTENSION.md](docs/VENDOR_EXTENSION.md)
 - [docs/FOR_QUERY_NOOBS.md](docs/FOR_QUERY_NOOBS.md)

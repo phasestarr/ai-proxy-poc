@@ -54,9 +54,9 @@ def resolve_provider_route(
 
 def _list_provider_models() -> list[ProviderModelDefinition]:
     return [
-        *list_vertex_models(),
-        *list_openai_models(),
         *list_anthropic_models(),
+        *list_openai_models(),
+        *list_vertex_models(),
     ]
 
 

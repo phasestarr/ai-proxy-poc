@@ -1,79 +1,214 @@
 # Architecture
 
-Current integrated runtime for `ai-proxy-poc`.
+Current runtime and code ownership for `ai-proxy-poc`.
 
-## Edge Path
-- Browser -> `root-proxy` on `80/443`
-- `root-proxy` terminates TLS
-- `root-proxy` routes `ai.nextinsol.com` to `http://ai-proxy-frontend:8080`
-- `frontend` NGINX serves the SPA and proxies `/api/*` and `/health` to `proxy-api:8000`
+## Runtime Shape
+- Public traffic enters sibling `root-proxy`
+- `root-proxy` terminates TLS and routes `ai.nextinsol.com` to `ai-proxy-frontend:8080`
+- `frontend` serves the SPA and proxies `/api/*` and `/health` to `proxy-api:8000`
 - `proxy-api` uses PostgreSQL, Redis, Vertex AI, OpenAI, and Anthropic
+- runtime is Docker Compose first; backend should not depend on host-local services
+
+## Top-Level Components
+- `frontend/`
+  - React + Vite SPA packaged behind NGINX
+- `proxy-api/`
+  - FastAPI backend
+- `deploy/`
+  - Compose topology and run-mode overrides
+- `docs/`
+  - maintenance docs
+- `secrets/`
+  - mounted secret files such as the GCP service account JSON
 
 ## Frontend Flow
-1. `frontend/src/App.tsx` delegates auth bootstrapping to `frontend/src/auth/useAuthSession.ts`, which calls `GET /api/v1/auth/me`.
+1. `frontend/src/App.tsx` boots auth state through `frontend/src/auth/useAuthSession.ts`.
 2. Anonymous users stay on `LoginPage`.
-3. Guest login flows through `frontend/src/auth/authApi.ts` and calls `POST /api/v1/auth/login/guest`.
-4. Microsoft login flows through `frontend/src/auth/authRedirects.ts` and redirects the whole page to `GET /api/v1/auth/login/microsoft`.
-5. The backend redirects to Microsoft, handles the callback, and returns to the SPA after issuing a local session cookie or a short-lived session-conflict ticket.
-6. Authenticated users land on `ChatPage`; session conflict UI is rendered by `frontend/src/components/auth/SessionConflictDialog.tsx`.
-7. `ChatPage` uses `frontend/src/pages/chat/hooks/useChatModelSelection.ts` to load the backend-owned model catalog from `GET /api/v1/models`.
-8. The frontend leaves model selection empty until the user explicitly chooses one from the catalog.
-9. `ChatPage` loads chat history summaries from `GET /api/v1/chat/histories` through `frontend/src/chat/api/chatHistoryApi.ts`.
-10. `ChatPage` sends `POST /api/v1/chat/completions` through `frontend/src/chat/api/streamChatApi.ts` with the active `chat_history_id`, selected `model_id`, selected `tool_ids`, and latest transcript, then reads SSE events `start`, `delta`, `done`, and `error`.
-11. The SSE `start` event returns `chat_history_id`, `user_message_id`, and `assistant_message_id`; the frontend uses that id to continue the same chat history.
-12. Completion and error display strings come from the backend-persisted `result_message`; the frontend does not generate final chat outcome messages.
+3. Guest login uses `POST /api/v1/auth/login/guest`.
+4. Microsoft login redirects the whole page to `GET /api/v1/auth/login/microsoft`.
+5. Authenticated users land on `ChatPage`.
+6. `ChatPage` loads the backend model catalog from `GET /api/v1/models`.
+7. The frontend does not own model defaults; the user explicitly selects from the backend catalog.
+8. Chat history list/load/delete goes through `frontend/src/chat/api/chatHistoryApi.ts`.
+9. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions`.
+10. The frontend consumes SSE `start`, `delta`, `done`, and `error`.
 
 ## Backend Flow
-1. `proxy-api/app/main.py` starts FastAPI, verifies Redis, runs Alembic migrations, purges expired auth data, and starts auth cleanup.
-2. Auth routes are split by responsibility:
-   - `proxy-api/app/api/v1/endpoints/session_endpoints.py` handles current session lookup, session-conflict resolution, and logout.
-   - `proxy-api/app/api/v1/endpoints/guest_login.py` handles guest login.
-   - `proxy-api/app/api/v1/endpoints/microsoft_login.py` handles Microsoft login redirects and callbacks.
-3. `proxy-api/app/api/v1/endpoints/models.py` exposes the backend model catalog.
-4. `proxy-api/app/api/v1/endpoints/chat.py` exposes chat history CRUD, validates chat requests, and enforces authenticated capability `chat:send`.
-5. `proxy-api/app/services/chat/turns.py` creates a backend-owned user/assistant turn before provider execution.
-6. `proxy-api/app/services/chat/stream.py` starts background provider execution and lets the SSE connection subscribe to live deltas without owning the execution.
-7. `proxy-api/app/services/chat/preparation.py` resolves `model_id` and `tool_ids` into a provider route.
-8. Chat persistence is split between `proxy-api/app/services/chat/history_queries.py`, `proxy-api/app/services/chat/turns.py`, and `proxy-api/app/services/chat/provider_context.py`.
-9. `proxy-api/app/db/redis/chat_coordination.py` enforces one in-flight chat per session plus per-user rate limits.
-10. `proxy-api/app/providers/dispatcher.py` dispatches to the selected provider.
-11. Provider tool modules map backend-owned tool ids like `web_search`, `retrieval`, `code_execution`, and `url_context` into provider-native hosted tool payloads.
-12. Provider stream modules call Vertex, OpenAI, or Anthropic and normalize provider chunks into common stream chunks.
+1. `proxy-api/app/main.py`
+   - starts FastAPI
+   - verifies Redis
+   - runs Alembic migrations
+   - purges expired auth data
+   - starts background auth cleanup
+2. `proxy-api/app/api/v1/api.py`
+   - registers auth, models, and chat routers
+3. `proxy-api/app/api/v1/endpoints/`
+   - stays thin
+   - owns HTTP shape only
+4. `proxy-api/app/services/chat/preparation.py`
+   - resolves `model_id` and `tool_ids`
+5. `proxy-api/app/services/chat/turns.py`
+   - persists user message and assistant placeholder
+6. `proxy-api/app/services/chat/stream.py`
+   - starts backend-owned provider execution
+   - emits live SSE events if the browser is still connected
+   - persists final success or failure outcomes
+7. `proxy-api/app/providers/catalog.py`
+   - builds the public model catalog
+   - validates model/tool selections
+8. `proxy-api/app/providers/dispatcher.py`
+   - checks provider readiness
+   - dispatches execution to the selected provider package
 
-## Auth and Data
-- Browser auth uses only the `HttpOnly` `session_id` cookie.
-- Backend stores a hash of the raw session key, not the raw key.
-- Backend stores raw guest IP addresses in `guest_identities` for inspectability.
-- Backend stores session-conflict ticket hashes, not raw conflict tickets.
-- Guest session idle timeout: `6 hours`
-- Guest session absolute lifetime: `24 hours`
-- Guest max active sessions: `2`
+## Auth and Session Model
+- browser auth uses only `HttpOnly` cookies
+- `session_id`
+  - raw key lives only in the cookie
+  - DB stores `session_key_hash`
+- `session_conflict_id`
+  - short-lived conflict ticket cookie
+  - DB stores `ticket_hash`
+- guest users are keyed by raw IP address in `guest_identities`
+- Microsoft login is backend-owned OAuth
+- session conflict resolution is backend-owned and supports evicting the oldest active session
+
+Important defaults from code:
+- guest max active sessions: `2`
 - Microsoft max active sessions: `4`
-- Database schema is managed by Alembic migrations, not `Base.metadata.create_all()`.
-- Chat history data and final chat outcome messages are owned by PostgreSQL: `users -> chat_histories -> chat_messages`.
+- session-limit strategy default: `reject`
+- conflict ticket TTL default: `5 minutes`
 
-## Active and Inactive Areas
-- Active: guest login, backend-owned Microsoft login, session conflict recovery, model listing, chat history, explicit Gemini/OpenAI/Claude model selection, streaming chat, model-specific hosted tools
-- Scaffold only: usage schemas, services, and models
+## Data Ownership
+- PostgreSQL is the system of record for:
+  - users
+  - auth sessions
+  - OAuth transactions
+  - conflict tickets
+  - chat histories
+  - chat messages
+- Redis is used for:
+  - one in-flight chat lease per session
+  - minute/hour chat rate limits
+- provider-side conversation state is not treated as the source of truth
 
-## Important Files
-- `frontend/nginx/default.conf`
-- `frontend/src/App.tsx`
-- `frontend/src/auth/useAuthSession.ts`
-- `frontend/src/auth/authApi.ts`
-- `frontend/src/pages/ChatPage.tsx`
-- `frontend/src/pages/chat/components/`
-- `frontend/src/chat/api/`
-- `proxy-api/app/main.py`
-- `proxy-api/app/auth/`
-- `proxy-api/app/api/v1/endpoints/session_endpoints.py`
-- `proxy-api/app/api/v1/endpoints/guest_login.py`
-- `proxy-api/app/api/v1/endpoints/microsoft_login.py`
-- `proxy-api/app/services/chat/stream.py`
-- `proxy-api/app/services/chat/turns.py`
-- `proxy-api/app/services/chat/history_queries.py`
+## Chat Persistence Model
+- `POST /api/v1/chat/completions` creates a backend-owned turn before provider execution
+- backend persists:
+  - user message
+  - assistant placeholder
+  - resolved route metadata
+  - final success or error outcome
+- if provider execution fails, the assistant message is kept renderable but marked `excluded_from_context=true`
+- future provider context is rebuilt from persisted non-error messages
+
+## Provider Layer
+
+Shared provider layer:
+- `proxy-api/app/providers/types.py`
 - `proxy-api/app/providers/catalog.py`
 - `proxy-api/app/providers/dispatcher.py`
-- `proxy-api/app/providers/vertex/`
-- `proxy-api/app/providers/openai/`
-- `proxy-api/app/providers/anthropic/`
+
+Provider package shape:
+- `models.py`
+  - public model ids
+  - provider runtime model ids
+  - supported tool ids
+- `config.py`
+  - provider request preset mapping
+  - model to preset mapping
+- `tools.py`
+  - tool metadata
+  - provider-native hosted tool payloads
+- `client.py`
+  - SDK client creation and readiness checks
+- `mapper.py`
+  - internal messages to provider-native payload shape
+  - provider chunks to shared stream chunks
+- `stream.py`
+  - actual SDK streaming call
+  - provider-specific error mapping
+
+## Current Provider Shape
+
+Vertex:
+- public models:
+  - `gemini-3.1-pro-preview`
+  - `gemini-3-flash-preview`
+  - `gemini-3.1-flash-lite-preview`
+- preset config:
+  - `none`
+  - `low`
+  - `normal`
+  - `high`
+- current preset knobs:
+  - `thinking_config.thinking_level`
+  - `thinking_config.include_thoughts`
+  - `maxOutputTokens`
+
+OpenAI:
+- public models:
+  - `gpt-5.4`
+  - `gpt-5.4-mini`
+  - `gpt-5.4-nano`
+- preset config:
+  - `none`
+  - `low`
+  - `normal`
+  - `high`
+  - `xhigh`
+- current preset knobs:
+  - `max_output_tokens`
+  - `reasoning`
+  - `text.verbosity`
+  - `tool_choice`
+  - `parallel_tool_calls`
+
+Anthropic:
+- public models:
+  - `claude-opus-4-7`
+  - `claude-sonnet-4-6`
+  - `claude-haiku-4-5`
+- preset config:
+  - `none`
+  - `low`
+  - `normal`
+  - `high`
+  - `xhigh`
+  - `max`
+- current preset knobs:
+  - `max_tokens`
+  - `thinking`
+  - `output_config.effort`
+
+## Model and Tool Source Of Truth
+- backend is the source of truth for public model and tool exposure
+- `GET /api/v1/models` is the frontend source of truth
+- the frontend must not hardcode model defaults, tool support, or provider-specific capabilities
+- model order in the UI follows backend catalog order
+
+## Change Points
+- add/remove/reorder models:
+  - `proxy-api/app/providers/<provider>/models.py`
+  - `proxy-api/app/providers/<provider>/config.py`
+- change tool exposure or display names:
+  - `proxy-api/app/providers/<provider>/tools.py`
+  - `proxy-api/app/providers/<provider>/models.py`
+- change shared provider routing:
+  - `proxy-api/app/providers/catalog.py`
+  - `proxy-api/app/providers/dispatcher.py`
+- change chat execution lifecycle:
+  - `proxy-api/app/services/chat/stream.py`
+  - `proxy-api/app/services/chat/turns.py`
+  - `proxy-api/app/services/chat/provider_context.py`
+
+## Active vs Inactive Areas
+- active:
+  - guest login
+  - backend-owned Microsoft OAuth
+  - session conflict handling
+  - persisted chat histories
+  - streaming chat with backend-owned execution
+  - backend-owned model catalog
+  - provider-native hosted tools
+- scaffold-only:
+  - usage logging models/services
