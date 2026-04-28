@@ -231,9 +231,7 @@
 }
 
 .history-menu {
-  position: absolute;
-  top: 38px;
-  right: 0;
+  position: fixed;
   min-width: 188px;
   padding: 6px;
   border-radius: 14px;

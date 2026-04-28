@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { AuthSession } from "../../../auth/authTypes";
 import type { ChatHistorySummary } from "../../../chat/api";
@@ -47,6 +48,38 @@ export default function HistoryRail({
   const [renamingHistoryId, setRenamingHistoryId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const rootRef = useRef<HTMLElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!openMenuHistoryId) {
+      setMenuPosition(null);
+      return;
+    }
+
+    const updateMenuPosition = () => {
+      const button = menuButtonRefs.current.get(openMenuHistoryId);
+      if (!button) {
+        setMenuPosition(null);
+        return;
+      }
+
+      const rect = button.getBoundingClientRect();
+      setMenuPosition({
+        top: rect.bottom + 6,
+        left: rect.right - 188,
+      });
+    };
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [openMenuHistoryId]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -63,7 +96,9 @@ export default function HistoryRail({
         return;
       }
 
-      if (rootRef.current && !rootRef.current.contains(target)) {
+      const clickedInsideRoot = rootRef.current?.contains(target) ?? false;
+      const clickedInsideMenu = menuRef.current?.contains(target) ?? false;
+      if (!clickedInsideRoot && !clickedInsideMenu) {
         setOpenMenuHistoryId(null);
         setRenamingHistoryId(null);
         setRenameValue("");
@@ -182,6 +217,13 @@ export default function HistoryRail({
                         aria-label={`Open actions for ${history.title}`}
                         className="history-menu-button"
                         disabled={isDeleting || isUpdating}
+                        ref={(element) => {
+                          if (element) {
+                            menuButtonRefs.current.set(history.id, element);
+                            return;
+                          }
+                          menuButtonRefs.current.delete(history.id);
+                        }}
                         onClick={() => {
                           setRenamingHistoryId(null);
                           setOpenMenuHistoryId((current) => (current === history.id ? null : history.id));
@@ -190,95 +232,106 @@ export default function HistoryRail({
                       >
                         ...
                       </button>
-                      {isMenuOpen ? (
-                        <div className="history-menu" role="menu">
-                          {isRenaming ? (
-                            <form
-                              className="history-rename-form"
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                const nextTitle = renameValue.trim();
-                                if (!nextTitle) {
-                                  return;
-                                }
-                                setOpenMenuHistoryId(null);
-                                setRenamingHistoryId(null);
-                                void onRenameHistory(history.id, nextTitle);
-                              }}
-                            >
-                              <input
-                                autoFocus
-                                className="history-rename-input"
-                                maxLength={255}
-                                onChange={(event) => {
-                                  setRenameValue(event.target.value);
+                    </div>
+                    {isMenuOpen && menuPosition
+                      ? createPortal(
+                          <div
+                            className="history-menu"
+                            ref={menuRef}
+                            role="menu"
+                            style={{
+                              top: `${Math.max(12, menuPosition.top)}px`,
+                              left: `${Math.max(12, menuPosition.left)}px`,
+                            }}
+                          >
+                            {isRenaming ? (
+                              <form
+                                className="history-rename-form"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  const nextTitle = renameValue.trim();
+                                  if (!nextTitle) {
+                                    return;
+                                  }
+                                  setOpenMenuHistoryId(null);
+                                  setRenamingHistoryId(null);
+                                  void onRenameHistory(history.id, nextTitle);
                                 }}
-                                type="text"
-                                value={renameValue}
-                              />
-                              <div className="history-rename-actions">
-                                <button className="history-menu-item" type="submit">
-                                  Save
+                              >
+                                <input
+                                  autoFocus
+                                  className="history-rename-input"
+                                  maxLength={255}
+                                  onChange={(event) => {
+                                    setRenameValue(event.target.value);
+                                  }}
+                                  type="text"
+                                  value={renameValue}
+                                />
+                                <div className="history-rename-actions">
+                                  <button className="history-menu-item" type="submit">
+                                    Save
+                                  </button>
+                                  <button
+                                    className="history-menu-item"
+                                    onClick={() => {
+                                      setRenamingHistoryId(null);
+                                      setRenameValue("");
+                                    }}
+                                    type="button"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
+                            ) : null}
+                            {!isRenaming ? (
+                              <>
+                                <button
+                                  className="history-menu-item"
+                                  disabled={isSending || isDeleting || isUpdating}
+                                  onClick={() => {
+                                    setRenamingHistoryId(history.id);
+                                    setRenameValue(history.title);
+                                  }}
+                                  role="menuitem"
+                                  type="button"
+                                >
+                                  Rename
                                 </button>
                                 <button
                                   className="history-menu-item"
+                                  disabled={isSending || isDeleting || isUpdating}
                                   onClick={() => {
-                                    setRenamingHistoryId(null);
-                                    setRenameValue("");
+                                    setOpenMenuHistoryId(null);
+                                    void onTogglePinHistory(history.id, isPinned);
                                   }}
+                                  role="menuitem"
                                   type="button"
                                 >
-                                  Cancel
+                                  {isPinned ? "Unpin Chat" : "Pin Chat"}
                                 </button>
-                              </div>
-                            </form>
-                          ) : null}
-                          {!isRenaming ? (
-                            <>
-                              <button
-                                className="history-menu-item"
-                                disabled={isSending || isDeleting || isUpdating}
-                                onClick={() => {
-                                  setRenamingHistoryId(history.id);
-                                  setRenameValue(history.title);
-                                }}
-                                role="menuitem"
-                                type="button"
-                              >
-                                Rename
-                              </button>
-                              <button
-                                className="history-menu-item"
-                                disabled={isSending || isDeleting || isUpdating}
-                                onClick={() => {
-                                  setOpenMenuHistoryId(null);
-                                  void onTogglePinHistory(history.id, isPinned);
-                                }}
-                                role="menuitem"
-                                type="button"
-                              >
-                                {isPinned ? "Unpin Chat" : "Pin Chat"}
-                              </button>
-                              <button className="history-menu-item" disabled role="menuitem" type="button">
-                                Remember this chat
-                              </button>
-                              <button
-                                className="history-menu-item history-menu-item--danger"
-                                disabled={isSending || isDeleting || isUpdating}
-                                onClick={() => {
-                                  setOpenMenuHistoryId(null);
-                                  void onDeleteHistory(history.id);
-                                }}
-                                role="menuitem"
-                                type="button"
-                              >
-                                {isDeleting ? "Deleting..." : "Delete"}
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
+                                <button className="history-menu-item" disabled role="menuitem" type="button">
+                                  Remember this chat
+                                </button>
+                                <button
+                                  className="history-menu-item history-menu-item--danger"
+                                  disabled={isSending || isDeleting || isUpdating}
+                                  onClick={() => {
+                                    setOpenMenuHistoryId(null);
+                                    void onDeleteHistory(history.id);
+                                  }}
+                                  role="menuitem"
+                                  type="button"
+                                >
+                                  {isDeleting ? "Deleting..." : "Delete"}
+                                </button>
+                              </>
+                            ) : null}
+                          </div>,
+                          document.body,
+                        )
+                      : null}
                   </div>
                 );
               })}

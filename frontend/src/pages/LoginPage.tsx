@@ -57,7 +57,7 @@ export default function LoginPage({
               </button>
             </div>
 
-            <p className="login-hint">ver. 0.2.5-pre-Cipher</p>
+            <p className="login-hint">ver. 0.2.5-pre-Cypher</p>
             {authError ? <p className="login-error">{authError}</p> : null}
           </section>
         )}
