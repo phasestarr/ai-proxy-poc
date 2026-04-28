@@ -8,6 +8,10 @@ export function getSessionLabel(session: AuthSession): string {
   return session.displayName;
 }
 
+export function getSessionTypeLabel(session: AuthSession): string {
+  return session.authType === "microsoft" ? "microsoft session" : "guest session";
+}
+
 export function formatHistoryTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -32,4 +36,3 @@ function maskEmail(email: string): string {
   const visiblePrefix = localPart.slice(0, visiblePrefixLength);
   return `${visiblePrefix}****@${domain}`;
 }
-

@@ -41,6 +41,15 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 - `GET /api/v1/chat/histories/{history_id}`
   - authenticated
   - returns one history plus persisted messages
+- `PATCH /api/v1/chat/histories/{history_id}/title`
+  - authenticated
+  - updates one owned history title
+- `PUT /api/v1/chat/histories/{history_id}/pin`
+  - authenticated
+  - pins one owned history at the end of the pinned section
+- `DELETE /api/v1/chat/histories/{history_id}/pin`
+  - authenticated
+  - removes one owned history from the pinned section
 - `DELETE /api/v1/chat/histories/{history_id}`
   - authenticated
   - deletes one owned history
@@ -73,6 +82,16 @@ Important:
 - when `chat_history_id` is present, backend rebuilds provider context from persisted non-error messages and treats the request's last user message as the new turn
 - local validation or coordination rejects do not create a persisted turn
 - once a chat turn is created, provider execution continues in the backend even if the browser SSE connection closes
+
+## Chat History Metadata
+
+- chat history auto-titles are normalized from the first prompt and stored up to `80` characters without backend-added ellipsis
+- manually renamed titles are stored up to `255` characters
+- frontend display truncation is a presentation concern; backend stores the title text
+- chat history list order is:
+  - pinned histories first by `pin_order ASC`
+  - unpinned histories after that by `COALESCE(last_message_at, created_at) DESC`
+- `updated_at` may change for metadata edits such as rename or pin state changes, but it is not the list-order source of truth
 
 ## SSE Events
 

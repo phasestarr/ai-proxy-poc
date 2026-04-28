@@ -1,4 +1,11 @@
-export { deleteChatHistory, fetchChatHistories, fetchChatHistory } from "./chatHistoryApi";
+export {
+  deleteChatHistory,
+  fetchChatHistories,
+  fetchChatHistory,
+  pinChatHistory,
+  renameChatHistory,
+  unpinChatHistory,
+} from "./chatHistoryApi";
 export { streamChatReply } from "./streamChatApi";
 export type {
   ChatHistory,
@@ -10,4 +17,3 @@ export type {
   ChatStreamDone,
   ChatStreamStart,
 } from "./types";
-

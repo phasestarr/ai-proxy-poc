@@ -7,10 +7,12 @@ import {
   deleteChatHistory,
   fetchChatHistories,
   fetchChatHistory,
+  pinChatHistory,
+  renameChatHistory,
   streamChatReply,
   type ChatHistorySummary,
+  unpinChatHistory,
 } from "../chat/api";
-import ChatToolbar from "./chat/components/ChatToolbar";
 import Composer, { buildChatSelection } from "./chat/components/Composer";
 import ConversationList from "./chat/components/ConversationList";
 import HistoryRail from "./chat/components/HistoryRail";
@@ -37,6 +39,8 @@ type ChatPageProps = {
   onSessionConflict: (conflict: SessionConflictInfo) => void;
 };
 
+const APP_NAME = "0.2.5-pre-Procyon";
+
 export default function ChatPage({ session, onLogout, onSessionExpired, onSessionConflict }: ChatPageProps) {
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
@@ -48,7 +52,9 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [loadingHistoryId, setLoadingHistoryId] = useState<string | null>(null);
   const [deletingHistoryId, setDeletingHistoryId] = useState<string | null>(null);
-  const [welcomeText] = useState(() => getRandomWelcomeText());
+  const [updatingHistoryId, setUpdatingHistoryId] = useState<string | null>(null);
+  const [welcomeText, setWelcomeText] = useState(() => getRandomWelcomeText());
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const nextMessageIdRef = useRef(1);
   const models = useChatModelSelection();
   const autoScroll = useConversationAutoScroll(messages);
@@ -91,6 +97,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
     setPrompt("");
     setActiveChatHistoryId(null);
     setSendError(null);
+    setWelcomeText(getRandomWelcomeText());
     nextMessageIdRef.current = 1;
 
     let cancelled = false;
@@ -130,6 +137,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
     setMessages([]);
     setPrompt("");
     setSendError(null);
+    setWelcomeText(getRandomWelcomeText());
     nextMessageIdRef.current = 1;
     models.resetModelSelection();
     autoScroll.enableAutoScroll();
@@ -145,7 +153,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
     setSendError(null);
     try {
       const history = await fetchChatHistory(historyId);
-      const mapped = mapHistoryMessagesToTranscript(history.messages);
+      const mapped = mapHistoryMessagesToTranscript(history.messages, models.modelOptions);
       const latestSelection = getLatestHistorySelection(history.messages);
       setActiveChatHistoryId(history.history.id);
       setMessages(mapped.messages);
@@ -162,7 +170,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   };
 
   const handleDeleteHistory = async (historyId: string) => {
-    if (isSending || deletingHistoryId) {
+    if (isSending || deletingHistoryId || updatingHistoryId) {
       return;
     }
 
@@ -179,6 +187,46 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
       handleRecoverableError(error, "Failed to delete chat history.");
     } finally {
       setDeletingHistoryId(null);
+    }
+  };
+
+  const handleRenameHistory = async (historyId: string, title: string) => {
+    if (isSending || deletingHistoryId || updatingHistoryId) {
+      return;
+    }
+
+    setUpdatingHistoryId(historyId);
+    setHistoryError(null);
+    setSendError(null);
+    try {
+      await renameChatHistory(historyId, title);
+      await refreshHistorySummaries();
+    } catch (error) {
+      handleRecoverableError(error, "Failed to rename chat history.");
+    } finally {
+      setUpdatingHistoryId(null);
+    }
+  };
+
+  const handleTogglePinHistory = async (historyId: string, isPinned: boolean) => {
+    if (isSending || deletingHistoryId || updatingHistoryId) {
+      return;
+    }
+
+    setUpdatingHistoryId(historyId);
+    setHistoryError(null);
+    setSendError(null);
+    try {
+      if (isPinned) {
+        await unpinChatHistory(historyId);
+      } else {
+        await pinChatHistory(historyId);
+      }
+      await refreshHistorySummaries();
+    } catch (error) {
+      handleRecoverableError(error, "Failed to update chat pin state.");
+    } finally {
+      setUpdatingHistoryId(null);
     }
   };
 
@@ -289,23 +337,33 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   };
 
   return (
-    <main className={`chat-page ${hasStarted ? "chat-page--active" : ""}`}>
+    <main
+      className={`chat-page ${hasStarted ? "chat-page--active" : "chat-page--idle"} ${isSidebarOpen ? "chat-page--sidebar-open" : "chat-page--sidebar-closed"}`}
+    >
       <HistoryRail
+        appName={APP_NAME}
         activeHistoryId={activeChatHistoryId}
         deletingHistoryId={deletingHistoryId}
         histories={historySummaries}
         historyError={historyError}
         isHistoryLoading={isHistoryLoading}
+        isOpen={isSidebarOpen}
         isSending={isSending}
         loadingHistoryId={loadingHistoryId}
+        updatingHistoryId={updatingHistoryId}
+        onSidebarToggle={() => {
+          setIsSidebarOpen((current) => !current);
+        }}
         onDeleteHistory={handleDeleteHistory}
         onNewChat={handleNewChat}
+        onRenameHistory={handleRenameHistory}
         onSelectHistory={handleSelectHistory}
+        onTogglePinHistory={handleTogglePinHistory}
+        session={session}
       />
-      <section className="chat-shell">
+      <section className={`chat-shell ${hasStarted ? "chat-shell--conversation" : "chat-shell--idle"}`}>
         {!hasStarted ? (
           <section className="welcome-panel">
-            <p className="welcome-eyebrow">Welcome</p>
             <h1 className="welcome-title">{welcomeText}</h1>
           </section>
         ) : null}
@@ -318,8 +376,6 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
           />
         ) : null}
 
-        <ChatToolbar onLogout={onLogout} session={session} />
-
         <Composer
           availableTools={models.availableTools}
           isModelMenuOpen={models.isModelMenuOpen}
@@ -331,6 +387,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
           modelsError={models.modelsError}
           onModelMenuToggle={models.handleModelMenuToggle}
           onModelSelect={models.handleModelSelect}
+          onLogout={onLogout}
           onPromptChange={(value) => {
             setPrompt(value);
           }}

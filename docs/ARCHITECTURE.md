@@ -30,8 +30,9 @@ Current runtime and code ownership for `ai-proxy-poc`.
 6. `ChatPage` loads the backend model catalog from `GET /api/v1/models`.
 7. The frontend does not own model defaults; the user explicitly selects from the backend catalog.
 8. Chat history list/load/delete goes through `frontend/src/chat/api/chatHistoryApi.ts`.
-9. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions`.
-10. The frontend consumes SSE `start`, `delta`, `status`, `done`, and `error`.
+9. Chat history rename and pin/unpin also go through `frontend/src/chat/api/chatHistoryApi.ts`.
+10. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions`.
+11. The frontend consumes SSE `start`, `delta`, `status`, `done`, and `error`.
 
 ## Backend Flow
 1. `proxy-api/app/main.py`
@@ -86,6 +87,7 @@ Important defaults from code:
   - conflict tickets
   - chat histories
   - chat messages
+  - remembered-chat summary placeholders
 - Redis is used for:
   - one in-flight chat lease per session
   - minute/hour chat rate limits
@@ -102,6 +104,19 @@ Important defaults from code:
 - if provider execution fails, the assistant message is kept renderable but marked `excluded_from_context=true`
 - persisted provider-attempted failures keep provider-specific `result_code`, `result_message`, `finish_reason`, and safe `error_detail`
 - future provider context is rebuilt from persisted non-error messages
+
+## Chat History Metadata
+- `chat_histories.title` stores the backend-owned history title text
+- first-prompt auto-titles are normalized and capped to `80` characters without backend-added ellipsis
+- manually renamed titles are capped to the DB column limit and rendered with frontend truncation when needed
+- `chat_histories.pin_order`
+  - `NULL` means unpinned
+  - lower values sort earlier in the pinned section
+  - new pins append to the end of the pinned section
+- history list order is:
+  - pinned histories by `pin_order ASC`
+  - then unpinned histories by `COALESCE(last_message_at, created_at) DESC`
+- metadata edits may change `updated_at`, but list ordering uses pin state and message activity timestamps
 
 ## Provider Layer
 

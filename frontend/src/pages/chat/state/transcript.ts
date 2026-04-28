@@ -1,4 +1,5 @@
 import type { ChatHistoryMessage, ChatRequestMessage } from "../../../chat/api";
+import type { ChatModelOption } from "../../../chat/api/modelApi";
 
 export type MessageRole = "user" | "assistant";
 export type MessageStatus = "streaming" | "done" | "error";
@@ -155,6 +156,7 @@ export function failAssistantMessage(
 
 export function mapHistoryMessagesToTranscript(
   historyMessages: ChatHistoryMessage[],
+  modelOptions: ChatModelOption[] = [],
 ): { messages: TranscriptMessage[]; nextMessageId: number } {
   let nextMessageId = 1;
   const messages = [...historyMessages]
@@ -163,7 +165,7 @@ export function mapHistoryMessagesToTranscript(
       const id = nextMessageId;
       nextMessageId += 1;
 
-      return mapHistoryMessageToTranscriptMessage(message, id);
+      return mapHistoryMessageToTranscriptMessage(message, id, modelOptions);
     });
 
   return { messages, nextMessageId };
@@ -185,28 +187,40 @@ export function getLatestHistorySelection(
 function mapHistoryMessageToTranscriptMessage(
   message: ChatHistoryMessage,
   id: number,
+  modelOptions: ChatModelOption[],
 ): TranscriptMessage {
   const status = message.status;
   const detail =
     message.resultMessage ??
     message.errorDetail ??
     (message.finishReason ? `finish reason: ${message.finishReason}` : undefined);
+  const requestMeta = message.role === "user" && (message.modelId || message.toolIds.length > 0)
+    ? getRequestMeta(message.modelId, message.toolIds, modelOptions)
+    : undefined;
 
   return {
     id,
     role: message.role,
     content: message.content,
-    requestMeta:
-      message.role === "user" && (message.modelId || message.toolIds.length > 0)
-        ? {
-            modelLabel: message.modelId ?? "Saved model",
-            toolLabels: message.toolIds,
-          }
-        : undefined,
+    requestMeta,
     status: message.role === "assistant" ? status : undefined,
     completionNote: message.role === "assistant" && message.status === "done" ? message.resultMessage ?? undefined : undefined,
     detail: message.role === "assistant" && status === "error" ? detail : undefined,
     resultCode: message.resultCode,
     excludedFromRequest: message.excludedFromContext || message.status === "streaming",
+  };
+}
+
+function getRequestMeta(
+  modelId: string | null,
+  toolIds: string[],
+  modelOptions: ChatModelOption[],
+): MessageRequestMeta {
+  const matchedModel = modelId ? modelOptions.find((option) => option.id === modelId) : undefined;
+  const toolLabels = toolIds.map((toolId) => matchedModel?.toolOptions.find((tool) => tool.id === toolId)?.label ?? toolId);
+
+  return {
+    modelLabel: matchedModel?.label ?? modelId ?? "Saved model",
+    toolLabels,
   };
 }

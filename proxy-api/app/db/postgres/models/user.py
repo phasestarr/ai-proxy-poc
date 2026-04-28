@@ -53,3 +53,7 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    chat_history_memories: Mapped[list["ChatHistoryMemory"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

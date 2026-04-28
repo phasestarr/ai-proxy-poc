@@ -7,6 +7,7 @@ def build_chat_history_summary(history, message_count: int) -> ChatHistorySummar
     return ChatHistorySummary(
         id=history.id,
         title=history.title,
+        pin_order=history.pin_order,
         created_at=history.created_at,
         updated_at=history.updated_at,
         last_message_at=history.last_message_at,

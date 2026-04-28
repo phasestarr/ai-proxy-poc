@@ -3,9 +3,16 @@
 This file is for inspecting the real PostgreSQL database from Docker Compose,
 even if you are not comfortable with SQL yet.
 
-The queries below prefer short, table-friendly columns. Long text fields such as
-chat content, stored error detail, and JSON payloads are kept out of the default
-tables and have a separate inspection section.
+The basic rule is:
+
+1. run a table-friendly query first
+2. copy the `id` you need
+3. paste that `id` into the next query
+4. only use raw text queries when you already know which row you want
+
+Long text fields such as chat content, stored error detail, and JSON payloads
+are intentionally kept out of the default table views. Those have a separate
+`Raw Text / JSON` section near the bottom.
 
 ## Connect
 
@@ -21,17 +28,25 @@ Run one query:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT NOW();"
 ```
 
+Expanded output for one row:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT version_num FROM alembic_version;"
+```
+
 ## Safety Rules
 
-- Do not delete rows casually from child tables.
-- The only direct `DELETE` examples in this document target cascade roots:
-  `users`, `auth_sessions`, and `chat_histories`.
-- `ms_identities`, `guest_identities`, `auth_provider_sessions`,
-  `auth_conflict_tickets`, `oauth_transactions`, and `chat_messages` are usually
-  cleaned up by parent-row cascade or app cleanup.
-- Before any production `DELETE`, run a `SELECT` with the same `WHERE` clause.
+- Before any `DELETE`, first run a `SELECT` with the same `WHERE` clause.
+- Do not casually delete child rows such as `chat_messages`,
+  `chat_history_memories`, `auth_provider_sessions`, or `guest_identities`.
+- Prefer deleting cascade roots:
+  - `users`
+  - `auth_sessions`
+  - `chat_histories`
 - Guest users are keyed by raw IP address. In local Docker this is often a
   bridge IP such as `172.18.0.1`, not your LAN IP.
+- Human users are intentional account data. They are not "zombie rows" just
+  because they are old.
 
 ## Current Tables
 
@@ -46,10 +61,11 @@ Application tables:
 7. `oauth_transactions`
 8. `chat_histories`
 9. `chat_messages`
+10. `chat_history_memories`
 
 Migration metadata:
 
-10. `alembic_version`
+11. `alembic_version`
 
 Scaffold-only models that do not create active tables:
 
@@ -67,7 +83,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT table_name
 Row counts:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages ORDER BY table_name;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories ORDER BY table_name;"
 ```
 
 Foreign-key cascade rules:
@@ -82,22 +98,85 @@ Alembic head:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT version_num FROM alembic_version;"
 ```
 
-## 1. users
+## Common Workflows
+
+### Workflow A: inspect one user's chat data
+
+1. Find the user:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, account_type, display_name, email, created_at, last_seen_at FROM users ORDER BY created_at DESC;"
+```
+
+2. Use the copied `users.id` in the next query:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, created_at, updated_at, last_message_at FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
+```
+
+3. Use the copied `chat_histories.id` in the next query:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+```
+
+4. If you need the real text, use the same history id here:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT sequence, role, status, result_code, result_message, content, error_detail FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+```
+
+### Workflow B: inspect one guest by IP
+
+1. Find the guest identity:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.id, gi.user_id, gi.ip_address, u.display_name, u.created_at, u.last_seen_at FROM guest_identities gi JOIN users u ON u.id = gi.user_id ORDER BY gi.created_at DESC;"
+```
+
+2. Copy `guest_identities.user_id` and use it in the user-history query:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, created_at, updated_at, last_message_at FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
+```
+
+### Workflow C: delete one chat history safely
+
+1. Inspect the history first:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, created_at, updated_at, last_message_at FROM chat_histories WHERE id = 'PUT_CHAT_HISTORY_ID_HERE';"
+```
+
+2. Optional: inspect child rows before delete:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, length(content) AS content_length FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+```
+
+3. Delete the parent row:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM chat_histories WHERE id = 'PUT_CHAT_HISTORY_ID_HERE' RETURNING id, user_id, title;"
+```
+
+That delete cascades:
+
+- `chat_messages`
+- `chat_history_memories`
+
+## Friendly Table Queries
+
+Use these first. They avoid long raw text and are much easier to read in a
+terminal.
+
+### users
 
 Role:
 
 - Parent table for guest and Microsoft users.
-- Guest users are linked one-to-one with `guest_identities.ip_address`.
-- Microsoft users are linked one-to-one with `ms_identities`.
 - Deleting a user cascades identities, sessions, conflict tickets, chat
-  histories, and chat messages.
-
-Zombie risk:
-
-- Low for guest users. Guest cleanup removes orphaned guest users when sessions
-  are gone.
-- Human users are intentionally retained. Old human users are account data, not
-  zombies.
+  histories, chat messages, and remembered-chat placeholder rows.
 
 Inspect:
 
@@ -108,13 +187,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, accoun
 Rows owned by each user:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.account_type, u.display_name, u.email, COUNT(DISTINCT s.id) AS sessions, COUNT(DISTINCT ch.id) AS chat_histories, COUNT(DISTINCT mi.id) AS ms_identity_count, COUNT(DISTINCT gi.id) AS guest_identity_count FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN chat_histories ch ON ch.user_id = u.id LEFT JOIN ms_identities mi ON mi.user_id = u.id LEFT JOIN guest_identities gi ON gi.user_id = u.id GROUP BY u.id ORDER BY u.created_at DESC;"
-```
-
-Guest orphans:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.display_name, u.created_at FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_histories ch ON ch.user_id = u.id WHERE u.account_type = 'guest' AND s.id IS NULL AND gi.id IS NULL AND ch.id IS NULL ORDER BY u.created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.account_type, u.display_name, u.email, COUNT(DISTINCT s.id) AS sessions, COUNT(DISTINCT ch.id) AS chat_histories, COUNT(DISTINCT chm.id) AS remembered_histories, COUNT(DISTINCT mi.id) AS ms_identity_count, COUNT(DISTINCT gi.id) AS guest_identity_count FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN chat_histories ch ON ch.user_id = u.id LEFT JOIN chat_history_memories chm ON chm.user_id = u.id LEFT JOIN ms_identities mi ON mi.user_id = u.id LEFT JOIN guest_identities gi ON gi.user_id = u.id GROUP BY u.id ORDER BY u.created_at DESC;"
 ```
 
 Delete one user:
@@ -123,28 +196,7 @@ Delete one user:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM users WHERE id = 'PUT_USER_ID_HERE' RETURNING id, account_type, display_name, email;"
 ```
 
-Cascade impact:
-
-- `ms_identities`
-- `guest_identities`
-- `auth_sessions`
-- `auth_provider_sessions`, through `auth_sessions`
-- `auth_conflict_tickets`
-- `chat_histories`
-- `chat_messages`, through `chat_histories`
-
-## 2. ms_identities
-
-Role:
-
-- Links a Microsoft account to one internal `users` row.
-- `(provider, tenant_id, subject)` is unique.
-- `user_id` is unique, so the current model has one Microsoft identity per user.
-
-Zombie risk:
-
-- Low. `users.id` has `ON DELETE CASCADE`.
-- Old rows can exist because human users are retained intentionally.
+### ms_identities
 
 Inspect:
 
@@ -152,28 +204,11 @@ Inspect:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, provider, tenant_id, subject, home_account_id, preferred_username, created_at, updated_at FROM ms_identities ORDER BY created_at DESC;"
 ```
 
-Missing parent user:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT mi.* FROM ms_identities mi LEFT JOIN users u ON u.id = mi.user_id WHERE u.id IS NULL;"
-```
-
 Cleanup:
 
 - Delete the parent `users` row, not this child row directly.
 
-## 3. guest_identities
-
-Role:
-
-- Links a guest IP address to one internal `users` row.
-- IP addresses are stored raw, not hashed.
-- The same IP reuses the same guest user.
-
-Zombie risk:
-
-- Low. `users.id` has `ON DELETE CASCADE`.
-- Local Docker often shows the bridge IP, such as `172.18.0.1`.
+### guest_identities
 
 Inspect:
 
@@ -187,45 +222,16 @@ Active sessions by guest IP:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.ip_address, gi.user_id, COUNT(s.id) FILTER (WHERE s.state = 'active') AS active_sessions, COUNT(s.id) AS total_sessions FROM guest_identities gi LEFT JOIN auth_sessions s ON s.user_id = gi.user_id GROUP BY gi.ip_address, gi.user_id ORDER BY gi.ip_address;"
 ```
 
-Missing parent user:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.* FROM guest_identities gi LEFT JOIN users u ON u.id = gi.user_id WHERE u.id IS NULL;"
-```
-
 Cleanup:
 
 - Delete the parent `users` row, not this child row directly.
 
-## 4. auth_sessions
-
-Role:
-
-- Server-side metadata for the `session_id` HttpOnly cookie.
-- The database stores only a SHA-256 hash of the raw session key.
-- Guest max sessions default: `2`.
-- Microsoft max sessions default: `4`.
-- Default session-limit strategy is `reject`; conflict resolution explicitly uses
-  `evict_oldest`.
-- Oldest active session is selected by `last_seen_at ASC NULLS FIRST`, then
-  `created_at ASC`.
-
-Zombie risk:
-
-- Low. Logout, request-time validation, startup cleanup, and background cleanup
-  remove expired or inactive sessions.
-- Revoked sessions may remain briefly for diagnostics and then get cleaned up.
+### auth_sessions
 
 Inspect:
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, state, persistent, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at, revoked_reason_code, superseded_by_session_id, created_ip, last_ip FROM auth_sessions ORDER BY created_at DESC;"
-```
-
-Session count by owner:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT COALESCE(gi.ip_address, u.email, u.display_name) AS owner, s.auth_type, s.state, COUNT(*) FROM auth_sessions s JOIN users u ON u.id = s.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id GROUP BY owner, s.auth_type, s.state ORDER BY owner, s.auth_type, s.state;"
 ```
 
 Expired or revoked sessions:
@@ -240,23 +246,7 @@ Delete one session:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM auth_sessions WHERE id = 'PUT_SESSION_ID_HERE' RETURNING id, user_id, auth_type, state;"
 ```
 
-Cascade impact:
-
-- `auth_provider_sessions`
-- Other `auth_sessions.superseded_by_session_id` references are set to `NULL`
-
-## 5. auth_provider_sessions
-
-Role:
-
-- Storage for provider session artifacts such as future Microsoft token cache
-  data.
-- The current login flow usually leaves this table empty.
-
-Zombie risk:
-
-- Very low. Rows are rare today.
-- If rows are added later, `auth_sessions.id` has `ON DELETE CASCADE`.
+### auth_provider_sessions
 
 Inspect:
 
@@ -264,32 +254,11 @@ Inspect:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT session_id, provider, token_cache_version, access_token_expires_at, refresh_token_expires_at, tenant_id, home_account_id, scope, last_refresh_at, last_refresh_error, created_at, updated_at FROM auth_provider_sessions ORDER BY created_at DESC;"
 ```
 
-Join parent session state:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT aps.session_id, aps.provider, s.user_id, s.auth_type, s.state, s.idle_expires_at, s.absolute_expires_at FROM auth_provider_sessions aps LEFT JOIN auth_sessions s ON s.id = aps.session_id ORDER BY aps.created_at DESC;"
-```
-
 Cleanup:
 
 - Delete the parent `auth_sessions` row, not this child row directly.
 
-## 6. auth_conflict_tickets
-
-Role:
-
-- Short-lived tickets used when Microsoft callback hits a session limit.
-- The raw ticket is only in the `session_conflict_id` HttpOnly cookie.
-- The database stores only the ticket hash.
-- The resolve endpoint consumes the ticket, evicts the oldest active session, and
-  issues a new session.
-
-Zombie risk:
-
-- Low.
-- Default TTL is `5 minutes`.
-- Expired or consumed rows are removed by startup/background cleanup.
-- User deletion cascades these rows.
+### auth_conflict_tickets
 
 Inspect:
 
@@ -303,24 +272,7 @@ Cleanup candidates:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_type, expires_at, consumed_at FROM auth_conflict_tickets WHERE expires_at <= NOW() OR consumed_at IS NOT NULL ORDER BY created_at DESC;"
 ```
 
-Cleanup:
-
-- Let app cleanup handle it, or restart the app to run startup cleanup.
-- To remove all data for one account, delete the parent `users` row.
-
-## 7. oauth_transactions
-
-Role:
-
-- Short-lived Microsoft OAuth transaction table.
-- Stores state, nonce, and PKCE verifier metadata for the redirect flow.
-- Successful, failed, or canceled callbacks delete or consume the transaction.
-
-Zombie risk:
-
-- Low.
-- If login starts and callback never returns, rows remain until expiration.
-- Expired or consumed rows are removed by startup/background cleanup.
+### oauth_transactions
 
 Inspect:
 
@@ -334,37 +286,25 @@ Cleanup candidates:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, state, expires_at, consumed_at, return_to FROM oauth_transactions WHERE expires_at <= NOW() OR consumed_at IS NOT NULL ORDER BY created_at DESC;"
 ```
 
-Cleanup:
-
-- Let app cleanup handle it, or restart the app to run startup cleanup.
-
-## 8. chat_histories
+### chat_histories
 
 Role:
 
 - Parent table for each persisted conversation.
-- New chats are auto-created by the first `POST /api/v1/chat/completions` when
-  `chat_history_id` is absent.
-- The frontend stores the `chat_history_id` from the SSE `start` event to
-  continue the same conversation.
-- Deleting a history cascades messages.
+- `title` is stored in DB.
+- `pin_order` is `NULL` for unpinned histories.
+- A deleted history cascades both messages and remembered-chat placeholder rows.
 
-Zombie risk:
-
-- Low.
-- User deletion cascades histories.
-- Histories intentionally kept by users are product data, not zombies.
-
-Inspect:
+All histories with owner info:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, COALESCE(gi.ip_address, u.email, u.display_name) AS owner, ch.title, ch.created_at, ch.updated_at, ch.last_message_at, COUNT(cm.id) AS message_count FROM chat_histories ch JOIN users u ON u.id = ch.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_messages cm ON cm.chat_history_id = ch.id GROUP BY ch.id, gi.ip_address, u.email, u.display_name ORDER BY ch.updated_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, COALESCE(gi.ip_address, u.email, u.display_name) AS owner, ch.title, ch.pin_order, ch.created_at, ch.updated_at, ch.last_message_at, COUNT(cm.id) AS message_count FROM chat_histories ch JOIN users u ON u.id = ch.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_messages cm ON cm.chat_history_id = ch.id GROUP BY ch.id, gi.ip_address, u.email, u.display_name ORDER BY ch.pin_order NULLS LAST, COALESCE(ch.last_message_at, ch.created_at) DESC;"
 ```
 
-Short message list for one history:
+Histories for one user:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, created_at, updated_at, last_message_at FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
 ```
 
 Delete one chat history:
@@ -373,34 +313,18 @@ Delete one chat history:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "DELETE FROM chat_histories WHERE id = 'PUT_CHAT_HISTORY_ID_HERE' RETURNING id, user_id, title;"
 ```
 
-Cascade impact:
-
-- `chat_messages`
-
-## 9. chat_messages
-
-Role:
-
-- Child table for persisted chat history messages.
-- Stores both user and assistant messages.
-- After SEND, the backend owns provider execution and stores success or failure
-  outcomes as `result_code` and `result_message`.
-- Failure rows keep provider-specific terminal semantics instead of generic
-  proxy error columns.
-- Failed turns are kept renderable but marked `excluded_from_context=true`, so
-  future provider payloads do not include them.
-
-Zombie risk:
-
-- Low.
-- Parent `chat_histories` deletion cascades messages.
-- Old `status='streaming'` rows can indicate incomplete background work and
-  should be inspected.
+### chat_messages
 
 Table-friendly inspect:
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, completed_at, created_at, updated_at FROM chat_messages ORDER BY created_at DESC LIMIT 100;"
+```
+
+Messages for one history:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
 ```
 
 Status counts:
@@ -424,15 +348,34 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT provider, 
 Cleanup:
 
 - Delete the parent `chat_histories` row.
-- Avoid manually editing individual failed or streaming messages unless you are
-  intentionally repairing a known row.
 
-## 10. alembic_version
+### chat_history_memories
 
 Role:
 
-- Records the current Alembic migration head.
-- App startup runs `alembic upgrade head`.
+- Placeholder table for remembered-chat summaries.
+- One row per `chat_history_id`.
+- Deleting the parent history cascades this row.
+
+Inspect:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, chat_history_id, status, source_last_message_sequence, model_id, provider, requested_at, completed_at, created_at, updated_at FROM chat_history_memories ORDER BY created_at DESC;"
+```
+
+One user's remembered-chat rows:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, chat_history_id, status, source_last_message_sequence, model_id, provider, requested_at, completed_at, created_at, updated_at FROM chat_history_memories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY created_at DESC;"
+```
+
+One history's remembered-chat row:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, chat_history_id, status, source_last_message_sequence, model_id, provider, requested_at, completed_at, created_at, updated_at FROM chat_history_memories WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE';"
+```
+
+### alembic_version
 
 Inspect:
 
@@ -444,10 +387,9 @@ Cleanup:
 
 - Do not delete this row.
 
-## Long Text Inspection
+## Raw Text / JSON
 
-Use this section when a compact table query tells you which row you need. These
-queries intentionally display long text or JSON and may be messy in a terminal.
+Use this section only after a friendly query told you which row you want.
 
 Full content for one chat message:
 
@@ -477,6 +419,12 @@ Recent failed messages with stored detail:
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, chat_history_id, sequence, model_id, provider, finish_reason, result_code, result_message, error_detail FROM chat_messages WHERE status = 'error' ORDER BY updated_at DESC LIMIT 20;"
+```
+
+Remembered-chat summary raw text:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, user_id, chat_history_id, status, summary_text, error_detail, usage FROM chat_history_memories WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE';"
 ```
 
 ## Quick Smoke Checks
@@ -515,6 +463,12 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_h
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT provider, result_code, finish_reason, COUNT(*) FROM chat_messages WHERE status = 'error' GROUP BY provider, result_code, finish_reason ORDER BY COUNT(*) DESC, provider, result_code;"
+```
+
+7. Remembered-chat placeholder rows by status:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, COUNT(*) FROM chat_history_memories GROUP BY status ORDER BY status;"
 ```
 
 ## Code Pointers

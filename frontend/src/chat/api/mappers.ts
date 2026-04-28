@@ -46,6 +46,7 @@ export function mapHistorySummary(payload: ChatHistorySummaryApiPayload): ChatHi
   return {
     id: payload.id,
     title: payload.title,
+    pinOrder: payload.pin_order ?? null,
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
     lastMessageAt: payload.last_message_at ?? null,

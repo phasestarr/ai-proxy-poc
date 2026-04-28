@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import type { FormEvent, RefObject } from "react";
 
 import type { ChatSelection } from "../../../chat/api";
@@ -19,6 +20,7 @@ type ComposerProps = {
   isSending: boolean;
   modelMenuRef: RefObject<HTMLDivElement>;
   toolsMenuRef: RefObject<HTMLDivElement>;
+  onLogout: () => Promise<void> | void;
   onPromptChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void> | void;
   onModelMenuToggle: () => void;
@@ -43,6 +45,7 @@ export default function Composer({
   isSending,
   modelMenuRef,
   toolsMenuRef,
+  onLogout,
   onPromptChange,
   onSubmit,
   onModelMenuToggle,
@@ -50,19 +53,32 @@ export default function Composer({
   onModelSelect,
   onToolToggle,
 }: ComposerProps) {
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const toolsButtonLabel =
     selectedTools.length > 0 ? `Tools: ${selectedTools.map((tool) => tool.label).join(", ")}` : "Tools: None";
   const isToolsButtonDisabled = !selectedModel?.available || availableTools.length === 0;
+
+  useLayoutEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const maxHeight = Math.floor(window.innerHeight * 0.5);
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+  }, [prompt]);
 
   return (
     <form className="composer" onSubmit={onSubmit}>
       <textarea
         className="composer-input"
         disabled={isSending}
+        ref={inputRef}
         value={prompt}
         onChange={(event) => onPromptChange(event.target.value)}
         placeholder="Type your prompt..."
-        rows={3}
+        rows={1}
       />
       <div className="composer-actions">
         <div className="composer-action-group">
@@ -130,13 +146,18 @@ export default function Composer({
             ) : null}
           </div>
         </div>
-        <button
-          className="composer-send-button"
-          disabled={isSending || isModelsLoading || prompt.trim().length === 0 || !selectedModel?.available}
-          type="submit"
-        >
-          {isSending ? "Streaming..." : "Send"}
-        </button>
+        <div className="composer-submit-group">
+          <button className="composer-logout-button" onClick={() => void onLogout()} type="button">
+            Log out
+          </button>
+          <button
+            className="composer-send-button"
+            disabled={isSending || isModelsLoading || prompt.trim().length === 0 || !selectedModel?.available}
+            type="submit"
+          >
+            {isSending ? "Streaming..." : "Send"}
+          </button>
+        </div>
       </div>
       {modelsError ? <p className="chat-error">Error: {modelsError}</p> : null}
       {sendError ? <p className="chat-error">Error: {sendError}</p> : null}

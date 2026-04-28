@@ -112,9 +112,22 @@ class ChatHistoryCreateRequest(BaseModel):
         return trimmed
 
 
+class ChatHistoryTitleUpdateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("title must not be blank")
+        return trimmed
+
+
 class ChatHistorySummary(BaseModel):
     id: str
     title: str
+    pin_order: int | None = None
     created_at: datetime
     updated_at: datetime
     last_message_at: datetime | None = None

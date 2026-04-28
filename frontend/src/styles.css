@@ -1,5 +1,5 @@
 :root {
-  --line-soft: #cde5fb;
+  --line-soft: #e5e7eb;
 }
 
 * {
@@ -8,12 +8,9 @@
 
 body {
   margin: 0;
-  color: #0f3359;
+  color: #171717;
   font-family: "Manrope", "Noto Sans KR", "Segoe UI Variable", sans-serif;
-  background:
-    radial-gradient(circle at 18% 12%, #e6f4ff 0%, rgba(230, 244, 255, 0) 34%),
-    radial-gradient(circle at 82% 16%, #d8ecff 0%, rgba(216, 236, 255, 0) 36%),
-    linear-gradient(180deg, #f8fcff 0%, #eef7ff 100%);
+  background: #ffffff;
 }
 
 #root {
@@ -28,17 +25,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 34, 58, 0.26);
+  background: rgba(15, 23, 42, 0.16);
   backdrop-filter: blur(8px);
 }
 
 .session-conflict-card {
   width: min(440px, 100%);
   padding: 28px 24px;
-  border: 1px solid #bcd7f2;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 28px 68px rgba(70, 116, 161, 0.22);
+  border: 1px solid #e5e7eb;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.14);
 }
 
 .session-conflict-eyebrow {
@@ -47,7 +44,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #5b8db6;
+  color: #7a7a7a;
 }
 
 .session-conflict-title {
@@ -55,19 +52,19 @@ body {
   font-size: clamp(28px, 5vw, 36px);
   line-height: 0.98;
   letter-spacing: -0.05em;
-  color: #10365c;
+  color: #171717;
 }
 
 .session-conflict-copy {
   margin: 0;
-  color: #4d769d;
+  color: #555555;
   line-height: 1.55;
 }
 
 .session-conflict-meta {
   margin: 14px 0 0;
   font-size: 13px;
-  color: #6a91b6;
+  color: #7a7a7a;
 }
 
 .session-conflict-actions {
@@ -80,21 +77,21 @@ body {
   flex: 1;
   min-height: 46px;
   border-radius: 18px;
-  border: 1px solid #b7d6f4;
+  border: 1px solid #e5e7eb;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
 }
 
 .session-conflict-button--primary {
-  background: linear-gradient(140deg, #75b7ff 0%, #4e99ed 100%);
-  border-color: #4e99ed;
+  background: #171717;
+  border-color: #171717;
   color: #ffffff;
 }
 
 .session-conflict-button--secondary {
-  background: #eef6ff;
-  color: #184770;
+  background: #f3f4f6;
+  color: #171717;
 }
 
 .session-conflict-button:disabled {

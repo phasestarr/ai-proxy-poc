@@ -28,6 +28,8 @@ from app.schemas.chat import (
     ChatHistoryCreateRequest,
     ChatHistoryEnvelope,
     ChatHistoryListEnvelope,
+    ChatHistorySummary,
+    ChatHistoryTitleUpdateRequest,
 )
 from app.services.chat.stream import (
     ChatHistoryUnavailableError,
@@ -39,6 +41,9 @@ from app.services.chat.history_queries import (
     delete_chat_history,
     get_chat_history,
     list_chat_histories,
+    pin_chat_history,
+    unpin_chat_history,
+    update_chat_history_title,
 )
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -85,6 +90,54 @@ def get_history(
         history=build_chat_history_summary(history, len(messages)),
         messages=[build_chat_history_message_view(message) for message in messages],
     )
+
+
+@router.patch("/histories/{history_id}/title", response_model=ChatHistorySummary)
+def update_history_title(
+    history_id: str,
+    payload: ChatHistoryTitleUpdateRequest,
+    session=Depends(require_authenticated_session),
+    db: Session = Depends(get_db),
+) -> ChatHistorySummary:
+    try:
+        history = update_chat_history_title(
+            db,
+            user_id=session.user_id,
+            history_id=history_id,
+            title=payload.title,
+        )
+    except ChatHistoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
+
+    return build_chat_history_summary(history, len(history.messages))
+
+
+@router.put("/histories/{history_id}/pin", response_model=ChatHistorySummary)
+def pin_history(
+    history_id: str,
+    session=Depends(require_authenticated_session),
+    db: Session = Depends(get_db),
+) -> ChatHistorySummary:
+    try:
+        history = pin_chat_history(db, user_id=session.user_id, history_id=history_id)
+    except ChatHistoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
+
+    return build_chat_history_summary(history, len(history.messages))
+
+
+@router.delete("/histories/{history_id}/pin", response_model=ChatHistorySummary)
+def unpin_history(
+    history_id: str,
+    session=Depends(require_authenticated_session),
+    db: Session = Depends(get_db),
+) -> ChatHistorySummary:
+    try:
+        history = unpin_chat_history(db, user_id=session.user_id, history_id=history_id)
+    except ChatHistoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
+
+    return build_chat_history_summary(history, len(history.messages))
 
 
 @router.delete("/histories/{history_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -77,3 +77,66 @@ export async function deleteChatHistory(historyId: string): Promise<void> {
   }
 }
 
+export async function renameChatHistory(historyId: string, title: string): Promise<ChatHistorySummary> {
+  const response = await fetch(`/api/v1/chat/histories/${encodeURIComponent(historyId)}/title`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ title }),
+  });
+
+  if (response.status === 401) {
+    throw new AuthenticationRequiredError("login required");
+  }
+
+  if (response.status === 409) {
+    throw await readSessionConflict(response);
+  }
+
+  const payload = (await readJson(response)) as ChatHistoryApiEnvelope["history"] | ChatCompletionApiError | null;
+  if (!response.ok) {
+    throw new Error(getApiErrorMessage(response, payload, "failed to rename chat history"));
+  }
+
+  if (!payload || !("id" in payload)) {
+    throw new Error("invalid chat history payload");
+  }
+
+  return mapHistorySummary(payload);
+}
+
+export async function pinChatHistory(historyId: string): Promise<ChatHistorySummary> {
+  return updatePinnedChatHistory(`/api/v1/chat/histories/${encodeURIComponent(historyId)}/pin`, "PUT");
+}
+
+export async function unpinChatHistory(historyId: string): Promise<ChatHistorySummary> {
+  return updatePinnedChatHistory(`/api/v1/chat/histories/${encodeURIComponent(historyId)}/pin`, "DELETE");
+}
+
+async function updatePinnedChatHistory(url: string, method: "PUT" | "DELETE"): Promise<ChatHistorySummary> {
+  const response = await fetch(url, {
+    method,
+    credentials: "same-origin",
+  });
+
+  if (response.status === 401) {
+    throw new AuthenticationRequiredError("login required");
+  }
+
+  if (response.status === 409) {
+    throw await readSessionConflict(response);
+  }
+
+  const payload = (await readJson(response)) as ChatHistoryApiEnvelope["history"] | ChatCompletionApiError | null;
+  if (!response.ok) {
+    throw new Error(getApiErrorMessage(response, payload, "failed to update chat pin state"));
+  }
+
+  if (!payload || !("id" in payload)) {
+    throw new Error("invalid chat history payload");
+  }
+
+  return mapHistorySummary(payload);
+}

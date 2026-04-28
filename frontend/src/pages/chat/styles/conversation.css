@@ -4,45 +4,43 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 8px 4px;
-  animation: panel-up 220ms ease-out;
+  gap: 22px;
+  padding: 8px 0 4px;
+  animation: panel-up 200ms ease-out;
 }
 
 .chat-message {
   margin: 0 auto;
-  width: min(860px, 100%);
+  width: min(840px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  animation: bubble-up 260ms ease-out;
+  gap: 6px;
+  animation: bubble-up 220ms ease-out;
 }
 
-.chat-bubble {
-  margin: 0;
-  padding: 14px 16px;
-  border-radius: 16px;
-  line-height: 1.55;
+.chat-content {
+  width: 100%;
+  line-height: 1.65;
+  color: #1f1f1f;
   overflow-wrap: anywhere;
   word-break: break-word;
-  border: 1px solid var(--line-soft);
 }
 
-.chat-bubble--question {
-  align-self: flex-end;
-  width: fit-content;
-  max-width: min(78%, 680px);
-  background: #dbf0ff;
-  border-color: #b6dbff;
-  box-shadow: 0 10px 24px rgba(129, 189, 255, 0.3);
+.chat-content--question {
+  display: flex;
+  justify-content: flex-end;
 }
 
-.chat-bubble--answer {
-  align-self: flex-start;
+.chat-content--answer {
   width: 100%;
-  max-width: min(82%, 720px);
-  background: #ffffff;
-  box-shadow: 0 10px 24px rgba(131, 175, 229, 0.14);
+}
+
+.chat-user-bubble {
+  width: fit-content;
+  max-width: min(72%, 620px);
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: #efefef;
 }
 
 .chat-plain-text,
@@ -53,6 +51,7 @@
 
 .markdown-message {
   color: inherit;
+  font-size: 15px;
 }
 
 .markdown-message > :first-child {
@@ -71,16 +70,16 @@
 .markdown-message h6 {
   margin: 0 0 12px;
   line-height: 1.2;
-  letter-spacing: -0.03em;
-  color: #123a63;
+  letter-spacing: 0;
+  color: #171717;
 }
 
 .markdown-message h1 {
-  font-size: 1.5rem;
+  font-size: 1.55rem;
 }
 
 .markdown-message h2 {
-  font-size: 1.25rem;
+  font-size: 1.28rem;
 }
 
 .markdown-message h3 {
@@ -107,20 +106,20 @@
 }
 
 .markdown-message a {
-  color: #0f6fbe;
+  color: #0f62fe;
   text-decoration-thickness: 0.08em;
   text-underline-offset: 0.18em;
 }
 
 .markdown-message blockquote {
   padding: 4px 0 4px 14px;
-  border-left: 3px solid #91bee6;
-  color: #4c759d;
+  border-left: 2px solid #d0d0d0;
+  color: #5e5e5e;
 }
 
 .markdown-message hr {
   border: none;
-  border-top: 1px solid #d5e5f5;
+  border-top: 1px solid #e6e6e6;
 }
 
 .markdown-message code {
@@ -130,19 +129,17 @@
 
 .markdown-message :not(pre) > code {
   padding: 2px 6px;
-  border-radius: 8px;
-  background: #eaf4ff;
-  color: #195d94;
+  border-radius: 6px;
+  background: #f3f3f4;
+  color: #1f1f1f;
 }
 
 .markdown-message pre {
   padding: 14px 16px;
   border-radius: 14px;
   overflow-x: auto;
-  background: #0d2439;
-  color: #eef7ff;
-  border: 1px solid #193a5b;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: #171717;
+  color: #fafafa;
 }
 
 .markdown-message pre code {
@@ -159,59 +156,54 @@
 .markdown-message th,
 .markdown-message td {
   padding: 10px 12px;
-  border: 1px solid #d6e6f5;
+  border: 1px solid #e4e4e4;
   text-align: left;
   white-space: nowrap;
 }
 
 .markdown-message th {
-  background: #eef6ff;
-  color: #174a79;
+  background: #f7f7f8;
+  color: #171717;
 }
 
-.chat-tag {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.chat-meta-row {
-  margin: 0 0 10px;
+.chat-request-meta {
+  width: 100%;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  justify-content: flex-end;
+  padding: 0 4px;
 }
 
-.chat-tag--meta {
+.chat-request-meta-line {
   margin: 0;
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: #eef7ff;
-  color: #2a679d;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6d6d6d;
+  text-align: right;
+  white-space: normal;
 }
 
 .chat-loading {
-  color: #326a9e;
+  color: #707070;
 }
 
 .chat-done {
-  margin: 0 0 0 4px;
+  margin: 0;
   font-size: 13px;
-  color: #467cb5;
+  color: #6d6d6d;
 }
 
 .chat-error {
-  margin: 0 0 0 4px;
-  color: #c4304d;
+  margin: 0;
+  color: #b42318;
   font-size: 13px;
 }
 
 @media (max-width: 720px) {
-  .chat-bubble--question,
-  .chat-bubble--answer {
-    max-width: 94%;
+  .chat-message {
+    width: 100%;
+  }
+
+  .chat-user-bubble {
+    max-width: 88%;
   }
 }
-

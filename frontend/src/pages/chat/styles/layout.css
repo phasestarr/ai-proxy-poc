@@ -1,51 +1,55 @@
 .chat-page {
+  --sidebar-width: 292px;
   min-height: 100vh;
   height: 100vh;
-  padding: 28px 16px;
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  background: #ffffff;
   overflow: hidden;
 }
 
+.chat-page--sidebar-closed {
+  --sidebar-width: 76px;
+}
+
 .chat-shell {
-  width: min(980px, 100%);
-  flex: 1;
+  min-width: 0;
   min-height: 0;
-  margin: 0 auto;
+  padding: 32px 28px 24px;
   display: flex;
   flex-direction: column;
+  gap: 24px;
+}
+
+.chat-shell--idle {
+  justify-content: center;
+}
+
+.chat-shell--conversation {
   justify-content: flex-end;
-  gap: 18px;
 }
 
 .welcome-panel {
-  width: min(860px, 100%);
+  width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  animation: panel-up 240ms ease-out;
-}
-
-.welcome-eyebrow {
-  margin: 0;
-  font-size: 13px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #5f8cb5;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  animation: panel-up 220ms ease-out;
 }
 
 .welcome-title {
   margin: 0;
   max-width: 100%;
-  font-size: clamp(20px, 3.5vw, 39px);
-  line-height: 1.02;
-  letter-spacing: -0.05em;
-  color: #123a63;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.08;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: #171717;
   word-break: keep-all;
   overflow-wrap: anywhere;
-  white-space: normal;
   text-wrap: balance;
 }
 
@@ -73,20 +77,21 @@
 
 @media (max-width: 720px) {
   .chat-page {
-    padding: 14px 10px;
-    flex-direction: column;
-    overflow-y: auto;
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: visible;
   }
 
   .chat-shell {
-    gap: 14px;
-    flex: 1 0 auto;
-    min-height: 620px;
+    min-height: 0;
+    padding: 20px 14px 16px;
+    gap: 18px;
   }
 
   .welcome-title {
-    max-width: 100%;
-    font-size: clamp(18px, 6vw, 26px);
+    font-size: clamp(24px, 8vw, 34px);
   }
 }
 
@@ -95,4 +100,3 @@
     height: 100dvh;
   }
 }
-

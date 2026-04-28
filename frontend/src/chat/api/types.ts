@@ -27,6 +27,7 @@ export type ChatStreamStatus = {
 export type ChatHistorySummary = {
   id: string;
   title: string;
+  pinOrder: number | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
