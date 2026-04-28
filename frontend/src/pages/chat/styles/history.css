@@ -305,7 +305,7 @@
 .history-session-slot {
   border-radius: 14px;
   padding: 12px;
-  background: #efeff1;
+  background: transparent;
 }
 
 .history-session-label,
