@@ -39,7 +39,7 @@ type ChatPageProps = {
   onSessionConflict: (conflict: SessionConflictInfo) => void;
 };
 
-const APP_NAME = "0.2.5-pre-Procyon";
+const APP_NAME = "0.2.5-pre-Cypher";
 
 export default function ChatPage({ session, onLogout, onSessionExpired, onSessionConflict }: ChatPageProps) {
   const [prompt, setPrompt] = useState("");

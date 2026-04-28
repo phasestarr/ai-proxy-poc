@@ -32,9 +32,10 @@ export default function LoginPage({
         ) : (
           <section className="login-card">
             <p className="login-eyebrow">Login</p>
-            <h1 className="login-title">Choose your access path.</h1>
+            <h1 className="login-title">Authentication</h1>
             <p className="login-copy">
-              Microsoft sign-in stays backend-owned. The browser only keeps the local HttpOnly session cookie.
+              Microsoft sign-in stays backend-owned.<br/>
+              Front only keeps local HttpOnly session cookie.
             </p>
 
             <div className="login-actions">
@@ -56,7 +57,7 @@ export default function LoginPage({
               </button>
             </div>
 
-            <p className="login-hint">No client token storage. The browser only carries an HttpOnly session cookie.</p>
+            <p className="login-hint">ver. 0.2.5-pre-Cipher</p>
             {authError ? <p className="login-error">{authError}</p> : null}
           </section>
         )}
