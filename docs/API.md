@@ -66,14 +66,12 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
   - required
   - at least one `user` message is required
   - last message must be `user`
-  - current API-contract limits:
-    - max `100` messages
-    - max `16` tool ids
-    - max `8000` characters per message content
+  - backend validates request shape, message count, tool count, and message content length
 
 Important:
 - those validation limits are request-schema limits, not provider token-window limits
 - when `chat_history_id` is present, backend rebuilds provider context from persisted non-error messages and treats the request's last user message as the new turn
+- local validation or coordination rejects do not create a persisted turn
 - once a chat turn is created, provider execution continues in the backend even if the browser SSE connection closes
 
 ## SSE Events
@@ -90,6 +88,11 @@ Important:
 - `delta`
   - includes:
     - `delta_text`
+- `status`
+  - includes:
+    - `provider`
+    - `status_code`
+    - `status_message`
 - `done`
   - includes:
     - `model`
@@ -102,12 +105,13 @@ Important:
   - includes:
     - `result_code`
     - `result_message`
-    - `error_origin`
-    - `error_http_status`
-    - `provider`
-    - `provider_error_code`
     - `retry_after_seconds`
     - `detail`
+
+Notes:
+- `status_code` values are provider-specific progress codes
+- `result_code` values are provider-specific terminal outcome codes
+- `detail` is a user-safe provider-aware detail string, not a raw SDK exception dump
 
 ## Status Codes
 - `400`
@@ -123,7 +127,16 @@ Important:
 - `422`
   - schema validation failure
 
-After a chat turn starts, execution failures are emitted as SSE `error` events and also persisted on the assistant message row.
+After a chat turn starts, execution failures are emitted as SSE `error` events and also persisted on the assistant message row. Rejects that happen before provider dispatch are returned as normal HTTP errors and are not persisted.
+
+Persisted assistant failures keep:
+- `result_code`
+- `result_message`
+- `finish_reason`
+- `error_detail`
+- `provider`
+- `model_id`
+- `usage`
 
 ## Public Model Surface
 

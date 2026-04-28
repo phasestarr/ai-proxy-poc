@@ -3,8 +3,9 @@ import type {
   ChatHistorySummaryApiPayload,
   ChatStreamDoneApiEvent,
   ChatStreamStartApiEvent,
+  ChatStreamStatusApiEvent,
 } from "./contracts";
-import type { ChatHistoryMessage, ChatHistorySummary, ChatStreamDone, ChatStreamStart } from "./types";
+import type { ChatHistoryMessage, ChatHistorySummary, ChatStreamDone, ChatStreamStart, ChatStreamStatus } from "./types";
 
 export function mapStartEvent(payload: ChatStreamStartApiEvent): ChatStreamStart {
   return {
@@ -33,6 +34,14 @@ export function mapDoneEvent(payload: ChatStreamDoneApiEvent): ChatStreamDone {
   };
 }
 
+export function mapStatusEvent(payload: ChatStreamStatusApiEvent): ChatStreamStatus {
+  return {
+    provider: payload.provider ?? null,
+    statusCode: payload.status_code,
+    statusMessage: payload.status_message,
+  };
+}
+
 export function mapHistorySummary(payload: ChatHistorySummaryApiPayload): ChatHistorySummary {
   return {
     id: payload.id,
@@ -58,10 +67,6 @@ export function mapHistoryMessage(payload: ChatHistoryMessageApiPayload): ChatHi
     finishReason: payload.finish_reason ?? null,
     resultCode: payload.result_code ?? null,
     resultMessage: payload.result_message ?? null,
-    errorOrigin: payload.error_origin ?? null,
-    errorHttpStatus: payload.error_http_status ?? null,
-    providerErrorCode: payload.provider_error_code ?? null,
-    retryAfterSeconds: payload.retry_after_seconds ?? null,
     errorDetail: payload.error_detail ?? null,
     completedAt: payload.completed_at ?? null,
     createdAt: payload.created_at,

@@ -33,7 +33,7 @@ from app.services.chat.stream import (
     ChatHistoryUnavailableError,
     create_chat_completion_stream,
 )
-from app.services.chat.errors import ChatHistoryNotFoundError
+from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError
 from app.services.chat.history_queries import (
     create_chat_history,
     delete_chat_history,
@@ -111,6 +111,15 @@ async def chat_completions(
 ) -> StreamingResponse:
     try:
         event_stream = create_chat_completion_stream(payload, session=session, db=db)
+    except ChatProxyError as exc:
+        headers = {}
+        if exc.retry_after_seconds is not None:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
+        raise HTTPException(
+            status_code=exc.http_status or status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=exc.result_message,
+            headers=headers or None,
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

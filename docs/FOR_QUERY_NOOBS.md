@@ -4,7 +4,7 @@ This file is for inspecting the real PostgreSQL database from Docker Compose,
 even if you are not comfortable with SQL yet.
 
 The queries below prefer short, table-friendly columns. Long text fields such as
-chat content, raw error detail, and JSON payloads are kept out of the default
+chat content, stored error detail, and JSON payloads are kept out of the default
 tables and have a separate inspection section.
 
 ## Connect
@@ -364,7 +364,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.
 Short message list for one history:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, error_origin, error_http_status, provider_error_code, retry_after_seconds, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
 ```
 
 Delete one chat history:
@@ -385,6 +385,8 @@ Role:
 - Stores both user and assistant messages.
 - After SEND, the backend owns provider execution and stores success or failure
   outcomes as `result_code` and `result_message`.
+- Failure rows keep provider-specific terminal semantics instead of generic
+  proxy error columns.
 - Failed turns are kept renderable but marked `excluded_from_context=true`, so
   future provider payloads do not include them.
 
@@ -398,7 +400,7 @@ Zombie risk:
 Table-friendly inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, error_origin, error_http_status, provider_error_code, retry_after_seconds, completed_at, created_at, updated_at FROM chat_messages ORDER BY created_at DESC LIMIT 100;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, completed_at, created_at, updated_at FROM chat_messages ORDER BY created_at DESC LIMIT 100;"
 ```
 
 Status counts:
@@ -416,7 +418,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_h
 Error outcome summary:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT result_code, error_origin, error_http_status, provider, provider_error_code, COUNT(*) FROM chat_messages WHERE status = 'error' GROUP BY result_code, error_origin, error_http_status, provider, provider_error_code ORDER BY COUNT(*) DESC, result_code;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT provider, result_code, finish_reason, COUNT(*) FROM chat_messages WHERE status = 'error' GROUP BY provider, result_code, finish_reason ORDER BY COUNT(*) DESC, provider, result_code;"
 ```
 
 Cleanup:
@@ -453,10 +455,10 @@ Full content for one chat message:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, role, status, content FROM chat_messages WHERE id = 'PUT_CHAT_MESSAGE_ID_HERE';"
 ```
 
-Raw error detail for one failed message:
+Stored error detail for one failed message:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, result_code, result_message, error_origin, error_http_status, provider, provider_error_code, retry_after_seconds, error_detail FROM chat_messages WHERE id = 'PUT_CHAT_MESSAGE_ID_HERE';"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, provider, model_id, finish_reason, result_code, result_message, error_detail FROM chat_messages WHERE id = 'PUT_CHAT_MESSAGE_ID_HERE';"
 ```
 
 Usage JSON for one assistant message:
@@ -471,10 +473,10 @@ Full conversation text for one history:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT sequence, role, status, result_code, result_message, content, error_detail FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
 ```
 
-Recent failed messages with raw detail:
+Recent failed messages with stored detail:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, chat_history_id, sequence, model_id, provider, result_code, result_message, error_origin, error_http_status, provider_error_code, retry_after_seconds, error_detail FROM chat_messages WHERE status = 'error' ORDER BY updated_at DESC LIMIT 20;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, chat_history_id, sequence, model_id, provider, finish_reason, result_code, result_message, error_detail FROM chat_messages WHERE status = 'error' ORDER BY updated_at DESC LIMIT 20;"
 ```
 
 ## Quick Smoke Checks
@@ -512,7 +514,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_h
 6. Recent chat errors by code:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT result_code, error_origin, error_http_status, provider, COUNT(*) FROM chat_messages WHERE status = 'error' GROUP BY result_code, error_origin, error_http_status, provider ORDER BY COUNT(*) DESC, result_code;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT provider, result_code, finish_reason, COUNT(*) FROM chat_messages WHERE status = 'error' GROUP BY provider, result_code, finish_reason ORDER BY COUNT(*) DESC, provider, result_code;"
 ```
 
 ## Code Pointers
@@ -534,4 +536,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT result_cod
   `proxy-api/app/services/chat/turns.py`,
   `proxy-api/app/services/chat/provider_context.py`
 - Chat stream/background orchestration: `proxy-api/app/services/chat/stream.py`
-- Backend chat outcome messages: `proxy-api/app/config/chat_outcomes.py`
+- Backend chat outcome messages:
+  `proxy-api/app/providers/openai/outcomes.py`,
+  `proxy-api/app/providers/anthropic/outcomes.py`,
+  `proxy-api/app/providers/vertex/outcomes.py`

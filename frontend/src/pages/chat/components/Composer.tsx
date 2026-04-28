@@ -6,6 +6,7 @@ import type { ChatModelOption, ChatToolOption } from "../../../chat/api/modelApi
 type ComposerProps = {
   prompt: string;
   modelsError: string | null;
+  sendError: string | null;
   selectedModel: ChatModelOption | undefined;
   selectedModelId: string | null;
   selectedToolIds: string[];
@@ -29,6 +30,7 @@ type ComposerProps = {
 export default function Composer({
   prompt,
   modelsError,
+  sendError,
   selectedModel,
   selectedModelId,
   selectedToolIds,
@@ -56,6 +58,7 @@ export default function Composer({
     <form className="composer" onSubmit={onSubmit}>
       <textarea
         className="composer-input"
+        disabled={isSending}
         value={prompt}
         onChange={(event) => onPromptChange(event.target.value)}
         placeholder="Type your prompt..."
@@ -136,6 +139,7 @@ export default function Composer({
         </button>
       </div>
       {modelsError ? <p className="chat-error">Error: {modelsError}</p> : null}
+      {sendError ? <p className="chat-error">Error: {sendError}</p> : null}
     </form>
   );
 }
@@ -146,4 +150,3 @@ export function buildChatSelection(selectedModel: ChatModelOption | undefined, s
     toolIds: selectedToolIds,
   };
 }
-

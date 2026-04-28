@@ -18,6 +18,12 @@ export type ChatStreamStart = {
   assistantMessageId: string;
 };
 
+export type ChatStreamStatus = {
+  provider: string | null;
+  statusCode: string;
+  statusMessage: string;
+};
+
 export type ChatHistorySummary = {
   id: string;
   title: string;
@@ -40,10 +46,6 @@ export type ChatHistoryMessage = {
   finishReason: string | null;
   resultCode: string | null;
   resultMessage: string | null;
-  errorOrigin: string | null;
-  errorHttpStatus: number | null;
-  providerErrorCode: string | null;
-  retryAfterSeconds: number | null;
   errorDetail: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -74,6 +76,13 @@ export type StreamChatReplyOptions = {
   selection?: ChatSelection;
   signal?: AbortSignal;
   onStart?: (event: ChatStreamStart) => void;
+  onStatus?: (event: ChatStreamStatus) => void;
   onDelta?: (deltaText: string) => void;
   onDone?: (event: ChatStreamDone) => void;
+  onError?: (event: {
+    resultCode: string | null;
+    resultMessage: string | null;
+    detail: string | null;
+    retryAfterSeconds: number | null;
+  }) => void;
 };

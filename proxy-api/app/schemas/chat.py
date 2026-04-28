@@ -76,6 +76,12 @@ class ChatStreamDeltaEvent(BaseModel):
     delta_text: str
 
 
+class ChatStreamStatusEvent(BaseModel):
+    provider: str | None = None
+    status_code: str
+    status_message: str
+
+
 class ChatStreamDoneEvent(BaseModel):
     model: str | None = None
     provider: str | None = None
@@ -88,10 +94,6 @@ class ChatStreamDoneEvent(BaseModel):
 class ChatStreamErrorEvent(BaseModel):
     result_code: str
     result_message: str
-    error_origin: str
-    error_http_status: int | None = None
-    provider: str | None = None
-    provider_error_code: str | None = None
     retry_after_seconds: int | None = None
     detail: str
 
@@ -142,10 +144,6 @@ class ChatHistoryMessageView(BaseModel):
     finish_reason: str | None = None
     result_code: str | None = None
     result_message: str | None = None
-    error_origin: str | None = None
-    error_http_status: int | None = None
-    provider_error_code: str | None = None
-    retry_after_seconds: int | None = None
     error_detail: str | None = None
     usage: ChatHistoryUsageSummary | None = None
     completed_at: datetime | None = None

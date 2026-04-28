@@ -32,7 +32,7 @@ def ensure_vertex_provider_ready() -> None:
         raise VertexProviderConfigurationError("google-genai is not installed") from exc
 
 
-def build_vertex_ai_client(*, location: str):
+def build_vertex_client(*, location: str):
     ensure_vertex_provider_ready()
 
     from google import genai
@@ -44,3 +44,7 @@ def build_vertex_ai_client(*, location: str):
         location=location,
         http_options=types.HttpOptions(api_version=vertex_settings.api_version),
     )
+
+
+def build_vertex_ai_client(*, location: str):
+    return build_vertex_client(location=location)

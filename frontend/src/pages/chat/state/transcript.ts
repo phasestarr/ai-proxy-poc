@@ -13,6 +13,8 @@ export type TranscriptMessage = {
   content: string;
   requestMeta?: MessageRequestMeta;
   status?: MessageStatus;
+  streamStatusCode?: string;
+  streamStatusMessage?: string;
   completionNote?: string;
   detail?: string;
   resultCode?: string | null;
@@ -43,6 +45,7 @@ export function createStreamingAssistantMessage(id: number): TranscriptMessage {
     role: "assistant",
     content: "",
     status: "streaming",
+    streamStatusMessage: "Generating response...",
   };
 }
 
@@ -83,6 +86,23 @@ export function appendAssistantDelta(
   );
 }
 
+export function updateAssistantStatus(
+  messages: TranscriptMessage[],
+  assistantMessageId: number,
+  statusCode: string,
+  statusMessage: string,
+): TranscriptMessage[] {
+  return messages.map((message) =>
+    message.id === assistantMessageId
+      ? {
+          ...message,
+          streamStatusCode: statusCode,
+          streamStatusMessage: statusMessage,
+        }
+      : message,
+  );
+}
+
 export function completeAssistantMessage(
   messages: TranscriptMessage[],
   assistantMessageId: number,
@@ -94,6 +114,8 @@ export function completeAssistantMessage(
       ? {
           ...message,
           status: "done",
+          streamStatusCode: undefined,
+          streamStatusMessage: undefined,
           completionNote: resultMessage,
           resultCode: "success",
           detail: finishReason ? `finish reason: ${finishReason}` : undefined,
@@ -102,10 +124,12 @@ export function completeAssistantMessage(
   );
 }
 
-export function excludeFailedExchange(
+export function failAssistantMessage(
   messages: TranscriptMessage[],
   userMessageId: number,
   assistantMessageId: number,
+  resultCode: string | null,
+  resultMessage: string,
   detail: string,
 ): TranscriptMessage[] {
   return messages.map((message) =>
@@ -115,24 +139,18 @@ export function excludeFailedExchange(
           excludedFromRequest: true,
         }
       : message.id === assistantMessageId
-        ? {
-            ...message,
-            detail,
-            content: message.content,
-            status: "error",
-            resultCode: null,
-            excludedFromRequest: true,
-          }
-        : message,
+      ? {
+          ...message,
+          streamStatusCode: undefined,
+          streamStatusMessage: undefined,
+          completionNote: resultMessage,
+          detail,
+          status: "error",
+          resultCode,
+          excludedFromRequest: true,
+        }
+      : message,
   );
-}
-
-export function removeExchange(
-  messages: TranscriptMessage[],
-  userMessageId: number,
-  assistantMessageId: number,
-): TranscriptMessage[] {
-  return messages.filter((message) => message.id !== userMessageId && message.id !== assistantMessageId);
 }
 
 export function mapHistoryMessagesToTranscript(

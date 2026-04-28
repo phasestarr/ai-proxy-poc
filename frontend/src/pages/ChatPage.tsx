@@ -22,11 +22,11 @@ import {
   completeAssistantMessage,
   createPendingUserMessage,
   createStreamingAssistantMessage,
-  excludeFailedExchange,
+  failAssistantMessage,
   getLatestHistorySelection,
   mapHistoryMessagesToTranscript,
-  removeExchange,
   type TranscriptMessage,
+  updateAssistantStatus,
 } from "./chat/state/transcript";
 import "./chat/styles/chat.css";
 
@@ -44,6 +44,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   const [activeChatHistoryId, setActiveChatHistoryId] = useState<string | null>(null);
   const [historySummaries, setHistorySummaries] = useState<ChatHistorySummary[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [loadingHistoryId, setLoadingHistoryId] = useState<string | null>(null);
   const [deletingHistoryId, setDeletingHistoryId] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
     setMessages([]);
     setPrompt("");
     setActiveChatHistoryId(null);
+    setSendError(null);
     nextMessageIdRef.current = 1;
 
     let cancelled = false;
@@ -127,6 +129,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
     setActiveChatHistoryId(null);
     setMessages([]);
     setPrompt("");
+    setSendError(null);
     nextMessageIdRef.current = 1;
     models.resetModelSelection();
     autoScroll.enableAutoScroll();
@@ -139,6 +142,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
 
     setLoadingHistoryId(historyId);
     setHistoryError(null);
+    setSendError(null);
     try {
       const history = await fetchChatHistory(historyId);
       const mapped = mapHistoryMessagesToTranscript(history.messages);
@@ -164,6 +168,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
 
     setDeletingHistoryId(historyId);
     setHistoryError(null);
+    setSendError(null);
     try {
       await deleteChatHistory(historyId);
       setHistorySummaries((current) => current.filter((history) => history.id !== historyId));
@@ -202,14 +207,12 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
 
     const requestMessages = buildRequestMessages(messages, userMessage);
 
-    setPrompt("");
+    let didStart = false;
+    let streamErrorHandled = false;
+
+    setSendError(null);
     setIsSending(true);
     autoScroll.enableAutoScroll();
-    setMessages((current) => [
-      ...current,
-      userMessage,
-      assistantMessage,
-    ]);
 
     try {
       await streamChatReply({
@@ -217,8 +220,20 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
         messages: requestMessages,
         selection: chatSelection,
         onStart: (start) => {
+          didStart = true;
           setActiveChatHistoryId(start.chatHistoryId);
+          setPrompt("");
+          setMessages((current) => [
+            ...current,
+            userMessage,
+            assistantMessage,
+          ]);
           void refreshHistorySummaries();
+        },
+        onStatus: (statusEvent) => {
+          setMessages((current) =>
+            updateAssistantStatus(current, assistantMessageId, statusEvent.statusCode, statusEvent.statusMessage),
+          );
         },
         onDelta: (deltaText) => {
           startTransition(() => {
@@ -230,25 +245,46 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
             completeAssistantMessage(current, assistantMessageId, completion.resultMessage, completion.finishReason),
           );
         },
+        onError: (streamError) => {
+          streamErrorHandled = true;
+          const detail = streamError.detail ?? streamError.resultMessage ?? "chat streaming failed";
+          const resultMessage = streamError.resultMessage ?? detail;
+          setMessages((current) =>
+            failAssistantMessage(
+              current,
+              userMessageId,
+              assistantMessageId,
+              streamError.resultCode,
+              resultMessage,
+              detail,
+            ),
+          );
+        },
       });
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
-        setMessages((current) => removeExchange(current, userMessageId, assistantMessageId));
         onSessionExpired();
         return;
       }
 
       if (error instanceof SessionConflictError) {
-        setMessages((current) => removeExchange(current, userMessageId, assistantMessageId));
         onSessionConflict(error.conflict);
         return;
       }
 
       const detail = error instanceof Error ? error.message : "unknown error";
-      setMessages((current) => excludeFailedExchange(current, userMessageId, assistantMessageId, detail));
+      if (!didStart) {
+        setSendError(detail);
+      } else if (!streamErrorHandled) {
+        setMessages((current) =>
+          failAssistantMessage(current, userMessageId, assistantMessageId, null, detail, detail),
+        );
+      }
     } finally {
       setIsSending(false);
-      void refreshHistorySummaries();
+      if (didStart) {
+        void refreshHistorySummaries();
+      }
     }
   };
 
@@ -295,11 +331,14 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
           modelsError={models.modelsError}
           onModelMenuToggle={models.handleModelMenuToggle}
           onModelSelect={models.handleModelSelect}
-          onPromptChange={setPrompt}
+          onPromptChange={(value) => {
+            setPrompt(value);
+          }}
           onSubmit={handleSubmit}
           onToolToggle={models.handleToolToggle}
           onToolsMenuToggle={models.handleToolsMenuToggle}
           prompt={prompt}
+          sendError={sendError}
           selectedModel={models.selectedModel}
           selectedModelId={models.selectedModelId}
           selectedToolIds={models.selectedToolIds}

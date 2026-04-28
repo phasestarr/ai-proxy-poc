@@ -7,8 +7,9 @@ import type {
   ChatStreamDoneApiEvent,
   ChatStreamErrorApiEvent,
   ChatStreamStartApiEvent,
+  ChatStreamStatusApiEvent,
 } from "./contracts";
-import { mapDoneEvent, mapStartEvent } from "./mappers";
+import { mapDoneEvent, mapStartEvent, mapStatusEvent } from "./mappers";
 import type { ChatStreamDone, StreamChatReplyOptions } from "./types";
 
 export async function streamChatReply(options: StreamChatReplyOptions): Promise<ChatStreamDone> {
@@ -75,6 +76,10 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
         options.onDelta?.(payload.delta_text);
         return;
       }
+      case "status": {
+        options.onStatus?.(mapStatusEvent(JSON.parse(event.data) as ChatStreamStatusApiEvent));
+        return;
+      }
       case "done": {
         completion = mapDoneEvent(JSON.parse(event.data) as ChatStreamDoneApiEvent);
         options.onDone?.(completion);
@@ -82,6 +87,12 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
       }
       case "error": {
         const payload = JSON.parse(event.data) as ChatStreamErrorApiEvent;
+        options.onError?.({
+          resultCode: payload.result_code ?? null,
+          resultMessage: payload.result_message ?? null,
+          detail: payload.detail ?? null,
+          retryAfterSeconds: payload.retry_after_seconds ?? null,
+        });
         throw new Error(payload.result_message || payload.detail || "chat streaming failed");
       }
       default:

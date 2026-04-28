@@ -18,13 +18,14 @@ class ChatProxyError(RuntimeError):
     provider: str | None = None
     provider_error_code: str | None = None
     retry_after_seconds: int | None = None
+    result_message_override: str | None = None
 
     def __post_init__(self) -> None:
         RuntimeError.__init__(self, self.detail)
 
     @property
     def result_message(self) -> str:
-        return get_error_message(self.code)
+        return self.result_message_override or get_error_message(self.code)
 
 
 def build_preparation_error(exc: ValueError) -> ChatProxyError:

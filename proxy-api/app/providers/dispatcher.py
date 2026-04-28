@@ -18,6 +18,7 @@ from app.providers.anthropic.provider import (
     ensure_anthropic_provider_ready,
     stream_anthropic_chat_completion,
 )
+from app.providers.anthropic.stream import prepare_anthropic_chat_completion_request
 from app.providers.openai.provider import (
     OPENAI_PROVIDER_ID,
     OpenAIProviderConfigurationError,
@@ -25,6 +26,7 @@ from app.providers.openai.provider import (
     ensure_openai_provider_ready,
     stream_openai_chat_completion,
 )
+from app.providers.openai.stream import prepare_openai_chat_completion_request
 from app.providers.types import ProviderRoute, ProviderStreamChunk
 from app.providers.vertex.provider import (
     VERTEX_PROVIDER_ID,
@@ -33,6 +35,7 @@ from app.providers.vertex.provider import (
     ensure_vertex_provider_ready,
     stream_vertex_chat_completion,
 )
+from app.providers.vertex.stream import prepare_vertex_chat_completion_request
 from app.schemas.chat import ChatMessage
 
 
@@ -50,10 +53,14 @@ class ProviderExecutionError(RuntimeError):
         provider: str,
         status_code: int | None = None,
         error_code: str | None = None,
+        result_code: str | None = None,
+        result_message: str | None = None,
     ) -> None:
         self.provider = provider
         self.status_code = status_code
         self.error_code = error_code
+        self.result_code = result_code
+        self.result_message = result_message
         super().__init__(message)
 
 
@@ -76,6 +83,39 @@ def ensure_provider_ready(*, provider: str) -> None:
         raise ProviderConfigurationError(str(exc)) from exc
 
     raise ProviderConfigurationError(f"provider is not configured: {provider}")
+
+
+def validate_provider_request(
+    *,
+    route: ProviderRoute,
+    messages: list[ChatMessage],
+) -> None:
+    if route.model.provider == VERTEX_PROVIDER_ID:
+        prepare_vertex_chat_completion_request(
+            public_model_id=route.model.public_id,
+            messages=messages,
+            selected_tool_ids=route.tool_ids,
+            function_declarations=route.function_declarations,
+        )
+        return
+    if route.model.provider == OPENAI_PROVIDER_ID:
+        prepare_openai_chat_completion_request(
+            public_model_id=route.model.public_id,
+            messages=messages,
+            selected_tool_ids=route.tool_ids,
+            function_declarations=route.function_declarations,
+        )
+        return
+    if route.model.provider == ANTHROPIC_PROVIDER_ID:
+        prepare_anthropic_chat_completion_request(
+            public_model_id=route.model.public_id,
+            messages=messages,
+            selected_tool_ids=route.tool_ids,
+            function_declarations=route.function_declarations,
+        )
+        return
+
+    raise ProviderConfigurationError(f"provider is not configured: {route.model.provider}")
 
 
 async def stream_provider_chat_completion(
@@ -117,6 +157,8 @@ async def stream_provider_chat_completion(
             provider=VERTEX_PROVIDER_ID,
             status_code=exc.status_code,
             error_code=exc.error_code,
+            result_code=exc.result_code,
+            result_message=exc.result_message,
         ) from exc
     except OpenAIProviderError as exc:
         raise ProviderExecutionError(
@@ -124,6 +166,8 @@ async def stream_provider_chat_completion(
             provider=OPENAI_PROVIDER_ID,
             status_code=exc.status_code,
             error_code=exc.error_code,
+            result_code=exc.result_code,
+            result_message=exc.result_message,
         ) from exc
     except AnthropicProviderError as exc:
         raise ProviderExecutionError(
@@ -131,6 +175,8 @@ async def stream_provider_chat_completion(
             provider=ANTHROPIC_PROVIDER_ID,
             status_code=exc.status_code,
             error_code=exc.error_code,
+            result_code=exc.result_code,
+            result_message=exc.result_message,
         ) from exc
 
     raise ProviderExecutionError(

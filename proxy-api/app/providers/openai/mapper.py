@@ -7,6 +7,7 @@ Purpose:
 from __future__ import annotations
 
 from app.providers.types import ProviderStreamChunk, ProviderUsageMetadata
+from app.providers.openai.outcomes import get_openai_status_message
 from app.schemas.chat import ChatMessage
 
 
@@ -36,6 +37,13 @@ def map_chat_messages_to_openai_input(messages: list[ChatMessage]) -> tuple[str 
 def map_openai_stream_event(event) -> ProviderStreamChunk | None:
     event_type = getattr(event, "type", None)
 
+    status_code = _map_openai_status_code(event_type)
+    if status_code is not None:
+        return ProviderStreamChunk(
+            status_code=status_code,
+            status_message=get_openai_status_message(status_code),
+        )
+
     if event_type == "response.output_text.delta":
         return ProviderStreamChunk(text=getattr(event, "delta", None) or "")
 
@@ -48,17 +56,6 @@ def map_openai_stream_event(event) -> ProviderStreamChunk | None:
             response_id=getattr(response, "id", None),
             model_version=getattr(response, "model", None),
             finish_reason=getattr(response, "status", None) or "completed",
-            usage=_map_openai_usage(getattr(response, "usage", None)),
-        )
-
-    if event_type == "response.incomplete":
-        response = getattr(event, "response", None)
-        incomplete_details = getattr(response, "incomplete_details", None)
-        reason = getattr(incomplete_details, "reason", None) if incomplete_details is not None else None
-        return ProviderStreamChunk(
-            response_id=getattr(response, "id", None),
-            model_version=getattr(response, "model", None),
-            finish_reason=reason or getattr(response, "status", None) or "incomplete",
             usage=_map_openai_usage(getattr(response, "usage", None)),
         )
 
@@ -94,3 +91,26 @@ def _map_openai_usage(usage) -> ProviderUsageMetadata | None:
         total_token_count=getattr(usage, "total_tokens", None),
     )
 
+
+def _map_openai_status_code(event_type: str | None) -> str | None:
+    if event_type == "response.created":
+        return "openai_response_created"
+    if event_type == "response.queued":
+        return "openai_response_queued"
+    if event_type == "response.in_progress":
+        return "openai_response_in_progress"
+    if isinstance(event_type, str) and event_type.startswith("response.reasoning"):
+        return "openai_reasoning"
+    if isinstance(event_type, str) and event_type.startswith("response.function_call_arguments"):
+        return "openai_function_calling"
+    if isinstance(event_type, str) and event_type.startswith("response.web_search_call"):
+        return "openai_web_search"
+    if isinstance(event_type, str) and event_type.startswith("response.file_search_call"):
+        return "openai_file_search"
+    if isinstance(event_type, str) and event_type.startswith("response.code_interpreter_call"):
+        return "openai_code_execution"
+    if isinstance(event_type, str) and event_type.startswith("response.image_generation_call"):
+        return "openai_image_generation"
+    if isinstance(event_type, str) and event_type.startswith("response.mcp_call"):
+        return "openai_mcp_call"
+    return None

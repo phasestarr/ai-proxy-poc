@@ -31,7 +31,7 @@ Current runtime and code ownership for `ai-proxy-poc`.
 7. The frontend does not own model defaults; the user explicitly selects from the backend catalog.
 8. Chat history list/load/delete goes through `frontend/src/chat/api/chatHistoryApi.ts`.
 9. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions`.
-10. The frontend consumes SSE `start`, `delta`, `done`, and `error`.
+10. The frontend consumes SSE `start`, `delta`, `status`, `done`, and `error`.
 
 ## Backend Flow
 1. `proxy-api/app/main.py`
@@ -92,13 +92,15 @@ Important defaults from code:
 - provider-side conversation state is not treated as the source of truth
 
 ## Chat Persistence Model
-- `POST /api/v1/chat/completions` creates a backend-owned turn before provider execution
+- `POST /api/v1/chat/completions` creates a backend-owned turn only after backend preflight checks pass and provider dispatch is about to begin
 - backend persists:
   - user message
   - assistant placeholder
   - resolved route metadata
   - final success or error outcome
+- backend-local rejects such as validation failures, session locks, rate limits, and provider-readiness failures are not persisted
 - if provider execution fails, the assistant message is kept renderable but marked `excluded_from_context=true`
+- persisted provider-attempted failures keep provider-specific `result_code`, `result_message`, `finish_reason`, and safe `error_detail`
 - future provider context is rebuilt from persisted non-error messages
 
 ## Provider Layer
@@ -124,6 +126,10 @@ Provider package shape:
 - `mapper.py`
   - internal messages to provider-native payload shape
   - provider chunks to shared stream chunks
+- `outcomes.py`
+  - provider-specific success messages
+  - provider-specific terminal outcome messages
+  - provider-specific live status messages
 - `stream.py`
   - actual SDK streaming call
   - provider-specific error mapping

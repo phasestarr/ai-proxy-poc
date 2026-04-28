@@ -12,6 +12,12 @@ export type ChatStreamDeltaApiEvent = {
   delta_text: string;
 };
 
+export type ChatStreamStatusApiEvent = {
+  provider?: string | null;
+  status_code: string;
+  status_message: string;
+};
+
 export type ChatStreamDoneApiEvent = {
   model?: string | null;
   provider?: string | null;
@@ -28,10 +34,6 @@ export type ChatStreamDoneApiEvent = {
 export type ChatStreamErrorApiEvent = {
   result_code?: string;
   result_message?: string;
-  error_origin?: string;
-  error_http_status?: number | null;
-  provider?: string | null;
-  provider_error_code?: string | null;
   retry_after_seconds?: number | null;
   detail?: string;
 };
@@ -68,10 +70,6 @@ export type ChatHistoryMessageApiPayload = {
   finish_reason?: string | null;
   result_code?: string | null;
   result_message?: string | null;
-  error_origin?: string | null;
-  error_http_status?: number | null;
-  provider_error_code?: string | null;
-  retry_after_seconds?: number | null;
   error_detail?: string | null;
   completed_at?: string | null;
   created_at: string;

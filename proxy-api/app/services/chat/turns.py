@@ -156,11 +156,7 @@ def persist_chat_turn_failure(
     content: str,
     result_code: str,
     result_message: str,
-    error_origin: str,
     detail: str,
-    error_http_status: int | None = None,
-    provider_error_code: str | None = None,
-    retry_after_seconds: int | None = None,
 ) -> None:
     now = utc_now()
     user_message = db.get(ChatMessage, user_message_id)
@@ -175,10 +171,6 @@ def persist_chat_turn_failure(
         assistant_message.excluded_from_context = True
         assistant_message.result_code = result_code
         assistant_message.result_message = result_message
-        assistant_message.error_origin = error_origin
-        assistant_message.error_http_status = error_http_status
-        assistant_message.provider_error_code = provider_error_code
-        assistant_message.retry_after_seconds = retry_after_seconds
         assistant_message.error_detail = detail
         assistant_message.completed_at = now
         assistant_message.updated_at = now

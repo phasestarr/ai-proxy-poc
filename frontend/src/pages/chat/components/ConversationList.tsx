@@ -24,13 +24,16 @@ export default function ConversationList({ messages, conversationRef, onScroll }
               </div>
             ) : null}
             {message.role === "assistant" && message.status === "streaming" && message.content.length === 0 ? (
-              <p className="chat-loading">Generating response...</p>
+              <p className="chat-loading">{message.streamStatusMessage ?? "Generating response..."}</p>
             ) : message.role === "assistant" ? (
               <MarkdownMessage className="markdown-message" content={message.content} />
             ) : (
               <p className="chat-plain-text">{message.content}</p>
             )}
           </div>
+          {message.role === "assistant" && message.status === "streaming" && message.content.length > 0 && message.streamStatusMessage ? (
+            <p className="chat-loading">{message.streamStatusMessage}</p>
+          ) : null}
           {message.role === "assistant" && message.status === "done" && message.completionNote ? (
             <p className="chat-done">{message.completionNote}</p>
           ) : null}

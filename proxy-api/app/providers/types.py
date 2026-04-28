@@ -21,6 +21,8 @@ class ProviderStreamChunk:
     model_version: str | None = None
     finish_reason: str | None = None
     usage: ProviderUsageMetadata | None = None
+    status_code: str | None = None
+    status_message: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
