@@ -24,12 +24,10 @@ from app.providers.types import ProviderFunctionDeclaration
 # - Thinking tokens count toward `max_tokens`.
 ANTHROPIC_REASONING_PRESETS: dict[str, dict[str, object]] = {
     "none": {
-        "max_tokens": 1024,
         "thinking": None,
         "output_config": None,
     },
     "low": {
-        "max_tokens": 2048,
         "thinking": {
             "type": "adaptive",
             "display": "summarized",
@@ -39,7 +37,6 @@ ANTHROPIC_REASONING_PRESETS: dict[str, dict[str, object]] = {
         },
     },
     "normal": {
-        "max_tokens": 4096,
         "thinking": {
             "type": "adaptive",
             "display": "summarized",
@@ -85,6 +82,14 @@ ANTHROPIC_MODEL_REASONING_PRESET: dict[str, str] = {
     "claude-opus-4-7": "xhigh",
     "claude-sonnet-4-6": "high",
     "claude-haiku-4-5": "none",
+}
+
+# Provider max output caps from Anthropic model docs (checked 2026-04-28).
+# To clamp lower later, change only the numeric value on the right.
+ANTHROPIC_MODEL_MAX_TOKENS: dict[str, int] = {
+    "claude-opus-4-7": 128_000,
+    "claude-sonnet-4-6": 64_000,
+    "claude-haiku-4-5": 64_000,
 }
 
 
@@ -133,15 +138,10 @@ def _apply_anthropic_reasoning_preset(
         raise ValueError("claude-haiku-4-5 must use anthropic reasoning preset 'none'")
 
     request_patch = deepcopy(ANTHROPIC_REASONING_PRESETS[preset_name])
-    if request_patch.get("max_tokens") is None:
-        if model == "claude-opus-4-7":
-            request_patch["max_tokens"] = 128_000
-        elif model == "claude-sonnet-4-6":
-            request_patch["max_tokens"] = 128_000
-        elif model == "claude-haiku-4-5":
-            request_patch["max_tokens"] = 64_000
-        else:
-            raise ValueError(f"missing anthropic model max_tokens: {model}")
+    try:
+        request_kwargs["max_tokens"] = ANTHROPIC_MODEL_MAX_TOKENS[model]
+    except KeyError as exc:
+        raise ValueError(f"missing anthropic model max_tokens: {model}") from exc
 
     for key, value in _prune_none_values(request_patch).items():
         request_kwargs[key] = value

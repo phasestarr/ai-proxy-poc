@@ -27,7 +27,6 @@ _OPENAI_REQUEST_DEFAULTS: dict[str, object] = {
 # - `max_output_tokens`: total generated output cap, including reasoning tokens.
 OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
     "none": {
-        "max_output_tokens": 1024,
         "reasoning": {
             "effort": "none",
             "summary": "auto",
@@ -39,7 +38,6 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "parallel_tool_calls": True,
     },
     "low": {
-        "max_output_tokens": 2048,
         "reasoning": {
             "effort": "low",
             "summary": "auto",
@@ -51,7 +49,6 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "parallel_tool_calls": True,
     },
     "normal": {
-        "max_output_tokens": 4096,
         "reasoning": {
             "effort": "medium",
             "summary": "auto",
@@ -63,7 +60,6 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "parallel_tool_calls": True,
     },
     "high": {
-        # "max_output_tokens": 128000,
         "reasoning": {
             "effort": "high",
             "summary": "detailed",
@@ -75,7 +71,6 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "parallel_tool_calls": True,
     },
     "xhigh": {
-        # "max_output_tokens": 128000,
         "reasoning": {
             "effort": "xhigh",
             "summary": "detailed",
@@ -96,6 +91,14 @@ OPENAI_MODEL_RESPONSE_PRESET: dict[str, str] = {
     "gpt-5.4": "high",
     "gpt-5.4-mini": "normal",
     "gpt-5.4-nano": "low",
+}
+
+# Provider max output caps from OpenAI model docs (checked 2026-04-28).
+# To clamp lower later, change only the numeric value on the right.
+OPENAI_MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "gpt-5.4": 128_000,
+    "gpt-5.4-mini": 128_000,
+    "gpt-5.4-nano": 128_000,
 }
 
 
@@ -142,6 +145,11 @@ def _apply_openai_response_preset(
         raise ValueError(f"unknown openai response preset: {preset_name}")
 
     request_patch = deepcopy(OPENAI_RESPONSE_PRESETS[preset_name])
+    try:
+        request_kwargs["max_output_tokens"] = OPENAI_MODEL_MAX_OUTPUT_TOKENS[model]
+    except KeyError as exc:
+        raise ValueError(f"missing openai model max_output_tokens: {model}") from exc
+
     for key, value in _prune_none_values(request_patch).items():
         request_kwargs[key] = value
 

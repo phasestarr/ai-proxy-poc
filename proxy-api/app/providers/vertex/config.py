@@ -22,28 +22,24 @@ from app.providers.vertex.tools import build_vertex_hosted_tools
 # - `maxOutputTokens`: generated output cap. Keep this output-only; don't manage thinking separately.
 VERTEX_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
     "none": {
-        "max_output_tokens": 1024,
         "thinking_config": {
             "thinking_level": "MINIMAL",
             "include_thoughts": False,
         },
     },
     "low": {
-        "max_output_tokens": 2048,
         "thinking_config": {
             "thinking_level": "LOW",
             "include_thoughts": False,
         },
     },
     "normal": {
-        "max_output_tokens": 4096,
         "thinking_config": {
             "thinking_level": "MEDIUM",
             "include_thoughts": False,
         },
     },
     "high": {
-        # "max_output_tokens": 65536,
         "thinking_config": {
             "thinking_level": "HIGH",
             "include_thoughts": True,
@@ -59,6 +55,14 @@ VERTEX_MODEL_RESPONSE_PRESET: dict[str, str] = {
     "gemini-3.1-pro-preview": "high",
     "gemini-3-flash-preview": "normal",
     "gemini-3.1-flash-lite-preview": "low",
+}
+
+# Provider max output caps from Vertex AI model docs (checked 2026-04-28).
+# To clamp lower later, change only the numeric value on the right.
+VERTEX_MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "gemini-3.1-pro-preview": 65_536,
+    "gemini-3-flash-preview": 65_536,
+    "gemini-3.1-flash-lite-preview": 65_535,
 }
 
 
@@ -111,9 +115,10 @@ def _apply_vertex_response_preset(
         raise ValueError("gemini-3.1-pro-preview must use vertex preset 'low' or 'high'")
 
     request_patch = deepcopy(VERTEX_RESPONSE_PRESETS[preset_name])
-    max_output_tokens = request_patch.get("max_output_tokens")
-    if max_output_tokens is not None:
-        config_kwargs["maxOutputTokens"] = max_output_tokens
+    try:
+        config_kwargs["maxOutputTokens"] = VERTEX_MODEL_MAX_OUTPUT_TOKENS[model]
+    except KeyError as exc:
+        raise ValueError(f"missing vertex model maxOutputTokens: {model}") from exc
 
     thinking_config = request_patch.get("thinking_config")
     if isinstance(thinking_config, dict):
