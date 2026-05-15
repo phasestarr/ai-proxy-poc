@@ -1,0 +1,281 @@
+.attachment-rail {
+  min-width: 0;
+  max-height: 100%;
+  padding: 14px 12px 12px;
+  background: #fafafa;
+  border-left: 1px solid #ececec;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.attachment-summary-slot {
+  border-radius: 14px;
+  padding: 12px;
+  background: transparent;
+}
+
+.attachment-summary-label,
+.attachment-summary-meta {
+  margin: 0;
+}
+
+.attachment-summary-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #171717;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-summary-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #7a7a7a;
+}
+
+.attachment-rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.attachment-rail-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #171717;
+}
+
+.attachment-rail-toggle {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #4b4b4b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.attachment-rail-toggle:hover {
+  background: #ebebed;
+}
+
+.attachment-rail-toggle span {
+  display: block;
+  width: 2px;
+  height: 14px;
+  background: currentColor;
+  border-radius: 999px;
+}
+
+.attachment-rail-toggle span + span {
+  margin-left: 4px;
+}
+
+.attachment-rail-body {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.attachment-primary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachment-primary-button {
+  width: 100%;
+  min-height: 42px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #222222;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.attachment-primary-button:hover:not(:disabled) {
+  background: #ebebed;
+}
+
+.attachment-primary-button:disabled {
+  color: #9c9c9c;
+  cursor: not-allowed;
+}
+
+.attachment-primary-button--compact {
+  justify-content: center;
+  padding: 0;
+}
+
+.attachment-primary-button-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.attachment-file-input {
+  display: none;
+}
+
+.attachment-error,
+.attachment-empty,
+.attachment-queue-status {
+  margin: 0;
+  font-size: 13px;
+  color: #767676;
+}
+
+.attachment-queue-status {
+  color: #525252;
+}
+
+.attachment-error {
+  color: #b42318;
+}
+
+.attachment-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.attachment-item {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: #f1f1f2;
+}
+
+.attachment-item--active {
+  border-color: #dc2626;
+}
+
+.attachment-item--inactive {
+  opacity: 0.72;
+}
+
+.attachment-item-preview {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid #d4d4d8;
+  background: #ffffff;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4b5563;
+}
+
+.attachment-item-preview--inactive {
+  border-color: #a1a1aa;
+  background: #f4f4f5;
+}
+
+.attachment-item-copy {
+  min-width: 0;
+}
+
+.attachment-item-title,
+.attachment-item-meta {
+  margin: 0;
+}
+
+.attachment-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #171717;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-item-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6f6f6f;
+}
+
+.attachment-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.attachment-toggle-button,
+.attachment-delete-button {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #6e6e6e;
+  font: inherit;
+  cursor: pointer;
+}
+
+.attachment-toggle-button:hover:not(:disabled),
+.attachment-delete-button:hover:not(:disabled) {
+  background: #e6e6e8;
+  color: #202020;
+}
+
+.attachment-toggle-button:disabled,
+.attachment-delete-button:disabled {
+  color: #aaaaaa;
+  cursor: not-allowed;
+}
+
+.attachment-rail--closed {
+  padding-inline: 10px;
+}
+
+.attachment-rail--closed .attachment-rail-header {
+  justify-content: center;
+}
+
+.attachment-rail--closed .attachment-summary-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0;
+}
+
+@media (max-width: 720px) {
+  .attachment-rail {
+    width: 100%;
+    max-height: none;
+    border-left: none;
+    border-top: 1px solid #ececec;
+  }
+}

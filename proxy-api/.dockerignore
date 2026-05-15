@@ -1,0 +1,20 @@
+# Purpose:
+# - Exclude unnecessary local files from the backend Docker build context.
+#
+# Should exclude:
+# - Virtual environments
+# - Cache directories
+# - Test artifacts
+# - Local environment files and secrets
+#
+# Notes:
+# - Smaller build contexts improve build speed and reduce accidental leakage.
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.git
+.gitignore
+.idea/
