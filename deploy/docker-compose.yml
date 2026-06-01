@@ -17,6 +17,8 @@
 # - The backend should not assume localhost for database access when running in Compose.
 # - Version pins are sourced from the repo-root .env so Dockerfiles and Compose stay aligned.
 
+name: ai-proxy-poc
+
 services:
   postgres:
     image: "postgres:${POSTGRES_VERSION:-16-alpine}"
@@ -24,7 +26,7 @@ services:
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-ai_proxy}"
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -60,7 +62,7 @@ services:
       APP_ENV: "${APP_ENV:-dev}"
       APP_HOST: "${APP_HOST:-0.0.0.0}"
       APP_PORT: "${APP_PORT:-8000}"
-      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_proxy}"
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ai_proxy}"
       REDIS_URL: "redis://redis:6379/0"
       AUTH_SESSION_COOKIE_NAME: "${AUTH_SESSION_COOKIE_NAME:-session_id}"
       AUTH_CONFLICT_COOKIE_NAME: "${AUTH_CONFLICT_COOKIE_NAME:-session_conflict_id}"
@@ -98,7 +100,7 @@ services:
       MICROSOFT_OAUTH_TRANSACTION_MINUTES: "${MICROSOFT_OAUTH_TRANSACTION_MINUTES:-10}"
       MICROSOFT_SCOPES: '${MICROSOFT_SCOPES:-["email"]}'
       CHAT_DRAFT_TTL_SECONDS: "${CHAT_DRAFT_TTL_SECONDS:-900}"
-      CHAT_INFLIGHT_LOCK_TTL_SECONDS: "${CHAT_INFLIGHT_LOCK_TTL_SECONDS:-180}"
+      CHAT_INFLIGHT_LOCK_TTL_SECONDS: "${CHAT_INFLIGHT_LOCK_TTL_SECONDS:-900}"
       CHAT_RATE_LIMIT_PER_MINUTE: "${CHAT_RATE_LIMIT_PER_MINUTE:-10}"
       CHAT_RATE_LIMIT_PER_HOUR: "${CHAT_RATE_LIMIT_PER_HOUR:-30}"
       STARTUP_DEPENDENCY_MAX_ATTEMPTS: "${STARTUP_DEPENDENCY_MAX_ATTEMPTS:-30}"

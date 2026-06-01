@@ -7,7 +7,7 @@ Run the stack behind sibling `root-proxy` on `edge-net`.
 - server env file lives at repo root as `../.env`
 - sibling `root-proxy` is already deployed
 - external Docker network `edge-net` already exists
-- `root-proxy` routes `ai.nextinsol.com` to `ai-proxy-frontend:8080`
+- `root-proxy` routes `ai.example.com` to `ai-proxy-frontend:8080`
 
 ## First-Time Setup
 
@@ -19,7 +19,7 @@ Before first startup:
 - set real values in `../.env`
 - keep `AUTH_COOKIE_SECURE=true`
 - keep `AI_PROXY_CONTAINER_NAME=ai-proxy-frontend` unless sibling `root-proxy` changes too
-- confirm the Microsoft production app registration includes redirect URI `https://ai.nextinsol.com/api/v1/auth/callback/microsoft`
+- confirm the Microsoft production app registration includes redirect URI `https://ai.example.com/api/v1/auth/callback/microsoft`
 
 ## Commands
 

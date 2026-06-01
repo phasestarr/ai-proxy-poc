@@ -123,12 +123,12 @@ async def attach_file_to_history(
             stored_file_id=existing_stored_file.id,
         ):
             raise ChatHistoryDuplicateFileError("file is already attached to this chat history")
-        enforce_history_attachment_limits(
-            db,
-            user_id=user_id,
-            history_id=history.id,
-            next_byte_size=len(file_bytes),
-        )
+    enforce_history_attachment_limits(
+        db,
+        user_id=user_id,
+        history_id=history.id if history is not None else None,
+        next_byte_size=len(file_bytes),
+    )
 
     stored_file = await get_or_create_stored_file(
         db,
@@ -479,21 +479,23 @@ def enforce_history_attachment_limits(
     db: Session,
     *,
     user_id: str,
-    history_id: str,
+    history_id: str | None,
     next_byte_size: int,
 ) -> None:
     current_user_file_count = count_user_attachment_files(db, user_id=user_id)
     if current_user_file_count >= settings.chat_attachment_max_files_per_user:
         raise ValueError("user attachment limit reached")
 
-    current_file_count = count_history_files(db, history_id=history_id)
+    current_file_count = count_history_files(db, history_id=history_id) if history_id is not None else 0
     if current_file_count >= settings.chat_attachment_max_files_per_history:
         raise ValueError("chat history attachment limit reached")
 
-    current_total_bytes = db.execute(
-        select(func.coalesce(func.sum(ChatHistoryFile.byte_size), 0))
-        .where(ChatHistoryFile.chat_history_id == history_id)
-    ).scalar_one()
+    current_total_bytes = 0
+    if history_id is not None:
+        current_total_bytes = db.execute(
+            select(func.coalesce(func.sum(ChatHistoryFile.byte_size), 0))
+            .where(ChatHistoryFile.chat_history_id == history_id)
+        ).scalar_one()
     if int(current_total_bytes or 0) + next_byte_size > settings.chat_attachment_max_total_bytes_per_history:
         raise ValueError("chat history attachment bytes exceed the total size limit")
 

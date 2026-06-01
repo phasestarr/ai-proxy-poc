@@ -88,7 +88,7 @@ Compose derives:
 - `CHAT_DRAFT_TTL_SECONDS`
   - default: `900`
 - `CHAT_INFLIGHT_LOCK_TTL_SECONDS`
-  - default: `600`
+  - default: `900`
 - `CHAT_RATE_LIMIT_PER_MINUTE`
   - default: `10`
 - `CHAT_RATE_LIMIT_PER_HOUR`

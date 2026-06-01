@@ -57,7 +57,7 @@ type QueuedUpload = {
 };
 
 const APP_NAME = "ver. 0.5.3-pre-Isotope";
-const PASTED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg"]);
+const PASTED_ATTACHMENT_MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
 
 export default function ChatPage({ session, onLogout, onSessionExpired, onSessionConflict }: ChatPageProps) {
   const [prompt, setPrompt] = useState("");
@@ -94,6 +94,22 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   const hasStarted = messages.length > 0;
   const chatSelection = buildChatSelection(models.selectedModel, models.selectedToolIds);
   const isUploadingFile = activeUpload !== null;
+  const pendingComposerUploads = [
+    ...(activeUpload
+      ? [
+          {
+            id: activeUpload.id,
+            displayName: buildUploadDisplayName(activeUpload.file),
+            status: "processing" as const,
+          },
+        ]
+      : []),
+    ...uploadQueue.map((upload) => ({
+      id: upload.id,
+      displayName: buildUploadDisplayName(upload.file),
+      status: "waiting" as const,
+    })),
+  ];
   const activeHistorySummary = activeChatHistoryId
     ? historySummaries.find((history) => history.id === activeChatHistoryId) ?? null
     : null;
@@ -108,6 +124,12 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   const isUploadActionBlocked =
     isSending || Boolean(deletingFileId) || (isServerConversationBusy && !isUploadingFile && uploadQueue.length === 0);
   const isDeleteActionBlocked = isLocalConversationBusy;
+  const isActiveHistoryAttachmentMutating =
+    Boolean(activeChatHistoryId) && (isUploadingFile || uploadQueue.length > 0 || Boolean(deletingFileId) || Boolean(updatingFileId));
+  const isHistoryDeleteBlocked = (historyId: string): boolean =>
+    Boolean(deletingHistoryId) ||
+    Boolean(updatingHistoryId) ||
+    (historyId === activeChatHistoryId && isActiveHistoryAttachmentMutating);
   const userAttachmentCount = historySummaries.reduce((sum, history) => sum + history.attachmentCount, 0);
   const attachmentFooterPrimary = `${activeFiles.length}/${attachmentLimits?.maxFilesPerHistory ?? "-"} files`;
   const attachmentFooterSecondary = `${userAttachmentCount}/${attachmentLimits?.maxFilesPerUser ?? "-"} total`;
@@ -280,7 +302,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   };
 
   const handleDeleteHistory = async (historyId: string) => {
-    if (isDeleteActionBlocked || deletingHistoryId || updatingHistoryId) {
+    if (isHistoryDeleteBlocked(historyId)) {
       return;
     }
 
@@ -343,6 +365,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
 
   const handleUploadFiles = (files: File[]) => {
     if (isUploadActionBlocked) {
+      setAttachmentError("Files cannot be uploaded while this chat is busy.");
       return;
     }
 
@@ -357,11 +380,8 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   };
 
   const handlePromptPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const clipboardItems = Array.from(event.clipboardData?.items ?? []);
-    const imageItem = clipboardItems.find(
-      (item) => item.kind === "file" && PASTED_IMAGE_MIME_TYPES.has(item.type),
-    );
-    if (!imageItem) {
+    const pastedFile = getPastedAttachmentFile(event);
+    if (!pastedFile) {
       return;
     }
 
@@ -371,13 +391,8 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
       return;
     }
 
-    const pastedFile = imageItem.getAsFile();
-    if (!pastedFile) {
-      return;
-    }
-
     setAttachmentError(null);
-    handleUploadFiles([normalizePastedImageFile(pastedFile)]);
+    handleUploadFiles([normalizePastedAttachmentFile(pastedFile)]);
   };
 
   const handleDeleteFile = async (fileId: string) => {
@@ -486,7 +501,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   }, [activeChatHistoryId, activeFiles, previewingFile]);
 
   const handleRenameHistory = async (historyId: string, title: string) => {
-    if (isConversationBusy || deletingHistoryId || updatingHistoryId) {
+    if (deletingHistoryId || updatingHistoryId) {
       return;
     }
 
@@ -504,7 +519,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   };
 
   const handleTogglePinHistory = async (historyId: string, isPinned: boolean) => {
-    if (isConversationBusy || deletingHistoryId || updatingHistoryId) {
+    if (deletingHistoryId || updatingHistoryId) {
       return;
     }
 
@@ -659,8 +674,8 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
         historyError={historyError}
         isHistoryLoading={isHistoryLoading}
         isOpen={isSidebarOpen}
-        isDeleteBlocked={isDeleteActionBlocked}
-        isSending={isConversationBusy}
+        isDeleteBlocked={isHistoryDeleteBlocked}
+        isNavigationBlocked={isConversationBusy}
         loadingHistoryId={loadingHistoryId}
         updatingHistoryId={updatingHistoryId}
         onSidebarToggle={() => {
@@ -700,12 +715,14 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
           availableTools={models.availableTools}
           isModelMenuOpen={models.isModelMenuOpen}
           isModelsLoading={models.isModelsLoading}
-          isSending={isConversationBusy}
+          isSendBlocked={isConversationBusy}
+          isUploadBlocked={isUploadActionBlocked}
           sendButtonLabel={sendButtonLabel}
           isToolsMenuOpen={models.isToolsMenuOpen}
           modelMenuRef={models.modelMenuRef}
           modelOptions={models.modelOptions}
           modelsError={models.modelsError}
+          pendingUploads={pendingComposerUploads}
           onModelMenuToggle={models.handleModelMenuToggle}
           onModelSelect={models.handleModelSelect}
           onLogout={onLogout}
@@ -717,6 +734,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
             setPreviewingFile(file);
           }}
           onSubmit={handleSubmit}
+          onUploadFiles={handleUploadFiles}
           onToolToggle={models.handleToolToggle}
           onToolsMenuToggle={models.handleToolsMenuToggle}
           prompt={prompt}
@@ -763,13 +781,66 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
   );
 }
 
-function normalizePastedImageFile(file: File): File {
-  const normalizedMimeType = file.type === "image/jpg" ? "image/jpeg" : file.type;
-  const extension = normalizedMimeType === "image/jpeg" ? "jpg" : "png";
+function getPastedAttachmentFile(event: ClipboardEvent<HTMLTextAreaElement>): File | null {
+  const clipboardItems = Array.from(event.clipboardData?.items ?? []);
+  for (const item of clipboardItems) {
+    if (item.kind !== "file") {
+      continue;
+    }
+
+    const file = item.getAsFile();
+    if (!file) {
+      continue;
+    }
+
+    const mimeType = normalizeAttachmentMimeType(file.type || item.type);
+    if (PASTED_ATTACHMENT_MIME_TYPES.has(mimeType)) {
+      if (file.type === mimeType) {
+        return file;
+      }
+      return new File([file], file.name, { type: mimeType, lastModified: file.lastModified || Date.now() });
+    }
+  }
+
+  const clipboardFiles = Array.from(event.clipboardData?.files ?? []);
+  return clipboardFiles.find((file) => PASTED_ATTACHMENT_MIME_TYPES.has(normalizeAttachmentMimeType(file.type))) ?? null;
+}
+
+function normalizePastedAttachmentFile(file: File): File {
+  const normalizedMimeType = normalizeAttachmentMimeType(file.type);
+  const extension = getAttachmentExtension(normalizedMimeType);
   const hasUsableName = typeof file.name === "string" && file.name.trim().length > 0;
-  const filename = hasUsableName ? file.name : `pasted-image-${Date.now()}.${extension}`;
+  const filename = hasUsableName ? ensureSupportedAttachmentExtension(file.name, extension) : `pasted-attachment-${Date.now()}.${extension}`;
   if (file.name === filename && file.type === normalizedMimeType) {
     return file;
   }
   return new File([file], filename, { type: normalizedMimeType, lastModified: Date.now() });
+}
+
+function normalizeAttachmentMimeType(mimeType: string): string {
+  const normalizedMimeType = mimeType.trim().toLowerCase();
+  return normalizedMimeType === "image/jpg" ? "image/jpeg" : normalizedMimeType;
+}
+
+function getAttachmentExtension(mimeType: string): string {
+  if (mimeType === "application/pdf") {
+    return "pdf";
+  }
+  if (mimeType === "image/jpeg") {
+    return "jpg";
+  }
+  return "png";
+}
+
+function ensureSupportedAttachmentExtension(filename: string, fallbackExtension: string): string {
+  const trimmedFilename = filename.trim();
+  if (/\.(pdf|png|jpe?g)$/i.test(trimmedFilename)) {
+    return trimmedFilename;
+  }
+  return `${trimmedFilename}.${fallbackExtension}`;
+}
+
+function buildUploadDisplayName(file: File): string {
+  const filename = file.name.trim();
+  return filename.length > 0 ? filename : `attachment.${getAttachmentExtension(normalizeAttachmentMimeType(file.type))}`;
 }

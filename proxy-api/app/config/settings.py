@@ -20,7 +20,7 @@ class AppSettings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
 
-    database_url: str = "postgresql+psycopg://postgres:post@localhost:5432/ai_proxy"
+    database_url: str = "postgresql+psycopg://postgres@localhost:5432/ai_proxy"
     redis_url: str = "redis://localhost:6379/0"
 
     auth_session_cookie_name: str = "session_id"
@@ -40,7 +40,7 @@ class AppSettings(BaseSettings):
     microsoft_oauth_transaction_minutes: int = 10
 
     chat_draft_ttl_seconds: int = 900
-    chat_inflight_lock_ttl_seconds: int = 600
+    chat_inflight_lock_ttl_seconds: int = 900
     chat_rate_limit_per_minute: int = 10
     chat_rate_limit_per_hour: int = 30
     chat_attachment_max_files_per_history: int = 10

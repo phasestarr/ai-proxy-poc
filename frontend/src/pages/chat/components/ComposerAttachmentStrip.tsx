@@ -1,16 +1,28 @@
 import type { ChatHistoryFile } from "../../../chat/api";
 import AttachmentPreview from "./AttachmentPreview";
 
+export type PendingComposerUpload = {
+  id: string;
+  displayName: string;
+  status: "processing" | "waiting";
+};
+
 type ComposerAttachmentStripProps = {
   historyId: string | null;
   files: ChatHistoryFile[];
+  pendingUploads: PendingComposerUpload[];
   onPreviewImage: (file: ChatHistoryFile) => void;
 };
 
-export default function ComposerAttachmentStrip({ historyId, files, onPreviewImage }: ComposerAttachmentStripProps) {
+export default function ComposerAttachmentStrip({
+  historyId,
+  files,
+  pendingUploads,
+  onPreviewImage,
+}: ComposerAttachmentStripProps) {
   const activeFiles = files.filter((file) => file.isActive);
 
-  if (activeFiles.length === 0) {
+  if (activeFiles.length === 0 && pendingUploads.length === 0) {
     return null;
   }
 
@@ -46,6 +58,19 @@ export default function ComposerAttachmentStrip({ historyId, files, onPreviewIma
             />
           </div>
         )
+      ))}
+      {pendingUploads.map((upload) => (
+        <div
+          aria-label={`${upload.displayName} ${upload.status}`}
+          className="composer-attachment-tile composer-attachment-tile--pending"
+          key={upload.id}
+          title={`${upload.displayName} - ${upload.status}`}
+        >
+          <div className="composer-attachment-preview composer-attachment-preview--pending">
+            <span className="composer-attachment-pending-dot" />
+            <span>{upload.status === "processing" ? "PROC" : "WAIT"}</span>
+          </div>
+        </div>
       ))}
     </div>
   );

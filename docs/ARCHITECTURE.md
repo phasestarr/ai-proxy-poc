@@ -4,7 +4,7 @@ Current runtime and code ownership for `ai-proxy-poc`.
 
 ## Runtime Shape
 - Public traffic enters sibling `root-proxy`
-- `root-proxy` terminates TLS and routes `ai.nextinsol.com` to `ai-proxy-frontend:8080`
+- `root-proxy` terminates TLS and routes `ai.example.com` to `ai-proxy-frontend:8080`
 - `frontend` serves the SPA and proxies `/api/*` and `/health` to `proxy-api:8000`
 - `proxy-api` uses PostgreSQL, Redis, Vertex AI, OpenAI, and Anthropic
 - runtime is Docker Compose first; backend should not depend on host-local services

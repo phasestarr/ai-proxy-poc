@@ -10,6 +10,7 @@ from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.auth_conflicts import AuthConflictTicket
 from app.db.postgres.models.auth_sessions import AuthSession
+from app.db.postgres.models.chat_attachment import ChatHistoryFile
 from app.db.postgres.models.chat_history import ChatHistory, ChatMessage
 from app.db.postgres.models.oauth_transactions import OAuthTransaction
 
@@ -74,6 +75,9 @@ def purge_expired_auth_data(
             ChatHistory.created_at <= stale_empty_history_cutoff,
             ~exists(
                 select(ChatMessage.id).where(ChatMessage.chat_history_id == ChatHistory.id)
+            ),
+            ~exists(
+                select(ChatHistoryFile.id).where(ChatHistoryFile.chat_history_id == ChatHistory.id)
             ),
         )
     ).scalars().all()

@@ -227,7 +227,7 @@ Main files:
 
 ## Attachment Runtime Semantics
 - refresh does not restore draft or selected history from browser storage
-- interrupted SSE is not auto-recovered by the frontend
+- the frontend does not auto-recover interrupted SSE
 - Redis inflight lease is the effective concurrency guard
 - `interaction_state` is a UI hint, not the only concurrency authority
 - delete behavior uses the Redis lease heuristic
@@ -236,20 +236,7 @@ Main files:
 
 ## Attachment Provider Cleanup
 
-Use the maintenance helper first:
-- `proxy-api/app/maintenance/attachment_provider_files.py`
-
-Important:
-- provider `filename` is not a unique identifier
-- `provider_file_id` is the unique remote identifier
-- PostgreSQL rows are keyed by ids and hashes, not by filename
-- many files may share the same visible name such as `image.png`
-
-That means:
-- normal app behavior is safe with repeated filenames
-- UI delete uses attachment ids, not filenames
-- provider cleanup by filename is broad and should only be used for unique test names
-- generic names such as `image.png` should be inspected carefully before cleanup
+Attachment provider lifecycle and cleanup commands live in docs/ATTACHMENT_PROVIDER_FILES.md.
 
 ## Context Compaction Conditions
 - soft threshold: `50000` input tokens

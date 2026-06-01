@@ -4,7 +4,7 @@ Internal AI proxy stack behind sibling `root-proxy`.
 
 ## Runtime
 - Public entrypoint: `root-proxy`
-- Public host: `ai.nextinsol.com`
+- Public host: `ai.example.com`
 - Edge upstream: `ai-proxy-frontend:8080` on external Docker network `edge-net`
 - Frontend: NGINX serving the SPA and proxying `/api/*` and `/health`
 - Backend: FastAPI
@@ -83,7 +83,7 @@ npm run build
 ## Notes
 - This repo does not terminate TLS.
 - Server deployment assumes sibling `root-proxy` is the only public entrypoint.
-- Current `root-proxy` route is `ai.nextinsol.com -> ai-proxy-frontend:8080`.
+- Current `root-proxy` route is `ai.example.com -> ai-proxy-frontend:8080`.
 - Microsoft login remains optional until the Microsoft env vars are configured.
 - frontend does not auto-select a model; clients must choose one from the backend catalog before sending chat.
 - frontend `New chat` is local-only; the first real send creates a Redis-backed draft and promotes it to a persisted chat history only after backend preflight succeeds.

@@ -3,7 +3,7 @@
 Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 
 ## Base
-- Public host: `https://ai.nextinsol.com`
+- Public host: `https://ai.example.com`
 - API prefix: `/api/v1`
 - Auth: backend-owned session cookie only
 - Main cookies:

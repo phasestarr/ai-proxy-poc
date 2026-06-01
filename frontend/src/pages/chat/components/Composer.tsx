@@ -1,13 +1,14 @@
-import { useLayoutEffect, useRef } from "react";
-import type { ClipboardEvent, FormEvent, RefObject } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import type { ClipboardEvent, DragEvent, FormEvent, RefObject } from "react";
 
 import type { ChatHistoryFile, ChatSelection } from "../../../chat/api";
 import type { ChatModelOption, ChatToolOption } from "../../../chat/api/modelApi";
-import ComposerAttachmentStrip from "./ComposerAttachmentStrip";
+import ComposerAttachmentStrip, { type PendingComposerUpload } from "./ComposerAttachmentStrip";
 
 type ComposerProps = {
   activeFiles: ChatHistoryFile[];
   activeHistoryId: string | null;
+  pendingUploads: PendingComposerUpload[];
   prompt: string;
   modelsError: string | null;
   sendError: string | null;
@@ -20,13 +21,15 @@ type ComposerProps = {
   isModelsLoading: boolean;
   isModelMenuOpen: boolean;
   isToolsMenuOpen: boolean;
-  isSending: boolean;
+  isSendBlocked: boolean;
+  isUploadBlocked: boolean;
   sendButtonLabel: string;
   modelMenuRef: RefObject<HTMLDivElement>;
   toolsMenuRef: RefObject<HTMLDivElement>;
   onLogout: () => Promise<void> | void;
   onPromptChange: (value: string) => void;
   onPromptPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
+  onUploadFiles: (files: File[]) => Promise<void> | void;
   onPreviewImage: (file: ChatHistoryFile) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void> | void;
   onModelMenuToggle: () => void;
@@ -38,6 +41,7 @@ type ComposerProps = {
 export default function Composer({
   activeFiles,
   activeHistoryId,
+  pendingUploads,
   prompt,
   modelsError,
   sendError,
@@ -50,13 +54,15 @@ export default function Composer({
   isModelsLoading,
   isModelMenuOpen,
   isToolsMenuOpen,
-  isSending,
+  isSendBlocked,
+  isUploadBlocked,
   sendButtonLabel,
   modelMenuRef,
   toolsMenuRef,
   onLogout,
   onPromptChange,
   onPromptPaste,
+  onUploadFiles,
   onPreviewImage,
   onSubmit,
   onModelMenuToggle,
@@ -65,6 +71,8 @@ export default function Composer({
   onToolToggle,
 }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const dragDepthRef = useRef(0);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const toolsButtonLabel =
     selectedTools.length > 0 ? `Tools: ${selectedTools.map((tool) => tool.label).join(", ")}` : "Tools: None";
   const isToolsButtonDisabled = !selectedModel?.available || availableTools.length === 0;
@@ -80,16 +88,65 @@ export default function Composer({
     textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
   }, [prompt]);
 
+  const handleDragEnter = (event: DragEvent<HTMLFormElement>) => {
+    if (!containsFileDrag(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDraggingFiles(true);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLFormElement>) => {
+    if (!containsFileDrag(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = isUploadBlocked ? "none" : "copy";
+    setIsDraggingFiles(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLFormElement>) => {
+    if (!containsFileDrag(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setIsDraggingFiles(false);
+    }
+  };
+
+  const handleDrop = (event: DragEvent<HTMLFormElement>) => {
+    if (!containsFileDrag(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFiles(false);
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) {
+      void onUploadFiles(files);
+    }
+  };
+
   return (
-    <form className="composer" onSubmit={onSubmit}>
+    <form
+      className={`composer ${isDraggingFiles ? "composer--dragging" : ""}`}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onSubmit={onSubmit}
+    >
       <ComposerAttachmentStrip
         files={activeFiles}
         historyId={activeHistoryId}
+        pendingUploads={pendingUploads}
         onPreviewImage={onPreviewImage}
       />
       <textarea
         className="composer-input"
-        disabled={isSending}
         ref={inputRef}
         value={prompt}
         onChange={(event) => onPromptChange(event.target.value)}
@@ -169,10 +226,10 @@ export default function Composer({
           </button>
           <button
             className="composer-send-button"
-            disabled={isSending || isModelsLoading || prompt.trim().length === 0 || !selectedModel?.available}
+            disabled={isSendBlocked || isModelsLoading || prompt.trim().length === 0 || !selectedModel?.available}
             type="submit"
           >
-            {isSending ? sendButtonLabel : "Send"}
+            {isSendBlocked ? sendButtonLabel : "Send"}
           </button>
         </div>
       </div>
@@ -187,4 +244,8 @@ export function buildChatSelection(selectedModel: ChatModelOption | undefined, s
     modelId: selectedModel?.id ?? null,
     toolIds: selectedToolIds,
   };
+}
+
+function containsFileDrag(dataTransfer: DataTransfer): boolean {
+  return Array.from(dataTransfer.types ?? []).includes("Files");
 }

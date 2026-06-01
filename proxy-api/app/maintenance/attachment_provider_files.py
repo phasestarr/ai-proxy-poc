@@ -69,6 +69,18 @@ def parse_args() -> argparse.Namespace:
         help="Delete remote files only and leave DB provider refs unchanged.",
     )
 
+    cleanup_file_id_parser = subparsers.add_parser(
+        "cleanup-file-id",
+        help="Delete one exact remote provider file id and clear matching DB provider refs.",
+    )
+    cleanup_file_id_parser.add_argument("--provider", choices=["openai", "anthropic"], required=True)
+    cleanup_file_id_parser.add_argument("--file-id", required=True)
+    cleanup_file_id_parser.add_argument(
+        "--skip-db-clear",
+        action="store_true",
+        help="Delete the remote file only and leave DB provider refs unchanged.",
+    )
+
     return parser.parse_args()
 
 
@@ -94,6 +106,17 @@ def main() -> None:
                 cleanup_filename(
                     filename=args.filename,
                     provider=args.provider,
+                    clear_db=not args.skip_db_clear,
+                )
+            )
+        )
+        return
+    if args.command == "cleanup-file-id":
+        print_json(
+            asyncio.run(
+                cleanup_file_id(
+                    provider=args.provider,
+                    file_id=args.file_id,
                     clear_db=not args.skip_db_clear,
                 )
             )
@@ -244,6 +267,53 @@ async def cleanup_filename(
         "deleted_remote_files": deleted_remote_files,
         "cleared_db_refs": db_cleared_refs,
     }
+
+
+async def cleanup_file_id(
+    *,
+    provider: str,
+    file_id: str,
+    clear_db: bool,
+) -> dict[str, Any]:
+    normalized_file_id = file_id.strip()
+    if not normalized_file_id:
+        raise ValueError("file id must not be blank")
+
+    await delete_remote_provider_file(provider=provider, file_id=normalized_file_id)
+    db_cleared_refs = (
+        clear_db_provider_refs(provider=provider, provider_file_ids={normalized_file_id})
+        if clear_db
+        else []
+    )
+    return {
+        "provider": provider,
+        "file_id": normalized_file_id,
+        "deleted_remote_file": {"provider": provider, "file_id": normalized_file_id},
+        "cleared_db_refs": db_cleared_refs,
+    }
+
+
+async def delete_remote_provider_file(*, provider: str, file_id: str) -> None:
+    if provider == "openai":
+        client = build_openai_client()
+        try:
+            await client.files.delete(file_id)
+        finally:
+            await client.close()
+        return
+
+    if provider == "anthropic":
+        client = build_anthropic_client()
+        try:
+            await client.beta.files.delete(
+                file_id,
+                betas=[ANTHROPIC_FILES_BETA],
+            )
+        finally:
+            await client.close()
+        return
+
+    raise ValueError(f"unsupported provider: {provider}")
 
 
 def clear_db_provider_refs(*, provider: str, provider_file_ids: set[str]) -> list[dict[str, str]]:

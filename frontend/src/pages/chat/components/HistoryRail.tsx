@@ -13,8 +13,8 @@ type HistoryRailProps = {
   historyError: string | null;
   isHistoryLoading: boolean;
   isOpen: boolean;
-  isDeleteBlocked: boolean;
-  isSending: boolean;
+  isNavigationBlocked: boolean;
+  isDeleteBlocked: (historyId: string) => boolean;
   loadingHistoryId: string | null;
   deletingHistoryId: string | null;
   updatingHistoryId: string | null;
@@ -34,8 +34,8 @@ export default function HistoryRail({
   historyError,
   isHistoryLoading,
   isOpen,
+  isNavigationBlocked,
   isDeleteBlocked,
-  isSending,
   loadingHistoryId,
   deletingHistoryId,
   updatingHistoryId,
@@ -151,7 +151,7 @@ export default function HistoryRail({
         <div className="history-primary-actions">
           <button
             className={`history-primary-button ${isOpen ? "history-primary-button--wide" : "history-primary-button--compact"}`}
-            disabled={isSending}
+            disabled={isNavigationBlocked}
             onClick={() => {
               setOpenMenuHistoryId(null);
               setRenamingHistoryId(null);
@@ -197,7 +197,7 @@ export default function HistoryRail({
                   <div className={`history-item ${isActive ? "history-item--active" : ""}`} key={history.id}>
                     <button
                       className="history-select-button"
-                      disabled={isSending || Boolean(loadingHistoryId) || isDeleting || isUpdating}
+                      disabled={isNavigationBlocked || Boolean(loadingHistoryId) || isDeleting || isUpdating}
                       onClick={() => {
                         setOpenMenuHistoryId(null);
                         setRenamingHistoryId(null);
@@ -294,7 +294,7 @@ export default function HistoryRail({
                               <>
                                 <button
                                   className="history-menu-item"
-                                  disabled={isSending || isDeleting || isUpdating}
+                                  disabled={isDeleting || isUpdating}
                                   onClick={() => {
                                     setRenamingHistoryId(history.id);
                                     setRenameValue(history.title);
@@ -306,7 +306,7 @@ export default function HistoryRail({
                                 </button>
                                 <button
                                   className="history-menu-item"
-                                  disabled={isSending || isDeleting || isUpdating}
+                                  disabled={isDeleting || isUpdating}
                                   onClick={() => {
                                     setOpenMenuHistoryId(null);
                                     void onTogglePinHistory(history.id, isPinned);
@@ -326,7 +326,7 @@ export default function HistoryRail({
                                 </button>
                                 <button
                                   className="history-menu-item history-menu-item--danger"
-                                  disabled={isDeleteBlocked || isDeleting || isUpdating}
+                                  disabled={isDeleteBlocked(history.id) || isDeleting || isUpdating}
                                   onClick={() => {
                                     setOpenMenuHistoryId(null);
                                     void onDeleteHistory(history.id);
