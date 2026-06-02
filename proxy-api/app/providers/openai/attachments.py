@@ -12,7 +12,7 @@ _OPENAI_ATTACHMENT_CONTEXT_TEXT = (
     "The following files are attached to this chat history. "
     "Treat them as persistent reference context for every turn in this conversation."
 )
-_OPENAI_IMAGE_DETAIL = "auto"
+_OPENAI_IMAGE_DETAIL = "high"
 
 
 def resolve_openai_attachment_count_model() -> str:
