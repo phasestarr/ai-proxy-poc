@@ -19,6 +19,7 @@ type AttachmentRailProps = {
   deletingFileId: string | null;
   updatingFileId: string | null;
   onToggle: () => void;
+  onLogout: () => Promise<void> | void;
   onUploadFiles: (files: File[]) => Promise<void> | void;
   onDeleteFile: (fileId: string) => Promise<void> | void;
   onToggleFileActive: (fileId: string, isActive: boolean) => Promise<void> | void;
@@ -40,6 +41,7 @@ export default function AttachmentRail({
   deletingFileId,
   updatingFileId,
   onToggle,
+  onLogout,
   onUploadFiles,
   onDeleteFile,
   onToggleFileActive,
@@ -147,8 +149,17 @@ export default function AttachmentRail({
       </div>
 
       <div className="attachment-summary-slot">
-        <p className="attachment-summary-label">{isOpen ? footerPrimary : footerPrimary.slice(0, 1)}</p>
-        {isOpen ? <p className="attachment-summary-meta">{footerSecondary}</p> : null}
+        <div className="attachment-summary-row">
+          <div className="attachment-summary-copy">
+            <p className="attachment-summary-label">{isOpen ? footerPrimary : footerPrimary.slice(0, 1)}</p>
+            {isOpen ? <p className="attachment-summary-meta">{footerSecondary}</p> : null}
+          </div>
+          {isOpen ? (
+            <button className="attachment-logout-button" onClick={() => void onLogout()} type="button">
+              Log out
+            </button>
+          ) : null}
+        </div>
       </div>
     </aside>
   );

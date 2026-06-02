@@ -725,7 +725,6 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
           pendingUploads={pendingComposerUploads}
           onModelMenuToggle={models.handleModelMenuToggle}
           onModelSelect={models.handleModelSelect}
-          onLogout={onLogout}
           onPromptChange={(value) => {
             setPrompt(value);
           }}
@@ -762,6 +761,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
         statusText={attachmentStatusText}
         updatingFileId={updatingFileId}
         onDeleteFile={handleDeleteFile}
+        onLogout={onLogout}
         onToggleFileActive={handleToggleFileActive}
         onToggle={() => {
           setIsAttachmentRailOpen((current) => !current);

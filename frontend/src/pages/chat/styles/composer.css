@@ -256,24 +256,8 @@
 .composer-submit-group {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-}
-
-.composer-logout-button {
-  min-height: 36px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: #6b6b6b;
-  font: inherit;
-  font-size: 13px;
-  padding: 0 12px;
-  cursor: pointer;
-}
-
-.composer-logout-button:hover {
-  background: #f3f3f4;
-  color: #171717;
 }
 
 .composer-send-button {
@@ -308,7 +292,7 @@
   }
 
   .composer-submit-group {
-    justify-content: space-between;
+    justify-content: flex-end;
   }
 
   .composer-popover {

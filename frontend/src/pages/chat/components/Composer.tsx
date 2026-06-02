@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { ClipboardEvent, DragEvent, FormEvent, RefObject } from "react";
+import type { ClipboardEvent, DragEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 
 import type { ChatHistoryFile, ChatSelection } from "../../../chat/api";
 import type { ChatModelOption, ChatToolOption } from "../../../chat/api/modelApi";
@@ -26,7 +26,6 @@ type ComposerProps = {
   sendButtonLabel: string;
   modelMenuRef: RefObject<HTMLDivElement>;
   toolsMenuRef: RefObject<HTMLDivElement>;
-  onLogout: () => Promise<void> | void;
   onPromptChange: (value: string) => void;
   onPromptPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onUploadFiles: (files: File[]) => Promise<void> | void;
@@ -59,7 +58,6 @@ export default function Composer({
   sendButtonLabel,
   modelMenuRef,
   toolsMenuRef,
-  onLogout,
   onPromptChange,
   onPromptPaste,
   onUploadFiles,
@@ -76,6 +74,7 @@ export default function Composer({
   const toolsButtonLabel =
     selectedTools.length > 0 ? `Tools: ${selectedTools.map((tool) => tool.label).join(", ")}` : "Tools: None";
   const isToolsButtonDisabled = !selectedModel?.available || availableTools.length === 0;
+  const isSendDisabled = isSendBlocked || isModelsLoading || prompt.trim().length === 0 || !selectedModel?.available;
 
   useLayoutEffect(() => {
     const textarea = inputRef.current;
@@ -130,6 +129,23 @@ export default function Composer({
     }
   };
 
+  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key !== "Enter" ||
+      !event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      event.metaKey ||
+      event.nativeEvent.isComposing ||
+      isSendDisabled
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  };
+
   return (
     <form
       className={`composer ${isDraggingFiles ? "composer--dragging" : ""}`}
@@ -150,6 +166,7 @@ export default function Composer({
         ref={inputRef}
         value={prompt}
         onChange={(event) => onPromptChange(event.target.value)}
+        onKeyDown={handlePromptKeyDown}
         onPaste={onPromptPaste}
         placeholder="Type your prompt..."
         rows={1}
@@ -221,12 +238,9 @@ export default function Composer({
           </div>
         </div>
         <div className="composer-submit-group">
-          <button className="composer-logout-button" onClick={() => void onLogout()} type="button">
-            Log out
-          </button>
           <button
             className="composer-send-button"
-            disabled={isSendBlocked || isModelsLoading || prompt.trim().length === 0 || !selectedModel?.available}
+            disabled={isSendDisabled}
             type="submit"
           >
             {isSendBlocked ? sendButtonLabel : "Send"}
