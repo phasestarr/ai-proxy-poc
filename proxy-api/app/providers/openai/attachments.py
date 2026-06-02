@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 from copy import deepcopy
 
@@ -25,41 +24,6 @@ def resolve_openai_attachment_count_model() -> str:
         if model.available:
             return model.public_id
     raise ValueError("no available openai model for attachment token counting")
-
-
-async def count_openai_file_tokens(
-    *,
-    display_name: str,
-    mime_type: str,
-    file_bytes: bytes,
-) -> tuple[int, str]:
-    public_model_id = resolve_openai_attachment_count_model()
-    runtime = resolve_openai_model_runtime(public_model_id=public_model_id)
-    encoded_file = f"data:{mime_type};base64,{base64.b64encode(file_bytes).decode('ascii')}"
-    content_block = build_openai_count_content_block(
-        display_name=display_name,
-        mime_type=mime_type,
-        encoded_file=encoded_file,
-    )
-
-    client = build_openai_client()
-    try:
-        response = await client.responses.input_tokens.count(
-            model=runtime.provider_model,
-            truncation="disabled",
-            input=[
-                {
-                    "role": "user",
-                    "content": [content_block],
-                }
-            ],
-        )
-        input_tokens = getattr(response, "input_tokens", None)
-        if input_tokens is None:
-            raise RuntimeError("openai input token count did not return a token value")
-        return int(input_tokens), public_model_id
-    finally:
-        await client.close()
 
 
 async def count_openai_file_reference_tokens(
@@ -189,25 +153,6 @@ def inject_openai_history_files(
 
 def _build_openai_prompt_cache_key(parts: list[str]) -> str:
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
-
-
-def build_openai_count_content_block(
-    *,
-    display_name: str,
-    mime_type: str,
-    encoded_file: str,
-) -> dict[str, object]:
-    if mime_type.startswith("image/"):
-        return {
-            "type": "input_image",
-            "detail": _OPENAI_IMAGE_DETAIL,
-            "image_url": encoded_file,
-        }
-    return {
-        "type": "input_file",
-        "filename": display_name,
-        "file_data": encoded_file,
-    }
 
 
 def build_openai_file_reference_block(*, mime_type: str, provider_file_id: str) -> dict[str, object]:

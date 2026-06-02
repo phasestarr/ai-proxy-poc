@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.session_lifecycle import delete_session_row, expire_session, is_session_expired
-from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.auth_conflicts import AuthConflictTicket
 from app.db.postgres.models.auth_sessions import AuthSession
-from app.db.postgres.models.chat_attachment import ChatHistoryFile
-from app.db.postgres.models.chat_history import ChatHistory, ChatMessage
 from app.db.postgres.models.oauth_transactions import OAuthTransaction
 
 
@@ -26,7 +23,6 @@ def purge_expired_auth_data(
     deleted_count += delete_expired_sessions(db)
     deleted_count += delete_expired_oauth_transactions(db, now=current_time)
     deleted_count += delete_expired_conflict_tickets(db, now=current_time)
-    deleted_count += delete_stale_empty_histories(db, now=current_time)
     db.commit()
     return deleted_count
 
@@ -100,32 +96,5 @@ def delete_expired_conflict_tickets(
     ).scalars().all()
     for conflict_ticket in expired_conflict_tickets:
         db.delete(conflict_ticket)
-        deleted_count += 1
-    return deleted_count
-
-
-def delete_stale_empty_histories(
-    db: Session,
-    *,
-    now: datetime,
-) -> int:
-    deleted_count = 0
-    stale_empty_history_cutoff = now - timedelta(
-        minutes=max(5, settings.housekeeping_interval_minutes)
-    )
-    stale_empty_histories = db.execute(
-        select(ChatHistory).where(
-            ChatHistory.last_message_at.is_(None),
-            ChatHistory.created_at <= stale_empty_history_cutoff,
-            ~exists(
-                select(ChatMessage.id).where(ChatMessage.chat_history_id == ChatHistory.id)
-            ),
-            ~exists(
-                select(ChatHistoryFile.id).where(ChatHistoryFile.chat_history_id == ChatHistory.id)
-            ),
-        )
-    ).scalars().all()
-    for history in stale_empty_histories:
-        db.delete(history)
         deleted_count += 1
     return deleted_count

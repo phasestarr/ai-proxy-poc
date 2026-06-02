@@ -18,12 +18,16 @@ from app.providers.dispatcher import (
 )
 from app.providers.types import PreparedProviderChatRequest, ProviderRoute
 from app.schemas.chat import ChatCompletionRequest
-from app.services.chat.context_budget import should_resolve_exact_input_tokens
-from app.services.chat.context_checkpoints import persist_chat_context_checkpoint_ready
-from app.services.chat.context_pipeline import BuiltChatContext, build_chat_context, build_compaction_source_text
+from app.services.chat.completions.context.budget import should_resolve_exact_input_tokens
+from app.services.chat.completions.context.checkpoints import persist_chat_context_checkpoint_ready
+from app.services.chat.completions.context.pipeline import (
+    BuiltChatContext,
+    build_chat_context,
+    build_compaction_source_text,
+)
+from app.services.chat.completions.preflight import build_safe_error_detail
 from app.services.chat.errors import ChatProxyError
-from app.services.chat.history_queries import load_user_history
-from app.services.chat.request_preflight import build_safe_error_detail
+from app.services.chat.histories.service import load_user_history
 
 
 async def build_prepared_request(

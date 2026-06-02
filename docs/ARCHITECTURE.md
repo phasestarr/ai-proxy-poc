@@ -52,23 +52,23 @@ Current runtime and code ownership for `ai-proxy-poc`.
 3. `proxy-api/app/api/v1/endpoints/`
    - stays thin
    - owns HTTP shape only
-4. `proxy-api/app/services/chat/preparation.py`
+4. `proxy-api/app/services/chat/completions/route_selection.py`
    - resolves `model_id` and `tool_ids`
-5. `proxy-api/app/services/chat/request_preflight.py`
+5. `proxy-api/app/services/chat/completions/preflight.py`
    - validates the selected route
    - resolves owned chat histories or owned first-send drafts
    - enforces provider readiness and chat rate limits
-6. `proxy-api/app/services/chat/request_preparation.py`
+6. `proxy-api/app/services/chat/completions/request_builder.py`
    - rebuilds provider context from persisted history
    - assembles the provider request
    - conditionally resolves exact input-token counts near the soft threshold
    - runs context compaction when needed
-7. `proxy-api/app/services/chat/turns.py`
+7. `proxy-api/app/services/chat/completions/turn_persistence.py`
    - persists user message and assistant placeholder
-8. `proxy-api/app/services/chat/turn_execution.py`
+8. `proxy-api/app/services/chat/completions/provider_execution.py`
    - executes the provider stream
    - persists final success or failure outcomes
-9. `proxy-api/app/services/chat/stream.py`
+9. `proxy-api/app/services/chat/completions/orchestrator.py`
    - starts backend-owned provider execution
    - emits live SSE events if the browser is still connected
 10. `proxy-api/app/providers/catalog.py`
@@ -331,12 +331,12 @@ Anthropic:
   - `proxy-api/app/providers/catalog.py`
   - `proxy-api/app/providers/dispatcher.py`
 - change chat execution lifecycle:
-  - `proxy-api/app/services/chat/stream.py`
-  - `proxy-api/app/services/chat/request_preflight.py`
-  - `proxy-api/app/services/chat/request_preparation.py`
-  - `proxy-api/app/services/chat/turn_execution.py`
-  - `proxy-api/app/services/chat/turns.py`
-  - `proxy-api/app/services/chat/usage_summary.py`
+  - `proxy-api/app/services/chat/completions/orchestrator.py`
+  - `proxy-api/app/services/chat/completions/preflight.py`
+  - `proxy-api/app/services/chat/completions/request_builder.py`
+  - `proxy-api/app/services/chat/completions/provider_execution.py`
+  - `proxy-api/app/services/chat/completions/turn_persistence.py`
+  - `proxy-api/app/services/chat/histories/usage_summary.py`
 
 ## Active vs Inactive Areas
 - active:

@@ -30,26 +30,26 @@ from app.db.redis.chat_coordination import (
 from app.providers.types import PreparedProviderChatRequest
 from app.schemas.chat import ChatCompletionRequest, ChatStreamStatusEvent
 from app.services.chat.attachments import prepare_history_attachments_for_provider
-from app.services.chat.context_budget import needs_context_compaction
-from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError
-from app.services.chat.history_queries import load_user_history
-from app.services.chat.interaction_state import (
-    BUSY_REASON_SEND,
-    INTERACTION_STATE_READY,
-    INTERACTION_STATE_VALIDATING,
-    apply_history_interaction_state,
-)
-from app.services.chat.rejections import persist_chat_proxy_rejection
-from app.services.chat.request_preflight import ChatPreflightResult, build_safe_error_detail, run_chat_preflight
-from app.services.chat.request_preparation import build_prepared_request, run_context_compaction
-from app.services.chat.stream_events import (
+from app.services.chat.completions.context.budget import needs_context_compaction
+from app.services.chat.completions.preflight import ChatPreflightResult, build_safe_error_detail, run_chat_preflight
+from app.services.chat.completions.provider_execution import run_chat_completion_turn
+from app.services.chat.completions.request_audit import persist_chat_proxy_rejection
+from app.services.chat.completions.request_builder import build_prepared_request, run_context_compaction
+from app.services.chat.completions.sse import (
     LiveChatStreamSink,
     build_error_event,
     build_start_event,
     stream_live_chat_completion,
 )
-from app.services.chat.turn_execution import run_chat_completion_turn
-from app.services.chat.turns import persist_chat_turn_start
+from app.services.chat.completions.turn_persistence import persist_chat_turn_start
+from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError
+from app.services.chat.histories.service import load_user_history
+from app.services.chat.histories.state import (
+    BUSY_REASON_SEND,
+    INTERACTION_STATE_READY,
+    INTERACTION_STATE_VALIDATING,
+    apply_history_interaction_state,
+)
 
 logger = logging.getLogger("uvicorn.error")
 

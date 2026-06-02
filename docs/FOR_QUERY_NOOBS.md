@@ -693,13 +693,13 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, CO
   `proxy-api/app/auth/guest_sessions.py`,
   `proxy-api/app/auth/conflict_tickets.py`
 - Microsoft OAuth logic: `proxy-api/app/auth/microsoft_oauth.py`
-- Auth cleanup logic: `proxy-api/app/auth/cleanup.py`
-- Chat persistence logic: `proxy-api/app/services/chat/history_queries.py`,
-  `proxy-api/app/services/chat/turns.py`,
-  `proxy-api/app/services/chat/context_pipeline.py`,
-  `proxy-api/app/services/chat/usage_summary.py`,
-  `proxy-api/app/services/chat/rejections.py`
-- Chat stream/background orchestration: `proxy-api/app/services/chat/stream.py`
+- Auth cleanup logic: `proxy-api/app/workers/auth_cleanup.py`
+- Chat persistence logic: `proxy-api/app/services/chat/histories/service.py`,
+  `proxy-api/app/services/chat/completions/turn_persistence.py`,
+  `proxy-api/app/services/chat/completions/context/pipeline.py`,
+  `proxy-api/app/services/chat/histories/usage_summary.py`,
+  `proxy-api/app/services/chat/completions/request_audit.py`
+- Chat stream/background orchestration: `proxy-api/app/services/chat/completions/orchestrator.py`
 - Draft coordination: `proxy-api/app/db/redis/chat_drafts.py`
 - Local reject audit model: `proxy-api/app/db/postgres/models/chat_request_rejection.py`
 - Provider usage/pricing: `proxy-api/app/providers/<provider>/usage.py`

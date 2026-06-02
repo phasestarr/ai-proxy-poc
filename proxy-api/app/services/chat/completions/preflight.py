@@ -15,9 +15,9 @@ from app.db.redis.chat_coordination import (
 from app.providers.dispatcher import ProviderConfigurationError, ensure_provider_ready
 from app.providers.types import ProviderRoute
 from app.schemas.chat import ChatCompletionRequest
+from app.services.chat.completions.route_selection import prepare_chat_completion_request
 from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError, build_preparation_error
-from app.services.chat.history_queries import load_user_history
-from app.services.chat.preparation import prepare_chat_completion_request
+from app.services.chat.histories.service import load_user_history
 
 
 @dataclass(slots=True, frozen=True)

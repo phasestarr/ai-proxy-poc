@@ -56,12 +56,13 @@ from app.services.chat.attachments import (
     list_history_files,
     update_history_file_activation,
 )
-from app.services.chat.stream import (
+from app.services.chat.completions.orchestrator import (
     ChatHistoryUnavailableError,
     create_chat_completion_stream,
 )
+from app.services.chat.completions.request_audit import persist_chat_proxy_rejection
 from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError
-from app.services.chat.history_queries import (
+from app.services.chat.histories.service import (
     get_chat_history,
     list_chat_histories,
     load_user_history,
@@ -69,7 +70,7 @@ from app.services.chat.history_queries import (
     unpin_chat_history,
     update_chat_history_title,
 )
-from app.services.chat.interaction_state import (
+from app.services.chat.histories.state import (
     BUSY_REASON_ATTACH_FILE,
     BUSY_REASON_DELETE_FILE,
     BUSY_REASON_DELETE_HISTORY,
@@ -77,7 +78,6 @@ from app.services.chat.interaction_state import (
     INTERACTION_STATE_VALIDATING,
     apply_history_interaction_state,
 )
-from app.services.chat.rejections import persist_chat_proxy_rejection
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 

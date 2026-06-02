@@ -9,7 +9,7 @@ from app.schemas.chat import (
     ChatHistorySummary,
     ChatHistoryUsageSummary,
 )
-from app.services.chat.usage_summary import extract_token_summary
+from app.services.chat.histories.usage_summary import extract_token_summary
 
 
 def build_chat_history_summary(history, message_count: int, attachment_count: int) -> ChatHistorySummary:

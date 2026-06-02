@@ -10,11 +10,15 @@ from app.providers.openai.outcomes import OPENAI_SUCCESS_RESULT_CODE, pick_opena
 from app.providers.types import PreparedProviderChatRequest, ProviderRoute, ProviderStreamChunk
 from app.providers.vertex.outcomes import VERTEX_SUCCESS_RESULT_CODE, pick_vertex_success_message
 from app.schemas.chat import ChatStreamDeltaEvent, ChatStreamDoneEvent, ChatStreamStatusEvent, ChatUsageSummary
+from app.services.chat.completions.preflight import build_safe_error_detail
+from app.services.chat.completions.sse import LiveChatStreamSink, build_error_event
+from app.services.chat.completions.turn_persistence import (
+    PersistedChatTurn,
+    persist_chat_turn_failure,
+    persist_chat_turn_success,
+)
 from app.services.chat.errors import ChatProxyError
-from app.services.chat.request_preflight import build_safe_error_detail
-from app.services.chat.stream_events import LiveChatStreamSink, build_error_event
-from app.services.chat.turns import PersistedChatTurn, persist_chat_turn_failure, persist_chat_turn_success
-from app.services.chat.usage_summary import extract_token_summary
+from app.services.chat.histories.usage_summary import extract_token_summary
 
 logger = logging.getLogger("uvicorn.error")
 

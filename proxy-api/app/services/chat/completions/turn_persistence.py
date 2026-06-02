@@ -13,16 +13,16 @@ from app.db.postgres.models.chat_history import ChatHistory, ChatMessage
 from app.db.redis.chat_drafts import delete_chat_draft
 from app.providers.types import ProviderRoute, ProviderUsageMetadata
 from app.schemas.chat import ChatCompletionRequest
-from app.services.chat.errors import ChatHistoryNotFoundError
-from app.services.chat.history_queries import load_user_history
-from app.services.chat.interaction_state import (
+from app.services.chat.histories.service import load_user_history
+from app.services.chat.histories.state import (
     BUSY_REASON_SEND,
     INTERACTION_STATE_READY,
     INTERACTION_STATE_WAITING,
     apply_history_interaction_state,
 )
-from app.services.chat.titles import build_title_from_prompt
-from app.services.chat.usage_summary import serialize_provider_usage, update_history_usage_summary
+from app.services.chat.histories.titles import build_title_from_prompt
+from app.services.chat.histories.usage_summary import serialize_provider_usage, update_history_usage_summary
+from app.services.chat.errors import ChatHistoryNotFoundError
 
 
 @dataclass(slots=True)

@@ -30,8 +30,8 @@ from app.config.settings import settings
 from app.db.postgres.migrations import run_database_migrations
 from app.db.postgres.session import SessionLocal
 from app.db.redis.client import close_redis_client, verify_redis_connection
-from app.housekeeping import run_housekeeping_once
-from app.services.chat.rejections import persist_chat_request_validation_rejection
+from app.services.chat.completions.request_audit import persist_chat_request_validation_rejection
+from app.workers.housekeeping import run_housekeeping_once
 
 logger = logging.getLogger("uvicorn.error")
 

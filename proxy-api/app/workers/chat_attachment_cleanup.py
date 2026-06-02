@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import StoredFileProviderState
-from app.services.chat.attachments import delete_remote_provider_file, remote_provider_file_exists
+from app.services.chat.attachments.remote_files import delete_remote_provider_file, remote_provider_file_exists
 
 logger = logging.getLogger("uvicorn.error")
 

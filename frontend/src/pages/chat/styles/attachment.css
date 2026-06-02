@@ -297,12 +297,23 @@
 }
 
 .attachment-rail--closed .attachment-summary-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 10px 0;
 }
 
 .attachment-rail--closed .attachment-summary-row {
-  justify-content: center;
   min-height: 0;
+}
+
+.attachment-rail--closed .attachment-summary-copy {
+  min-width: auto;
+  flex: 0 0 auto;
+}
+
+.attachment-rail--closed .attachment-summary-label {
+  text-align: center;
 }
 
 @media (max-width: 720px) {

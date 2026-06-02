@@ -10,7 +10,7 @@ from redis.exceptions import RedisError
 from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.redis.client import get_redis_client
-from app.services.chat.interaction_state import INTERACTION_STATE_READY
+from app.services.chat.histories.state import INTERACTION_STATE_READY
 
 DRAFT_KEY_PREFIX = "ai-proxy:chat:draft"
 

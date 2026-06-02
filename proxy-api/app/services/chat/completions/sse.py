@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 from app.schemas.chat import ChatStreamErrorEvent, ChatStreamStartEvent
+from app.services.chat.completions.turn_persistence import PersistedChatTurn
 from app.services.chat.errors import ChatProxyError
-from app.services.chat.turns import PersistedChatTurn
 
 
 @dataclass(slots=True, frozen=True)

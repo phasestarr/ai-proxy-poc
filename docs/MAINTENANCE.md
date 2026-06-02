@@ -135,15 +135,15 @@ Anthropic:
 1. request schema validation
    - `proxy-api/app/schemas/chat.py`
 2. route resolution
-   - `proxy-api/app/services/chat/preparation.py`
+   - `proxy-api/app/services/chat/completions/route_selection.py`
 3. preflight checks
-   - `proxy-api/app/services/chat/request_preflight.py`
+   - `proxy-api/app/services/chat/completions/preflight.py`
 4. orchestration and lease ownership
-   - `proxy-api/app/services/chat/stream.py`
+   - `proxy-api/app/services/chat/completions/orchestrator.py`
    - acquires the `chat_history_id` Redis lease
    - emits pre-provider SSE status messages
 5. persisted context rebuild and request preparation
-   - `proxy-api/app/services/chat/request_preparation.py`
+   - `proxy-api/app/services/chat/completions/request_builder.py`
    - reloads the owned history
    - calls `build_chat_context`
    - assembles the provider payload
@@ -152,7 +152,7 @@ Anthropic:
    - `proxy-api/app/config/chat_instructions.py`
    - backend-owned default system instruction
 7. context assembly
-   - `proxy-api/app/services/chat/context_pipeline.py`
+   - `proxy-api/app/services/chat/completions/context/pipeline.py`
    - injects checkpoint summary as a `system` message when present
    - includes only raw messages after `covered_through_sequence`
    - appends the latest user request message as the final turn
@@ -162,33 +162,39 @@ Anthropic:
    - Vertex: `proxy-api/app/providers/vertex/mapper.py` + `proxy-api/app/providers/vertex/config.py`
 9. local estimate and exact-count gate
    - heuristic estimate is attached in `proxy-api/app/providers/<provider>/stream.py`
-   - threshold constants live in `proxy-api/app/services/chat/context_budget.py`
+   - threshold constants live in `proxy-api/app/services/chat/completions/context/budget.py`
    - exact token counters live in `proxy-api/app/providers/<provider>/count_tokens.py`
 10. compaction path
-   - decision is made in `proxy-api/app/services/chat/context_budget.py`
-   - stream status is emitted from `proxy-api/app/services/chat/stream.py`
-   - compaction source text comes from `proxy-api/app/services/chat/context_pipeline.py`
-   - checkpoint persistence lives in `proxy-api/app/services/chat/context_checkpoints.py`
+   - decision is made in `proxy-api/app/services/chat/completions/context/budget.py`
+   - stream status is emitted from `proxy-api/app/services/chat/completions/orchestrator.py`
+   - compaction source text comes from `proxy-api/app/services/chat/completions/context/pipeline.py`
+   - checkpoint persistence lives in `proxy-api/app/services/chat/completions/context/checkpoints.py`
 11. turn persistence
-   - `proxy-api/app/services/chat/turns.py`
+   - `proxy-api/app/services/chat/completions/turn_persistence.py`
 12. provider dispatch and execution
    - `proxy-api/app/providers/dispatcher.py`
    - `proxy-api/app/providers/<provider>/stream.py`
 13. usage normalization and history rollup
    - `proxy-api/app/providers/<provider>/usage.py`
-   - `proxy-api/app/services/chat/usage_summary.py`
+   - `proxy-api/app/services/chat/histories/usage_summary.py`
 
 ## Attachment Change Points
 
 Attachment flow is backend-owned. The frontend only uploads a file and renders backend responses.
 
 Main files:
-- `proxy-api/app/services/chat/attachments.py`
+- `proxy-api/app/services/chat/attachments/service.py`
+  - attach/delete/history attachment operations
+- `proxy-api/app/services/chat/attachments/validation.py`
   - upload validation
   - user/history attachment limits
+- `proxy-api/app/services/chat/attachments/storage.py`
   - per-user blob deduplication
-  - provider token counting
-  - provider file upload/delete orchestration
+  - stored file lifecycle
+- `proxy-api/app/services/chat/attachments/payloads.py`
+  - send-time provider payload injection
+- `proxy-api/app/services/chat/attachments/remote_files.py`
+  - provider file upload/delete/existence checks
 - `proxy-api/app/db/postgres/models/chat_attachment.py`
   - `stored_files`
   - `stored_file_provider_states`
@@ -203,9 +209,9 @@ Main files:
   - Anthropic token counting, upload, delete, and payload injection
 - `proxy-api/app/providers/vertex/attachments.py`
   - Vertex GCS upload, token counting, delete, and payload injection
-- `proxy-api/app/housekeeping.py`
+- `proxy-api/app/workers/housekeeping.py`
   - startup and hourly housekeeping runner
-- `proxy-api/app/services/chat/attachment_cleanup.py`
+- `proxy-api/app/workers/chat_attachment_cleanup.py`
   - provider remote ref reconciliation and TTL cleanup
 - `proxy-api/app/api/v1/presenters/chat.py`
   - attachment limits and file view envelopes

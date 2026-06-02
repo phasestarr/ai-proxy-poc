@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.postgres.models.chat_attachment import ChatHistoryFile
 from app.db.postgres.models.chat_history import ChatHistory, ChatMessage
 from app.services.chat.errors import ChatHistoryNotFoundError
-from app.services.chat.titles import normalize_history_title
+from app.services.chat.histories.titles import normalize_history_title
 
 def list_chat_histories(
     db: Session,
@@ -68,22 +68,6 @@ def get_chat_history(
         .order_by(ChatMessage.sequence.asc())
     ).scalars().all()
     return history, messages
-
-
-def delete_chat_history(
-    db: Session,
-    *,
-    user_id: str,
-    history_id: str,
-) -> None:
-    history = load_user_history(db, user_id=user_id, history_id=history_id)
-    if history is None:
-        raise ChatHistoryNotFoundError("chat history not found")
-
-    db.delete(history)
-    db.commit()
-
-
 def update_chat_history_title(
     db: Session,
     *,

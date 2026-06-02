@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.postgres.models.chat_history import ChatContextCheckpoint, ChatHistory, ChatMessage
 from app.schemas.chat import ChatMessage as RequestChatMessage
-from app.services.chat.context_checkpoints import load_ready_chat_context_checkpoint
+from app.services.chat.completions.context.checkpoints import load_ready_chat_context_checkpoint
 
 CHECKPOINT_SUMMARY_SYSTEM_PREFIX = (
     "Conversation checkpoint summary:\n"
