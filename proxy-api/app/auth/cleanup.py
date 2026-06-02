@@ -21,31 +21,59 @@ def purge_expired_auth_data(
     now: datetime | None = None,
 ) -> int:
     current_time = now or utc_now()
+    mark_expired_sessions(db, now=current_time)
     deleted_count = 0
+    deleted_count += delete_expired_sessions(db)
+    deleted_count += delete_expired_oauth_transactions(db, now=current_time)
+    deleted_count += delete_expired_conflict_tickets(db, now=current_time)
+    deleted_count += delete_stale_empty_histories(db, now=current_time)
+    db.commit()
+    return deleted_count
+
+
+def mark_expired_sessions(
+    db: Session,
+    *,
+    now: datetime,
+) -> int:
+    expired_count = 0
     active_sessions = db.execute(
         select(AuthSession).where(AuthSession.state == "active")
     ).scalars().all()
     for auth_session in active_sessions:
-        if not is_session_expired(auth_session, now=current_time):
+        if not is_session_expired(auth_session, now=now):
             continue
         expire_session(
             auth_session,
-            now=current_time,
+            now=now,
             reason_code="idle_timeout",
             reason="Session expired after 6 hours of inactivity.",
         )
+        expired_count += 1
+    return expired_count
 
+
+def delete_expired_sessions(db: Session) -> int:
+    deleted_count = 0
     expired_sessions = db.execute(
         select(AuthSession).where(AuthSession.state == "expired")
     ).scalars().all()
     for auth_session in expired_sessions:
         delete_session_row(db, auth_session)
         deleted_count += 1
+    return deleted_count
 
+
+def delete_expired_oauth_transactions(
+    db: Session,
+    *,
+    now: datetime,
+) -> int:
+    deleted_count = 0
     expired_transactions = db.execute(
         select(OAuthTransaction).where(
             or_(
-                OAuthTransaction.expires_at <= current_time,
+                OAuthTransaction.expires_at <= now,
                 OAuthTransaction.consumed_at.is_not(None),
             )
         )
@@ -53,11 +81,19 @@ def purge_expired_auth_data(
     for transaction in expired_transactions:
         db.delete(transaction)
         deleted_count += 1
+    return deleted_count
 
+
+def delete_expired_conflict_tickets(
+    db: Session,
+    *,
+    now: datetime,
+) -> int:
+    deleted_count = 0
     expired_conflict_tickets = db.execute(
         select(AuthConflictTicket).where(
             or_(
-                AuthConflictTicket.expires_at <= current_time,
+                AuthConflictTicket.expires_at <= now,
                 AuthConflictTicket.consumed_at.is_not(None),
             )
         )
@@ -65,9 +101,17 @@ def purge_expired_auth_data(
     for conflict_ticket in expired_conflict_tickets:
         db.delete(conflict_ticket)
         deleted_count += 1
+    return deleted_count
 
-    stale_empty_history_cutoff = current_time - timedelta(
-        minutes=max(5, settings.auth_cleanup_interval_minutes)
+
+def delete_stale_empty_histories(
+    db: Session,
+    *,
+    now: datetime,
+) -> int:
+    deleted_count = 0
+    stale_empty_history_cutoff = now - timedelta(
+        minutes=max(5, settings.housekeeping_interval_minutes)
     )
     stale_empty_histories = db.execute(
         select(ChatHistory).where(
@@ -84,6 +128,4 @@ def purge_expired_auth_data(
     for history in stale_empty_histories:
         db.delete(history)
         deleted_count += 1
-
-    db.commit()
     return deleted_count

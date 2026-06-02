@@ -184,8 +184,8 @@ function formatAttachmentTokens(file: ChatHistoryFile, selectedProvider: string 
   if (selectedProvider === "anthropic" && file.tokenCounts.anthropic !== null) {
     return `${file.tokenCounts.anthropic.toLocaleString()} tok`;
   }
-  if (selectedProvider === "vertex_ai") {
-    return "N/A tok";
+  if (selectedProvider === "vertex_ai" && file.tokenCounts.vertexAi !== null) {
+    return `${file.tokenCounts.vertexAi.toLocaleString()} tok`;
   }
   return "N/A tok";
 }

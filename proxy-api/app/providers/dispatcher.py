@@ -225,21 +225,11 @@ async def count_provider_chat_input_tokens(
     if payload is None:
         return None
 
-    try:
-        if prepared_request.provider == VERTEX_PROVIDER_ID:
-            return await count_vertex_input_tokens(payload=payload)
-        if prepared_request.provider == OPENAI_PROVIDER_ID:
-            return await count_openai_input_tokens(payload=payload)
-        if prepared_request.provider == ANTHROPIC_PROVIDER_ID:
-            return await count_anthropic_input_tokens(payload=payload)
-    except Exception:
-        logger.exception(
-            "Provider input token counting failed.",
-            extra={
-                "provider": prepared_request.provider,
-                "model": prepared_request.public_model_id,
-            },
-        )
-        return None
+    if prepared_request.provider == VERTEX_PROVIDER_ID:
+        return await count_vertex_input_tokens(payload=payload)
+    if prepared_request.provider == OPENAI_PROVIDER_ID:
+        return await count_openai_input_tokens(payload=payload)
+    if prepared_request.provider == ANTHROPIC_PROVIDER_ID:
+        return await count_anthropic_input_tokens(payload=payload)
 
-    return None
+    raise ProviderConfigurationError(f"provider is not configured: {prepared_request.provider}")

@@ -39,6 +39,7 @@ Current generic-helper call sites:
 - internal context compression -> `proxy-api/app/compression/service.py`
 - OpenAI attachment token counting -> `proxy-api/app/providers/openai/attachments.py`
 - Anthropic attachment token counting -> `proxy-api/app/providers/anthropic/attachments.py`
+- Vertex attachment token counting -> `proxy-api/app/providers/vertex/attachments.py`
 
 ## Where To Change Tools
 
@@ -200,6 +201,12 @@ Main files:
   - OpenAI token counting, upload, delete, and payload injection
 - `proxy-api/app/providers/anthropic/attachments.py`
   - Anthropic token counting, upload, delete, and payload injection
+- `proxy-api/app/providers/vertex/attachments.py`
+  - Vertex GCS upload, token counting, delete, and payload injection
+- `proxy-api/app/housekeeping.py`
+  - startup and hourly housekeeping runner
+- `proxy-api/app/services/chat/attachment_cleanup.py`
+  - provider remote ref reconciliation and TTL cleanup
 - `proxy-api/app/api/v1/presenters/chat.py`
   - attachment limits and file view envelopes
 - `frontend/src/pages/ChatPage.tsx`
@@ -218,9 +225,10 @@ Main files:
   - same user + same `sha256` + same history -> `409`
 - cross-history duplicate content is allowed
   - backend reuses the same `stored_files` row for the same user hash
-- provider token counts are resolved at attach time for OpenAI and Anthropic
-- provider-managed file upload happens only when a send needs that provider
-- provider-managed file delete happens only when the last logical history reference is removed
+- provider token counts are resolved at attach time for OpenAI, Anthropic, and Vertex
+- provider-managed file upload happens at attach time and may be recreated at send time after housekeeping clears a missing or stale remote ref
+- provider-managed file delete happens when the last logical history reference is removed; the DB row is kept if remote delete fails
+- provider-managed remote copies are also deleted after `CHAT_ATTACHMENT_REMOTE_TTL_HOURS` without use
 - attachment limits are separate from text compaction
   - text compaction is still text-only
   - attachment token totals are checked separately per provider

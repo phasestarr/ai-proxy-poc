@@ -14,6 +14,7 @@ from app.db.postgres.session import SessionLocal
 from app.providers.anthropic.attachments import ANTHROPIC_FILES_BETA
 from app.providers.anthropic.client import build_anthropic_client
 from app.providers.openai.client import build_openai_client
+from app.providers.vertex.attachments import delete_vertex_file
 
 
 @dataclass(slots=True)
@@ -43,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_db_parser = subparsers.add_parser("list-db", help="List DB-tracked provider file refs.")
-    list_db_parser.add_argument("--provider", choices=["openai", "anthropic"], default=None)
+    list_db_parser.add_argument("--provider", choices=["openai", "anthropic", "vertex_ai"], default=None)
 
     list_openai_parser = subparsers.add_parser("list-openai", help="List OpenAI user_data and vision files.")
     list_openai_parser.add_argument("--limit", type=int, default=100)
@@ -73,7 +74,7 @@ def parse_args() -> argparse.Namespace:
         "cleanup-file-id",
         help="Delete one exact remote provider file id and clear matching DB provider refs.",
     )
-    cleanup_file_id_parser.add_argument("--provider", choices=["openai", "anthropic"], required=True)
+    cleanup_file_id_parser.add_argument("--provider", choices=["openai", "anthropic", "vertex_ai"], required=True)
     cleanup_file_id_parser.add_argument("--file-id", required=True)
     cleanup_file_id_parser.add_argument(
         "--skip-db-clear",
@@ -313,6 +314,10 @@ async def delete_remote_provider_file(*, provider: str, file_id: str) -> None:
             await client.close()
         return
 
+    if provider == "vertex_ai":
+        await delete_vertex_file(file_uri=file_id)
+        return
+
     raise ValueError(f"unsupported provider: {provider}")
 
 
@@ -343,6 +348,7 @@ def clear_db_provider_refs(*, provider: str, provider_file_ids: set[str]) -> lis
             state.remote_file_status = "not_uploaded"
             state.remote_file_error = None
             state.uploaded_at = None
+            state.last_used_at = None
 
         db.commit()
     return cleared

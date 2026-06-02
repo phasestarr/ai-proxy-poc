@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from app.providers.vertex.client import build_vertex_client
 
 
+VERTEX_CHAT_COUNT_MODEL_SOURCE = "payload.provider_model"
+VERTEX_ATTACHMENT_COUNT_MODEL_ID = "gemini-3-flash-preview"
+
+
 @dataclass(slots=True, frozen=True)
 class VertexCountTokensPayload:
     provider_model: str
@@ -14,6 +18,7 @@ class VertexCountTokensPayload:
 
 
 async def count_vertex_input_tokens(*, payload: VertexCountTokensPayload) -> int | None:
+    # Chat text counting follows the exact model already embedded in the provider payload.
     client = build_vertex_client(location=payload.location)
     try:
         async with client.aio as aio_client:
@@ -23,6 +28,8 @@ async def count_vertex_input_tokens(*, payload: VertexCountTokensPayload) -> int
                 config=payload.config,
             )
         total_tokens = getattr(response, "total_tokens", None)
-        return int(total_tokens) if total_tokens is not None else None
+        if total_tokens is None:
+            raise RuntimeError("vertex input token count did not return a token value")
+        return int(total_tokens)
     finally:
         client.close()

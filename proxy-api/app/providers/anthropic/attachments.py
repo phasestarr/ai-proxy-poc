@@ -4,6 +4,7 @@ import base64
 from copy import deepcopy
 
 from app.providers.anthropic.client import build_anthropic_client
+from app.providers.anthropic.count_tokens import ANTHROPIC_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.anthropic.models import list_anthropic_models, resolve_anthropic_model_runtime
 
 ANTHROPIC_FILES_BETA = "files-api-2025-04-14"
@@ -15,7 +16,7 @@ _ANTHROPIC_ATTACHMENT_CONTEXT_TEXT = (
 
 def resolve_anthropic_attachment_count_model() -> str:
     # Generic Anthropic helper work should stay on the Haiku tier unless explicitly overridden.
-    preferred_public_model_id = "claude-haiku-4-5"
+    preferred_public_model_id = ANTHROPIC_ATTACHMENT_COUNT_MODEL_ID
     for model in list_anthropic_models():
         if model.public_id == preferred_public_model_id and model.available:
             return model.public_id
@@ -83,8 +84,29 @@ async def delete_anthropic_file(*, provider_file_id: str) -> None:
     client = build_anthropic_client()
     try:
         await client.beta.files.delete(provider_file_id)
+    except Exception as exc:
+        if is_anthropic_file_not_found_error(exc):
+            return
+        raise
     finally:
         await client.close()
+
+
+async def anthropic_file_exists(*, provider_file_id: str) -> bool:
+    client = build_anthropic_client()
+    try:
+        await client.beta.files.retrieve_metadata(provider_file_id)
+        return True
+    except Exception as exc:
+        if is_anthropic_file_not_found_error(exc):
+            return False
+        raise
+    finally:
+        await client.close()
+
+
+def is_anthropic_file_not_found_error(exc: Exception) -> bool:
+    return getattr(exc, "status_code", None) == 404
 
 
 def inject_anthropic_history_files(

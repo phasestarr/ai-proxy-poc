@@ -45,8 +45,8 @@ Current runtime and code ownership for `ai-proxy-poc`.
    - starts FastAPI
    - verifies Redis
    - runs Alembic migrations
-   - purges expired auth data
-   - starts background auth cleanup
+   - runs startup housekeeping
+   - starts background housekeeping
 2. `proxy-api/app/api/v1/api.py`
    - registers auth, models, and chat routers
 3. `proxy-api/app/api/v1/endpoints/`
@@ -101,7 +101,7 @@ Session expiry semantics:
 - active sessions are kept alive by `last_seen_at`
 - idle timeout is `last_seen_at + 6 hours`
 - session-limit eviction also marks the older session as `expired`
-- expired sessions are cleaned up by the background auth cleanup loop
+- expired sessions are cleaned up by the background housekeeping loop
 - Redis chat drafts that never become a persisted history expire by TTL and do not require database cleanup
 
 ## Data Ownership
@@ -159,7 +159,9 @@ Session expiry semantics:
   - stores whether each attachment is active for future prompt sends
 - `stored_file_provider_states`
   - caches provider-specific token counts
-  - caches provider-managed remote file ids when a send actually uploads the file
+  - caches provider-managed remote file refs after attach-time upload
+  - OpenAI and Anthropic store provider file ids
+  - Vertex stores private GCS `gs://...` object URIs
 - `chat_message_attachments`
   - snapshots which attachments were present when a persisted turn reached provider dispatch
 - file-first flow:
@@ -171,8 +173,10 @@ Session expiry semantics:
 - provider-managed files are not the source of truth
   - OpenAI and Anthropic `file_id` values are disposable execution refs
   - deleting a provider file does not delete the logical attachment if the PostgreSQL row still exists
-- provider uploads happen at send time, not attach time
+- provider uploads happen at attach time and are recreated at send time if housekeeping removed or reconciled away the remote copy
 - only active history attachments are injected into future provider requests
+- provider-side remote attachment copies are reconciled by housekeeping; missing provider refs become `not_uploaded` while DB-owned blobs remain the source of truth
+- provider-side remote attachment copies are deleted after `CHAT_ATTACHMENT_REMOTE_TTL_HOURS` without use while DB-owned blobs remain the source of truth
 - attachment token limits are separate from text compaction
   - text compaction remains text-only
   - attachments are rejected if their provider-specific total exceeds the configured attachment token limit
@@ -183,7 +187,7 @@ Session expiry semantics:
 - current provider support:
   - OpenAI: supported
   - Anthropic: supported
-  - Vertex: rejected during pre-provider validation
+  - Vertex: supported through private GCS `fileData` refs
 
 ## Frontend Refresh Semantics
 - the frontend does not persist the active conversation in `localStorage` or `sessionStorage`

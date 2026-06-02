@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from app.compression.prompts import COMPRESSION_SYSTEM_INSTRUCTION, build_compression_user_prompt
 from app.compression.types import CompressionResult, ContextCompressionError
+from app.compression.vertex.config import COMPRESSION_VERTEX_MODEL
 from app.compression.vertex.stream import compress_with_vertex_flash
 
 # Generic Vertex helper work, including internal context compression, stays on Gemini 3 Flash.
-COMPRESSION_MODEL_ID = "gemini-3-flash-preview"
+COMPRESSION_MODEL_ID = COMPRESSION_VERTEX_MODEL
 COMPRESSION_PROVIDER_ID = "vertex_ai"
 
 

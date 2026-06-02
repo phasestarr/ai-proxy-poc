@@ -5,6 +5,7 @@ import hashlib
 from copy import deepcopy
 
 from app.providers.openai.client import build_openai_client
+from app.providers.openai.count_tokens import OPENAI_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.openai.models import list_openai_models, resolve_openai_model_runtime
 
 _OPENAI_ATTACHMENT_CONTEXT_TEXT = (
@@ -16,7 +17,7 @@ _OPENAI_IMAGE_DETAIL = "auto"
 
 def resolve_openai_attachment_count_model() -> str:
     # Generic OpenAI helper work should stay on the mini tier unless explicitly overridden.
-    preferred_public_model_id = "gpt-5.4-mini"
+    preferred_public_model_id = OPENAI_ATTACHMENT_COUNT_MODEL_ID
     for model in list_openai_models():
         if model.public_id == preferred_public_model_id and model.available:
             return model.public_id
@@ -39,6 +40,38 @@ async def count_openai_file_tokens(
         display_name=display_name,
         mime_type=mime_type,
         encoded_file=encoded_file,
+    )
+
+    client = build_openai_client()
+    try:
+        response = await client.responses.input_tokens.count(
+            model=runtime.provider_model,
+            truncation="disabled",
+            input=[
+                {
+                    "role": "user",
+                    "content": [content_block],
+                }
+            ],
+        )
+        input_tokens = getattr(response, "input_tokens", None)
+        if input_tokens is None:
+            raise RuntimeError("openai input token count did not return a token value")
+        return int(input_tokens), public_model_id
+    finally:
+        await client.close()
+
+
+async def count_openai_file_reference_tokens(
+    *,
+    mime_type: str,
+    provider_file_id: str,
+) -> tuple[int, str]:
+    public_model_id = resolve_openai_attachment_count_model()
+    runtime = resolve_openai_model_runtime(public_model_id=public_model_id)
+    content_block = build_openai_file_reference_block(
+        mime_type=mime_type,
+        provider_file_id=provider_file_id,
     )
 
     client = build_openai_client()
@@ -85,8 +118,29 @@ async def delete_openai_file(*, provider_file_id: str) -> None:
     client = build_openai_client()
     try:
         await client.files.delete(provider_file_id)
+    except Exception as exc:
+        if is_openai_file_not_found_error(exc):
+            return
+        raise
     finally:
         await client.close()
+
+
+async def openai_file_exists(*, provider_file_id: str) -> bool:
+    client = build_openai_client()
+    try:
+        await client.files.retrieve(provider_file_id)
+        return True
+    except Exception as exc:
+        if is_openai_file_not_found_error(exc):
+            return False
+        raise
+    finally:
+        await client.close()
+
+
+def is_openai_file_not_found_error(exc: Exception) -> bool:
+    return getattr(exc, "status_code", None) == 404
 
 
 def inject_openai_history_files(

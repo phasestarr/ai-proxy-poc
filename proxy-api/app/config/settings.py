@@ -36,7 +36,7 @@ class AppSettings(BaseSettings):
     auth_microsoft_max_sessions: int = 4
     auth_session_limit_strategy: Literal["reject", "evict_oldest"] = "reject"
     auth_conflict_ticket_minutes: int = 5
-    auth_cleanup_interval_minutes: int = 60
+    housekeeping_interval_minutes: int = 60
     microsoft_oauth_transaction_minutes: int = 10
 
     chat_draft_ttl_seconds: int = 900
@@ -48,6 +48,7 @@ class AppSettings(BaseSettings):
     chat_attachment_max_file_bytes: int = 20 * 1024 * 1024
     chat_attachment_max_total_bytes_per_history: int = 100 * 1024 * 1024
     chat_attachment_max_total_tokens_per_provider: int = 50_000
+    chat_attachment_remote_ttl_hours: int = 24
     startup_dependency_max_attempts: int = 30
     startup_dependency_retry_seconds: float = 2.0
 

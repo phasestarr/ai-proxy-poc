@@ -68,8 +68,9 @@ Compose derives:
   - default: `reject`
 - `AUTH_CONFLICT_TICKET_MINUTES`
   - default: `5`
-- `AUTH_CLEANUP_INTERVAL_MINUTES`
+- `HOUSEKEEPING_INTERVAL_MINUTES`
   - default: `60`
+  - runs auth cleanup, attachment remote reconciliation, and attachment remote TTL cleanup
 
 ### Microsoft Auth
 - `MICROSOFT_CLIENT_ID`
@@ -105,13 +106,16 @@ Compose derives:
   - default: `104857600` (`100 MiB`)
 - `CHAT_ATTACHMENT_MAX_TOTAL_TOKENS_PER_PROVIDER`
   - default: `50000`
+- `CHAT_ATTACHMENT_REMOTE_TTL_HOURS`
+  - default: `24`
+  - deletes provider-side remote attachment copies after this many hours without use
 
 Not env-driven:
 - supported attachment MIME types
   - current code supports `application/pdf`, `image/png`, and `image/jpeg`
 - provider attachment mapping rules
-  - OpenAI and Anthropic support attachments
-  - Vertex currently rejects them
+  - OpenAI and Anthropic use provider Files API refs
+  - Vertex uses private GCS object refs
 - attachment prompt injection order
   - backend-owned request assembly decides how file refs are added to provider payloads
 
@@ -122,6 +126,12 @@ Not env-driven:
   - required to use Vertex
 - `VERTEX_AI_API_VERSION`
   - default: `v1`
+- `VERTEX_AI_ATTACHMENT_GCS_BUCKET`
+  - required for Gemini file attachments
+  - value is the bucket name only, for example `nextin-aipx-gemini-files-20260601-test`
+- `VERTEX_AI_ATTACHMENT_GCS_PREFIX`
+  - default: `chat-attachments`
+  - object prefix used for backend-managed Gemini attachment files
 - `VERTEX_AI_RAG_CORPORA`
   - optional
 - `VERTEX_AI_RAG_SIMILARITY_TOP_K`

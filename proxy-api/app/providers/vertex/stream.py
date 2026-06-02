@@ -63,16 +63,6 @@ class _VertexStreamFailure:
     error_code: str | None = None
 
 
-@dataclass(slots=True, frozen=True)
-class _PreparedVertexPayload:
-    provider_model: str
-    location: str
-    contents: list[dict[str, object]]
-    config: object
-    count_config: object | None
-    estimate_source: dict[str, object]
-
-
 async def stream_vertex_chat_completion(
     *,
     public_model_id: str,
@@ -99,13 +89,18 @@ async def stream_prepared_vertex_chat_completion(
 
     try:
         payload = prepared_request.payload
-        client = build_vertex_client(location=payload.location)
+        if not isinstance(payload, dict):
+            raise VertexProviderError("vertex prepared payload must be a dict")
+
+        location = str(payload["location"])
+        config = payload["config"]
+        client = build_vertex_client(location=location)
 
         async with client.aio as aio_client:
             stream = await aio_client.models.generate_content_stream(
-                model=payload.provider_model,
-                contents=payload.contents,
-                config=payload.config,
+                model=str(payload["provider_model"]),
+                contents=payload["contents"],
+                config=config,
             )
             async for chunk in stream:
                 failure = extract_vertex_stream_error(chunk)
@@ -121,7 +116,7 @@ async def stream_prepared_vertex_chat_completion(
                 mapped_chunk = map_vertex_stream_chunk(
                     chunk,
                     public_model_id=prepared_request.public_model_id,
-                    selected_tool_ids=_extract_selected_tool_ids(payload.config),
+                    selected_tool_ids=_extract_selected_tool_ids(config),
                 )
                 if mapped_chunk.text:
                     saw_visible_text = True
@@ -214,14 +209,14 @@ def build_vertex_prepared_chat_completion_request(
     return PreparedProviderChatRequest(
         provider="vertex_ai",
         public_model_id=public_model_id,
-        payload=_PreparedVertexPayload(
-            provider_model=model_runtime.provider_model,
-            location=model_runtime.location,
-            contents=contents,
-            config=config,
-            count_config=count_config,
-            estimate_source=estimate_source,
-        ),
+        payload={
+            "provider_model": model_runtime.provider_model,
+            "location": model_runtime.location,
+            "contents": contents,
+            "config": config,
+            "count_config": count_config,
+            "estimate_source": estimate_source,
+        },
         estimated_input_tokens=estimate_token_count_from_object(estimate_source, base_tokens=96),
         input_token_count_payload=VertexCountTokensPayload(
             provider_model=model_runtime.provider_model,

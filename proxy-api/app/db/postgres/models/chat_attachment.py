@@ -90,7 +90,7 @@ class StoredFileProviderState(Base):
     token_count: Mapped[int | None] = mapped_column(nullable=True)
     token_count_status: Mapped[str] = mapped_column(String(16), nullable=False)
     token_count_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    provider_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     remote_file_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_uploaded")
     remote_file_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     count_model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -168,7 +168,7 @@ class ChatMessageAttachment(Base):
     mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
     byte_size: Mapped[int] = mapped_column(nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    provider_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_count: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

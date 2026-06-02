@@ -6,7 +6,7 @@ Responsibilities:
 - Create the FastAPI application instance
 - Register routers
 - Initialize shared infrastructure
-- Run lightweight background cleanup for auth data
+- Run lightweight background housekeeping
 """
 
 from __future__ import annotations
@@ -24,13 +24,13 @@ from app.api.health import router as health_router
 from app.api.router import api_router
 from app.api.v1.dependencies.request import get_client_ip
 from app.api.v1.errors.authentication import AuthResponseError
-from app.auth.cleanup import purge_expired_auth_data
 from app.auth.cookies import clear_session_conflict_cookie, clear_session_cookie
 from app.auth.session_lifecycle import resolve_session
 from app.config.settings import settings
 from app.db.postgres.migrations import run_database_migrations
 from app.db.postgres.session import SessionLocal
 from app.db.redis.client import close_redis_client, verify_redis_connection
+from app.housekeeping import run_housekeeping_once
 from app.services.chat.rejections import persist_chat_request_validation_rejection
 
 logger = logging.getLogger("uvicorn.error")
@@ -80,18 +80,18 @@ async def handle_request_validation_error(request, exc: RequestValidationError):
 @app.on_event("startup")
 async def startup() -> None:
     await _initialize_dependencies()
-    app.state.auth_cleanup_task = asyncio.create_task(_auth_cleanup_loop())
+    app.state.housekeeping_task = asyncio.create_task(_housekeeping_loop())
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    task = getattr(app.state, "auth_cleanup_task", None)
-    if task is None:
-        return
-
-    task.cancel()
-    with suppress(asyncio.CancelledError):
-        await task
+    for task_name in ("housekeeping_task",):
+        task = getattr(app.state, task_name, None)
+        if task is None:
+            continue
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     close_redis_client()
 
 
@@ -106,16 +106,15 @@ def root() -> dict:
     }
 
 
-async def _auth_cleanup_loop() -> None:
-    interval_seconds = max(60, settings.auth_cleanup_interval_minutes * 60)
+async def _housekeeping_loop() -> None:
+    interval_seconds = max(60, settings.housekeeping_interval_minutes * 60)
 
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            with SessionLocal() as db:
-                purge_expired_auth_data(db)
+            await run_housekeeping_once()
         except Exception:
-            logger.exception("Background auth cleanup failed.")
+            logger.exception("Background housekeeping failed.")
 
 
 async def _initialize_dependencies() -> None:
@@ -126,8 +125,7 @@ async def _initialize_dependencies() -> None:
         try:
             verify_redis_connection()
             run_database_migrations()
-            with SessionLocal() as db:
-                purge_expired_auth_data(db)
+            await run_housekeeping_once()
             logger.info("Application dependencies are ready.")
             return
         except Exception as exc:
