@@ -1,17 +1,22 @@
 # Purpose:
-# - Provide short aliases for the Docker Compose workflow.
-#
-# Supported usage:
-# - Start and stop the full stack
-# - View service logs
+# - Provide short aliases for the documented Docker Compose workflows.
 
-.PHONY: docker-up docker-down docker-logs
+.PHONY: server-up server-down server-logs local-up local-down local-logs
 
-docker-up:
-	docker compose --env-file .env -f deploy/docker-compose.yml up --build -d
+server-up:
+	docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.server.yml up --build -d
 
-docker-down:
-	docker compose --env-file .env -f deploy/docker-compose.yml down
+server-down:
+	docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.server.yml down -v
 
-docker-logs:
-	docker compose --env-file .env -f deploy/docker-compose.yml logs -f
+server-logs:
+	docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.server.yml logs -f
+
+local-up:
+	docker compose --env-file .env.local -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml up --build -d
+
+local-down:
+	docker compose --env-file .env.local -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml down -v
+
+local-logs:
+	docker compose --env-file .env.local -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml logs -f

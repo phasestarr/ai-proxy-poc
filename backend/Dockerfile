@@ -10,16 +10,17 @@
 # - Version pins are supplied through Docker build args from the repo-root .env.
 # - Keep dependency layers cache-friendly when possible.
 
-ARG PYTHON_VERSION=3.13.12
+ARG PYTHON_VERSION
 FROM python:${PYTHON_VERSION}-slim
 
-ARG PIP_VERSION=25.3
+ARG PIP_VERSION
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONFAULTHANDLER=1
 
 WORKDIR /app
+RUN test -n "$PYTHON_VERSION" && test -n "$PIP_VERSION"
 
 COPY requirements.txt ./requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip==${PIP_VERSION} \
@@ -29,4 +30,4 @@ COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 COPY app ./app
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug", "--access-log"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug", "--access-log", "--proxy-headers", "--forwarded-allow-ips", "*"]

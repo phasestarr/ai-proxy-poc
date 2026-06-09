@@ -11,12 +11,13 @@
 # - Keep the image small and predictable.
 # - Separate dependency installation from source copy when possible for caching.
 
-ARG NODE_VERSION=24.14.0
-ARG NGINX_VERSION=1.27-alpine
+ARG NODE_VERSION
+ARG NGINX_VERSION
 
 FROM node:${NODE_VERSION}-alpine AS build
 
-ARG NPM_VERSION=11.9.0
+ARG NODE_VERSION
+ARG NPM_VERSION
 
 WORKDIR /app
 
@@ -26,9 +27,13 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+RUN test -n "$NODE_VERSION" && test -n "$NPM_VERSION"
 RUN npm run build
 
 FROM nginx:${NGINX_VERSION} AS runtime
+
+ARG NGINX_VERSION
+RUN test -n "$NGINX_VERSION"
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx/default.conf /etc/nginx/templates/default.conf.template

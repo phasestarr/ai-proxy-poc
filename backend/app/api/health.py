@@ -22,5 +22,7 @@ router = APIRouter()
 def health_check() -> dict:
     return {
         "status": "ok",
-        "service": "proxy-api",
+        "service": "ai-proxy-api",
     }
+
+

@@ -3,18 +3,25 @@
 Run the stack directly on `localhost` without sibling `root-proxy`.
 
 ## Assumptions
-- commands are run from `deploy/`
-- local env file lives at repo root as `../.env.local`
-- `frontend` is published on `http://localhost:8080`
-- local override keeps `AUTH_COOKIE_SECURE=false`
+
+- Commands are run from `ai-proxy/deploy`
+- Local env file lives at repo root as `../.env.local`
+- Frontend is published on `http://localhost:8080`
+- Local runtime uses local provider credentials and local Microsoft app registration when those features are enabled
+- Local env keeps `AUTH_COOKIE_SECURE=false`
 
 ## First-Time Setup
 
 ```powershell
-cd deploy
+cd ~/ai-proxy/deploy && sh deploy.sh
 ```
 
-If `../.env.local` does not exist yet, create it from the repo-root template and fill in real local values.
+Before first startup:
+
+- replace every `$your-...` placeholder in `../.env.local`
+- keep `AUTH_COOKIE_SECURE=false`
+- confirm the Microsoft local app registration includes redirect URI `http://localhost:8080/api/v1/auth/callback/microsoft` if Microsoft login is enabled
+- place local-only secret files under `../secrets/` when using providers that need mounted files
 
 ## Commands
 
@@ -43,6 +50,10 @@ docker compose --env-file ../.env.local -f docker-compose.yml -f docker-compose.
 ```
 
 ## Notes
-- Microsoft local login should use the local Entra app registration and the local redirect URI.
-- Recommended local redirect URI: `http://localhost:8080/api/v1/auth/callback/microsoft`
-- `docker-compose.local.yml` is the only place that should expose port `8080` to the host.
+
+- `docker-compose.local.yml` is the only place that should expose port `8080` to the host
+- Local runtime does not require sibling `root-proxy`
+- `backend`, PostgreSQL, and Redis remain internal to this stack
+- Missing required env values fail during Docker Compose interpolation before startup
+- Optional blank env values must still be present in `.env.local` as blank lines such as `AUTH_COOKIE_DOMAIN=`
+- Placeholder `$your-...` values are intentionally visible in `.env.local` until replaced

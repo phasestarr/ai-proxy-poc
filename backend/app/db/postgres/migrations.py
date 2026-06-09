@@ -3,7 +3,7 @@ Purpose:
 - Run Alembic migrations for the backend PostgreSQL schema.
 
 Responsibilities:
-- Build an Alembic config rooted at the repository's `proxy-api` directory
+- Build an Alembic config rooted at the repository's `backend` directory
 - Apply all pending migrations before the app starts serving requests
 """
 
@@ -117,3 +117,4 @@ def run_database_migrations() -> None:
             )
 
     command.upgrade(config, "head")
+

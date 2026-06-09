@@ -12,20 +12,20 @@ Change points that matter when extending or debugging the current stack.
 
 For an existing provider, model changes should usually touch:
 
-1. `proxy-api/app/providers/<provider>/models.py`
+1. `backend/app/providers/<provider>/models.py`
    - public model ids
    - provider runtime model ids
    - display names
    - availability
    - supported tool ids
-2. `proxy-api/app/providers/<provider>/config.py`
+2. `backend/app/providers/<provider>/config.py`
    - model to preset mapping
    - provider request preset values
 
 Current provider model files:
-- `proxy-api/app/providers/vertex/models.py`
-- `proxy-api/app/providers/openai/models.py`
-- `proxy-api/app/providers/anthropic/models.py`
+- `backend/app/providers/vertex/models.py`
+- `backend/app/providers/openai/models.py`
+- `backend/app/providers/anthropic/models.py`
 
 ## Generic Model Defaults
 
@@ -36,22 +36,22 @@ Keep backend-owned generic helper work pinned to these lighter tiers unless a sp
 - Anthropic: `claude-haiku-4-5`
 
 Current generic-helper call sites:
-- internal context compression -> `proxy-api/app/compression/service.py`
-- OpenAI attachment token counting -> `proxy-api/app/providers/openai/attachments.py`
-- Anthropic attachment token counting -> `proxy-api/app/providers/anthropic/attachments.py`
-- Vertex attachment token counting -> `proxy-api/app/providers/vertex/attachments.py`
+- internal context compression -> `backend/app/compression/service.py`
+- OpenAI attachment token counting -> `backend/app/providers/openai/attachments.py`
+- Anthropic attachment token counting -> `backend/app/providers/anthropic/attachments.py`
+- Vertex attachment token counting -> `backend/app/providers/vertex/attachments.py`
 
 ## Where To Change Tools
 
 For an existing provider, tool changes should usually touch:
 
-1. `proxy-api/app/providers/<provider>/tools.py`
+1. `backend/app/providers/<provider>/tools.py`
    - public tool metadata
    - provider-native hosted tool payloads
    - any provider-native tool beta/header logic
-2. `proxy-api/app/providers/<provider>/models.py`
+2. `backend/app/providers/<provider>/models.py`
    - assign supported tool ids to each model
-3. `proxy-api/app/config/providers/<provider>.py`
+3. `backend/app/config/providers/<provider>.py`
    - only if the tool needs env-backed configuration
 
 ## Provider Package Shape
@@ -110,9 +110,9 @@ Anthropic:
 ## Output Cap Rule
 - output token caps live in provider preset config
 - env does not own provider output caps
-- OpenAI caps live in `proxy-api/app/providers/openai/config.py`
-- Anthropic caps live in `proxy-api/app/providers/anthropic/config.py`
-- Vertex caps live in `proxy-api/app/providers/vertex/config.py`
+- OpenAI caps live in `backend/app/providers/openai/config.py`
+- Anthropic caps live in `backend/app/providers/anthropic/config.py`
+- Vertex caps live in `backend/app/providers/vertex/config.py`
 
 ## Current Tool Mapping
 
@@ -133,87 +133,87 @@ Anthropic:
 
 ## Payload Assembly And Chat Execution Path
 1. request schema validation
-   - `proxy-api/app/schemas/chat.py`
+   - `backend/app/schemas/chat.py`
 2. route resolution
-   - `proxy-api/app/services/chat/completions/route_selection.py`
+   - `backend/app/services/chat/completions/route_selection.py`
 3. preflight checks
-   - `proxy-api/app/services/chat/completions/preflight.py`
+   - `backend/app/services/chat/completions/preflight.py`
 4. orchestration and lease ownership
-   - `proxy-api/app/services/chat/completions/orchestrator.py`
+   - `backend/app/services/chat/completions/orchestrator.py`
    - acquires the `chat_history_id` Redis lease
    - emits pre-provider SSE status messages
 5. persisted context rebuild and request preparation
-   - `proxy-api/app/services/chat/completions/request_builder.py`
+   - `backend/app/services/chat/completions/request_builder.py`
    - reloads the owned history
    - calls `build_chat_context`
    - assembles the provider payload
    - conditionally resolves exact input-token counts
 6. system instruction ownership
-   - `proxy-api/app/config/chat_instructions.py`
+   - `backend/app/config/chat_instructions.py`
    - backend-owned default system instruction
 7. context assembly
-   - `proxy-api/app/services/chat/completions/context/pipeline.py`
+   - `backend/app/services/chat/completions/context/pipeline.py`
    - injects checkpoint summary as a `system` message when present
    - includes only raw messages after `covered_through_sequence`
    - appends the latest user request message as the final turn
 8. provider-native payload build
-   - OpenAI: `proxy-api/app/providers/openai/mapper.py` + `proxy-api/app/providers/openai/config.py`
-   - Anthropic: `proxy-api/app/providers/anthropic/mapper.py` + `proxy-api/app/providers/anthropic/config.py`
-   - Vertex: `proxy-api/app/providers/vertex/mapper.py` + `proxy-api/app/providers/vertex/config.py`
+   - OpenAI: `backend/app/providers/openai/mapper.py` + `backend/app/providers/openai/config.py`
+   - Anthropic: `backend/app/providers/anthropic/mapper.py` + `backend/app/providers/anthropic/config.py`
+   - Vertex: `backend/app/providers/vertex/mapper.py` + `backend/app/providers/vertex/config.py`
 9. local estimate and exact-count gate
-   - heuristic estimate is attached in `proxy-api/app/providers/<provider>/stream.py`
-   - threshold constants live in `proxy-api/app/services/chat/completions/context/budget.py`
-   - exact token counters live in `proxy-api/app/providers/<provider>/count_tokens.py`
+   - heuristic estimate is attached in `backend/app/providers/<provider>/stream.py`
+   - threshold constants live in `backend/app/services/chat/completions/context/budget.py`
+   - exact token counters live in `backend/app/providers/<provider>/count_tokens.py`
 10. compaction path
-   - decision is made in `proxy-api/app/services/chat/completions/context/budget.py`
-   - stream status is emitted from `proxy-api/app/services/chat/completions/orchestrator.py`
-   - compaction source text comes from `proxy-api/app/services/chat/completions/context/pipeline.py`
-   - checkpoint persistence lives in `proxy-api/app/services/chat/completions/context/checkpoints.py`
+   - decision is made in `backend/app/services/chat/completions/context/budget.py`
+   - stream status is emitted from `backend/app/services/chat/completions/orchestrator.py`
+   - compaction source text comes from `backend/app/services/chat/completions/context/pipeline.py`
+   - checkpoint persistence lives in `backend/app/services/chat/completions/context/checkpoints.py`
 11. turn persistence
-   - `proxy-api/app/services/chat/completions/turn_persistence.py`
+   - `backend/app/services/chat/completions/turn_persistence.py`
 12. provider dispatch and execution
-   - `proxy-api/app/providers/dispatcher.py`
-   - `proxy-api/app/providers/<provider>/stream.py`
+   - `backend/app/providers/dispatcher.py`
+   - `backend/app/providers/<provider>/stream.py`
 13. usage normalization and history rollup
-   - `proxy-api/app/providers/<provider>/usage.py`
-   - `proxy-api/app/services/chat/histories/usage_summary.py`
+   - `backend/app/providers/<provider>/usage.py`
+   - `backend/app/services/chat/histories/usage_summary.py`
 
 ## Attachment Change Points
 
 Attachment flow is backend-owned. The frontend only uploads a file and renders backend responses.
 
 Main files:
-- `proxy-api/app/services/chat/attachments/service.py`
+- `backend/app/services/chat/attachments/service.py`
   - attach/delete/history attachment operations
-- `proxy-api/app/services/chat/attachments/validation.py`
+- `backend/app/services/chat/attachments/validation.py`
   - upload validation
   - user/history attachment limits
-- `proxy-api/app/services/chat/attachments/storage.py`
+- `backend/app/services/chat/attachments/storage.py`
   - per-user blob deduplication
   - stored file lifecycle
-- `proxy-api/app/services/chat/attachments/payloads.py`
+- `backend/app/services/chat/attachments/payloads.py`
   - send-time provider payload injection
-- `proxy-api/app/services/chat/attachments/remote_files.py`
+- `backend/app/services/chat/attachments/remote_files.py`
   - provider file upload/delete/existence checks
-- `proxy-api/app/db/postgres/models/chat_attachment.py`
+- `backend/app/db/postgres/models/chat_attachment.py`
   - `stored_files`
   - `stored_file_provider_states`
   - `chat_history_files`
   - `chat_message_attachments`
-- `proxy-api/app/api/v1/endpoints/chat.py`
+- `backend/app/api/v1/endpoints/chat.py`
   - `POST /api/v1/chat/files`
   - `DELETE /api/v1/chat/histories/{history_id}/files/{file_id}`
-- `proxy-api/app/providers/openai/attachments.py`
+- `backend/app/providers/openai/attachments.py`
   - OpenAI token counting, upload, delete, and payload injection
-- `proxy-api/app/providers/anthropic/attachments.py`
+- `backend/app/providers/anthropic/attachments.py`
   - Anthropic token counting, upload, delete, and payload injection
-- `proxy-api/app/providers/vertex/attachments.py`
+- `backend/app/providers/vertex/attachments.py`
   - Vertex GCS upload, token counting, delete, and payload injection
-- `proxy-api/app/workers/housekeeping.py`
+- `backend/app/workers/housekeeping.py`
   - startup and hourly housekeeping runner
-- `proxy-api/app/workers/chat_attachment_cleanup.py`
+- `backend/app/workers/chat_attachment_cleanup.py`
   - provider remote ref reconciliation and TTL cleanup
-- `proxy-api/app/api/v1/presenters/chat.py`
+- `backend/app/api/v1/presenters/chat.py`
   - attachment limits and file view envelopes
 - `frontend/src/pages/ChatPage.tsx`
   - upload queue and in-memory rendering only

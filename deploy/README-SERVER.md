@@ -3,23 +3,28 @@
 Run the stack behind sibling `root-proxy` on `edge-net`.
 
 ## Assumptions
-- commands are run from `deploy/`
-- server env file lives at repo root as `../.env`
-- sibling `root-proxy` is already deployed
-- external Docker network `edge-net` already exists
-- `root-proxy` routes `ai.example.com` to `ai-proxy-frontend:8080`
+
+- Commands are run from `ai-proxy/deploy`
+- Server env file lives at repo root as `../.env`
+- Sibling `root-proxy` is already deployed
+- External Docker network `edge-net` exists or can be created by setup
+- `root-proxy` routes `ai.example.com` to `ai-proxy:8080`
+- Microsoft Entra production app registration includes redirect URI `https://ai.example.com/api/v1/auth/callback/microsoft` if Microsoft login is enabled
+- Required server-local secret files are present under `../secrets/`
 
 ## First-Time Setup
 
 ```bash
-cd deploy
+cd ~/ai-proxy/deploy && sh deploy.sh
 ```
 
 Before first startup:
-- set real values in `../.env`
+
+- replace every `$your-...` placeholder in `../.env`
 - keep `AUTH_COOKIE_SECURE=true`
-- keep `AI_PROXY_CONTAINER_NAME=ai-proxy-frontend` unless sibling `root-proxy` changes too
-- confirm the Microsoft production app registration includes redirect URI `https://ai.example.com/api/v1/auth/callback/microsoft`
+- keep `AI_PROXY_CONTAINER_NAME=ai-proxy` unless sibling `root-proxy` changes too
+- confirm `GOOGLE_APPLICATION_CREDENTIALS` points to a file mounted from `../secrets/`
+- confirm provider keys and retrieval/vector settings match the providers you intend to expose
 
 ## Commands
 
@@ -48,6 +53,10 @@ docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.server
 ```
 
 ## Notes
-- `docker-compose.server.yml` is the only place that should attach `frontend` to `edge-net`.
-- The backend, PostgreSQL, and Redis remain internal to this stack.
-- This repo does not terminate TLS. TLS stays in sibling `root-proxy`.
+
+- `docker-compose.server.yml` is the only place that should attach `frontend` to `edge-net`
+- `backend`, PostgreSQL, and Redis remain internal to this stack
+- This repo does not terminate TLS; TLS stays in sibling `root-proxy`
+- Missing required env values fail during Docker Compose interpolation before startup
+- Optional blank env values must still be present in `.env` as blank lines such as `AUTH_COOKIE_DOMAIN=`
+- Placeholder `$your-...` values are intentionally visible in `.env` until replaced

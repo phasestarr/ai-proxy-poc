@@ -681,29 +681,29 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, CO
 
 ## Code Pointers
 
-- PostgreSQL migrations: `proxy-api/alembic/versions/`
-- Migration runner: `proxy-api/app/db/postgres/migrations.py`
-- Auth/user models: `proxy-api/app/db/postgres/models/auth_sessions.py`,
-  `proxy-api/app/db/postgres/models/auth_conflicts.py`,
-  `proxy-api/app/db/postgres/models/identities.py`,
-  `proxy-api/app/db/postgres/models/oauth_transactions.py`,
-  `proxy-api/app/db/postgres/models/user.py`
-- Chat history model: `proxy-api/app/db/postgres/models/chat_history.py`
-- Auth/session logic: `proxy-api/app/auth/session_lifecycle.py`,
-  `proxy-api/app/auth/guest_sessions.py`,
-  `proxy-api/app/auth/conflict_tickets.py`
-- Microsoft OAuth logic: `proxy-api/app/auth/microsoft_oauth.py`
-- Auth cleanup logic: `proxy-api/app/workers/auth_cleanup.py`
-- Chat persistence logic: `proxy-api/app/services/chat/histories/service.py`,
-  `proxy-api/app/services/chat/completions/turn_persistence.py`,
-  `proxy-api/app/services/chat/completions/context/pipeline.py`,
-  `proxy-api/app/services/chat/histories/usage_summary.py`,
-  `proxy-api/app/services/chat/completions/request_audit.py`
-- Chat stream/background orchestration: `proxy-api/app/services/chat/completions/orchestrator.py`
-- Draft coordination: `proxy-api/app/db/redis/chat_drafts.py`
-- Local reject audit model: `proxy-api/app/db/postgres/models/chat_request_rejection.py`
-- Provider usage/pricing: `proxy-api/app/providers/<provider>/usage.py`
+- PostgreSQL migrations: `backend/alembic/versions/`
+- Migration runner: `backend/app/db/postgres/migrations.py`
+- Auth/user models: `backend/app/db/postgres/models/auth_sessions.py`,
+  `backend/app/db/postgres/models/auth_conflicts.py`,
+  `backend/app/db/postgres/models/identities.py`,
+  `backend/app/db/postgres/models/oauth_transactions.py`,
+  `backend/app/db/postgres/models/user.py`
+- Chat history model: `backend/app/db/postgres/models/chat_history.py`
+- Auth/session logic: `backend/app/auth/session_lifecycle.py`,
+  `backend/app/auth/guest_sessions.py`,
+  `backend/app/auth/conflict_tickets.py`
+- Microsoft OAuth logic: `backend/app/auth/microsoft_oauth.py`
+- Auth cleanup logic: `backend/app/workers/auth_cleanup.py`
+- Chat persistence logic: `backend/app/services/chat/histories/service.py`,
+  `backend/app/services/chat/completions/turn_persistence.py`,
+  `backend/app/services/chat/completions/context/pipeline.py`,
+  `backend/app/services/chat/histories/usage_summary.py`,
+  `backend/app/services/chat/completions/request_audit.py`
+- Chat stream/background orchestration: `backend/app/services/chat/completions/orchestrator.py`
+- Draft coordination: `backend/app/db/redis/chat_drafts.py`
+- Local reject audit model: `backend/app/db/postgres/models/chat_request_rejection.py`
+- Provider usage/pricing: `backend/app/providers/<provider>/usage.py`
 - Backend chat outcome messages:
-  `proxy-api/app/providers/openai/outcomes.py`,
-  `proxy-api/app/providers/anthropic/outcomes.py`,
-  `proxy-api/app/providers/vertex/outcomes.py`
+  `backend/app/providers/openai/outcomes.py`,
+  `backend/app/providers/anthropic/outcomes.py`,
+  `backend/app/providers/vertex/outcomes.py`

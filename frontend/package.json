@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Frontend application for the AI Proxy PoC.",
+  "description": "Frontend application for AI Proxy.",
   "engines": {
     "node": "24.14.0",
     "npm": "11.9.0"

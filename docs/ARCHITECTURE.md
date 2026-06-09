@@ -1,18 +1,18 @@
 # Architecture
 
-Current runtime and code ownership for `ai-proxy-poc`.
+Current runtime and code ownership for AI Proxy.
 
 ## Runtime Shape
 - Public traffic enters sibling `root-proxy`
-- `root-proxy` terminates TLS and routes `ai.example.com` to `ai-proxy-frontend:8080`
-- `frontend` serves the SPA and proxies `/api/*` and `/health` to `proxy-api:8000`
-- `proxy-api` uses PostgreSQL, Redis, Vertex AI, OpenAI, and Anthropic
+- `root-proxy` terminates TLS and routes `ai.example.com` to `ai-proxy:8080`
+- `frontend` serves the SPA and proxies `/api/*` and `/health` to `backend:8000`
+- `backend` service uses PostgreSQL, Redis, Vertex AI, OpenAI, and Anthropic
 - runtime is Docker Compose first; backend should not depend on host-local services
 
 ## Top-Level Components
 - `frontend/`
   - React + Vite SPA packaged behind NGINX
-- `proxy-api/`
+- `backend/`
   - FastAPI backend
 - `deploy/`
   - Compose topology and run-mode overrides
@@ -41,40 +41,40 @@ Current runtime and code ownership for `ai-proxy-poc`.
 17. The frontend consumes SSE `start`, `delta`, `status`, `done`, and `error`.
 
 ## Backend Flow
-1. `proxy-api/app/main.py`
+1. `backend/app/main.py`
    - starts FastAPI
    - verifies Redis
    - runs Alembic migrations
    - runs startup housekeeping
    - starts background housekeeping
-2. `proxy-api/app/api/v1/api.py`
+2. `backend/app/api/v1/api.py`
    - registers auth, models, and chat routers
-3. `proxy-api/app/api/v1/endpoints/`
+3. `backend/app/api/v1/endpoints/`
    - stays thin
    - owns HTTP shape only
-4. `proxy-api/app/services/chat/completions/route_selection.py`
+4. `backend/app/services/chat/completions/route_selection.py`
    - resolves `model_id` and `tool_ids`
-5. `proxy-api/app/services/chat/completions/preflight.py`
+5. `backend/app/services/chat/completions/preflight.py`
    - validates the selected route
    - resolves owned chat histories or owned first-send drafts
    - enforces provider readiness and chat rate limits
-6. `proxy-api/app/services/chat/completions/request_builder.py`
+6. `backend/app/services/chat/completions/request_builder.py`
    - rebuilds provider context from persisted history
    - assembles the provider request
    - conditionally resolves exact input-token counts near the soft threshold
    - runs context compaction when needed
-7. `proxy-api/app/services/chat/completions/turn_persistence.py`
+7. `backend/app/services/chat/completions/turn_persistence.py`
    - persists user message and assistant placeholder
-8. `proxy-api/app/services/chat/completions/provider_execution.py`
+8. `backend/app/services/chat/completions/provider_execution.py`
    - executes the provider stream
    - persists final success or failure outcomes
-9. `proxy-api/app/services/chat/completions/orchestrator.py`
+9. `backend/app/services/chat/completions/orchestrator.py`
    - starts backend-owned provider execution
    - emits live SSE events if the browser is still connected
-10. `proxy-api/app/providers/catalog.py`
+10. `backend/app/providers/catalog.py`
    - builds the public model catalog
    - validates model/tool selections
-11. `proxy-api/app/providers/dispatcher.py`
+11. `backend/app/providers/dispatcher.py`
    - checks provider readiness
    - dispatches execution to the selected provider package
 
@@ -90,7 +90,7 @@ Current runtime and code ownership for `ai-proxy-poc`.
 - Microsoft login is backend-owned OAuth
 - session conflict resolution is backend-owned and supports evicting the oldest active session
 
-Important defaults from code:
+Important runtime values from `.env`:
 - session TTL: `6 hours`
 - guest max active sessions: `2`
 - Microsoft max active sessions: `4`
@@ -220,9 +220,9 @@ Session expiry semantics:
 ## Provider Layer
 
 Shared provider layer:
-- `proxy-api/app/providers/types.py`
-- `proxy-api/app/providers/catalog.py`
-- `proxy-api/app/providers/dispatcher.py`
+- `backend/app/providers/types.py`
+- `backend/app/providers/catalog.py`
+- `backend/app/providers/dispatcher.py`
 
 ## Generic Model Defaults
 - backend-owned generic helper work stays pinned to these lighter tiers unless a call site explicitly overrides it:
@@ -322,21 +322,21 @@ Anthropic:
 
 ## Change Points
 - add/remove/reorder models:
-  - `proxy-api/app/providers/<provider>/models.py`
-  - `proxy-api/app/providers/<provider>/config.py`
+  - `backend/app/providers/<provider>/models.py`
+  - `backend/app/providers/<provider>/config.py`
 - change tool exposure or display names:
-  - `proxy-api/app/providers/<provider>/tools.py`
-  - `proxy-api/app/providers/<provider>/models.py`
+  - `backend/app/providers/<provider>/tools.py`
+  - `backend/app/providers/<provider>/models.py`
 - change shared provider routing:
-  - `proxy-api/app/providers/catalog.py`
-  - `proxy-api/app/providers/dispatcher.py`
+  - `backend/app/providers/catalog.py`
+  - `backend/app/providers/dispatcher.py`
 - change chat execution lifecycle:
-  - `proxy-api/app/services/chat/completions/orchestrator.py`
-  - `proxy-api/app/services/chat/completions/preflight.py`
-  - `proxy-api/app/services/chat/completions/request_builder.py`
-  - `proxy-api/app/services/chat/completions/provider_execution.py`
-  - `proxy-api/app/services/chat/completions/turn_persistence.py`
-  - `proxy-api/app/services/chat/histories/usage_summary.py`
+  - `backend/app/services/chat/completions/orchestrator.py`
+  - `backend/app/services/chat/completions/preflight.py`
+  - `backend/app/services/chat/completions/request_builder.py`
+  - `backend/app/services/chat/completions/provider_execution.py`
+  - `backend/app/services/chat/completions/turn_persistence.py`
+  - `backend/app/services/chat/histories/usage_summary.py`
 
 ## Active vs Inactive Areas
 - active:

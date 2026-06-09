@@ -17,17 +17,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class VertexProviderSettings(BaseSettings):
-    project: str = Field(
-        default="",
-        validation_alias="GOOGLE_CLOUD_PROJECT",
-    )
-    api_version: str = Field(default="v1", validation_alias="VERTEX_AI_API_VERSION")
-    attachment_gcs_bucket: str = Field(default="", validation_alias="VERTEX_AI_ATTACHMENT_GCS_BUCKET")
-    attachment_gcs_prefix: str = Field(default="chat-attachments", validation_alias="VERTEX_AI_ATTACHMENT_GCS_PREFIX")
-    rag_corpora_value: str = Field(default="", validation_alias="VERTEX_AI_RAG_CORPORA", exclude=True)
-    rag_similarity_top_k: int = Field(default=5, validation_alias="VERTEX_AI_RAG_SIMILARITY_TOP_K")
+    project: str = Field(validation_alias="GOOGLE_CLOUD_PROJECT")
+    api_version: str = Field(validation_alias="VERTEX_AI_API_VERSION")
+    attachment_gcs_bucket: str = Field(validation_alias="VERTEX_AI_ATTACHMENT_GCS_BUCKET")
+    attachment_gcs_prefix: str = Field(validation_alias="VERTEX_AI_ATTACHMENT_GCS_PREFIX")
+    rag_corpora_value: str = Field(validation_alias="VERTEX_AI_RAG_CORPORA", exclude=True)
+    rag_similarity_top_k: int = Field(validation_alias="VERTEX_AI_RAG_SIMILARITY_TOP_K")
     rag_vector_distance_threshold: float | None = Field(
-        default=None,
         validation_alias="VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD",
     )
 

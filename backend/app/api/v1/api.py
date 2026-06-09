@@ -3,7 +3,7 @@ Purpose:
 - Register and compose all version 1 endpoint routers.
 
 Responsibilities:
-- Include model and chat routes for current PoC scope
+- Include model and chat routes for the current AI Proxy scope
 - Apply clear tags and route prefixes per domain
 
 Notes:

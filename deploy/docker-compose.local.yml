@@ -1,8 +1,4 @@
 services:
-  proxy-api:
-    environment:
-      AUTH_COOKIE_SECURE: "false"
-
   frontend:
     ports:
       - "8080:8080"

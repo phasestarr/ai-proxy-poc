@@ -1,14 +1,14 @@
 # Working Guidelines
 
 ## Boundaries
-- Keep `proxy-api/app/api/v1/endpoints/` thin.
-- Keep business rules in `proxy-api/app/services/`.
-- Keep auth logic in `proxy-api/app/auth/`.
-- Keep provider-neutral routing in `proxy-api/app/providers/`.
-- Keep provider SDK details inside `proxy-api/app/providers/<provider>/`.
+- Keep `backend/app/api/v1/endpoints/` thin.
+- Keep business rules in `backend/app/services/`.
+- Keep auth logic in `backend/app/auth/`.
+- Keep provider-neutral routing in `backend/app/providers/`.
+- Keep provider SDK details inside `backend/app/providers/<provider>/`.
 - Keep env-backed runtime settings in:
-  - `proxy-api/app/config/settings.py`
-  - `proxy-api/app/config/providers/<provider>.py`
+  - `backend/app/config/settings.py`
+  - `backend/app/config/providers/<provider>.py`
 
 ## Runtime Rule
 - Docker Compose is the primary runtime path.
@@ -19,7 +19,7 @@
 - Do not leave runtime env behavior depending on an unmounted `.env` file inside the container.
 
 ## Provider Rule
-- Public model ids and tool exposure start in `proxy-api/app/providers/catalog.py`.
+- Public model ids and tool exposure start in `backend/app/providers/catalog.py`.
 - For an existing provider, most day-to-day changes should stay inside:
   - `models.py`
   - `config.py`
@@ -37,7 +37,7 @@
 
 ## Verification
 - After backend Python changes:
-  - run `python -m compileall app` from `proxy-api/`
+  - run `python -m compileall app` from `backend/`
 - After frontend TypeScript changes:
   - run `npm run typecheck` from `frontend/`
 - After frontend build-affecting changes:

@@ -17,16 +17,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AnthropicProviderSettings(BaseSettings):
-    api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
-    api_version: str = Field(default="2023-06-01", validation_alias="ANTHROPIC_VERSION")
-    web_search_max_uses: int = Field(default=5, validation_alias="ANTHROPIC_WEB_SEARCH_MAX_USES")
+    api_key: str = Field(validation_alias="ANTHROPIC_API_KEY")
+    api_version: str = Field(validation_alias="ANTHROPIC_VERSION")
+    web_search_max_uses: int = Field(validation_alias="ANTHROPIC_WEB_SEARCH_MAX_USES")
     web_search_allowed_domains_value: str = Field(
-        default="",
         validation_alias="ANTHROPIC_WEB_SEARCH_ALLOWED_DOMAINS",
         exclude=True,
     )
     web_search_blocked_domains_value: str = Field(
-        default="",
         validation_alias="ANTHROPIC_WEB_SEARCH_BLOCKED_DOMAINS",
         exclude=True,
     )

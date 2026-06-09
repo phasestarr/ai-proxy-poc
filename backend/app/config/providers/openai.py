@@ -17,18 +17,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class OpenAIProviderSettings(BaseSettings):
-    api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
+    api_key: str = Field(validation_alias="OPENAI_API_KEY")
     vector_store_ids_value: str = Field(
-        default="",
         validation_alias="OPENAI_VECTOR_STORE_IDS",
         exclude=True,
     )
-    file_search_max_num_results: int = Field(default=5, validation_alias="OPENAI_FILE_SEARCH_MAX_NUM_RESULTS")
+    file_search_max_num_results: int = Field(validation_alias="OPENAI_FILE_SEARCH_MAX_NUM_RESULTS")
     file_search_score_threshold: float | None = Field(
-        default=None,
         validation_alias="OPENAI_FILE_SEARCH_SCORE_THRESHOLD",
     )
-    code_interpreter_memory_limit: str = Field(default="4g", validation_alias="OPENAI_CODE_INTERPRETER_MEMORY_LIMIT")
+    code_interpreter_memory_limit: str = Field(validation_alias="OPENAI_CODE_INTERPRETER_MEMORY_LIMIT")
 
     model_config = SettingsConfigDict(
         env_file=".env",
