@@ -83,11 +83,12 @@ Application and mixed tables you will usually touch from this file:
 
 Mostly-audit table:
 
-16. `chat_request_rejections`
+16. `operator_events`
+17. `user_usage_caps`
 
 Migration metadata:
 
-17. `alembic_version`
+18. `alembic_version`
 
 ## Whole-Database Inspect
 
@@ -100,7 +101,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT table_name
 Row counts:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'stored_files', COUNT(*) FROM stored_files UNION ALL SELECT 'stored_file_provider_states', COUNT(*) FROM stored_file_provider_states UNION ALL SELECT 'chat_history_files', COUNT(*) FROM chat_history_files UNION ALL SELECT 'chat_message_attachments', COUNT(*) FROM chat_message_attachments UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories UNION ALL SELECT 'chat_context_checkpoints', COUNT(*) FROM chat_context_checkpoints UNION ALL SELECT 'chat_request_rejections', COUNT(*) FROM chat_request_rejections ORDER BY table_name;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'stored_files', COUNT(*) FROM stored_files UNION ALL SELECT 'stored_file_provider_states', COUNT(*) FROM stored_file_provider_states UNION ALL SELECT 'chat_history_files', COUNT(*) FROM chat_history_files UNION ALL SELECT 'chat_message_attachments', COUNT(*) FROM chat_message_attachments UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories UNION ALL SELECT 'chat_context_checkpoints', COUNT(*) FROM chat_context_checkpoints UNION ALL SELECT 'operator_events', COUNT(*) FROM operator_events UNION ALL SELECT 'user_usage_caps', COUNT(*) FROM user_usage_caps ORDER BY table_name;"
 ```
 
 Foreign-key cascade rules:
@@ -696,4 +697,3 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, CO
 - Attachment service: `backend/app/services/chat/attachments/service.py`,
   `backend/app/services/chat/attachments/storage.py`,
   `backend/app/services/chat/attachments/payloads.py`
-

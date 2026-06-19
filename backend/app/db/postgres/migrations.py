@@ -38,22 +38,28 @@ CURRENT_MANAGED_TABLES = {
     "chat_messages",
     "chat_history_memories",
     "chat_context_checkpoints",
-    "chat_request_rejections",
+    "operator_events",
+    "user_usage_caps",
     "stored_files",
     "stored_file_provider_states",
     "chat_history_files",
     "chat_message_attachments",
+}
+PRE_OPERATOR_EVENTS_MANAGED_TABLES = (CURRENT_MANAGED_TABLES - {"operator_events", "user_usage_caps"}) | {
+    "chat_request_rejections"
 }
 PRE_CHAT_ATTACHMENTS_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {
+    "operator_events",
+    "user_usage_caps",
     "stored_files",
     "stored_file_provider_states",
     "chat_history_files",
     "chat_message_attachments",
 }
-PRE_CHAT_REQUEST_REJECTION_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {"chat_request_rejections"}
-PRE_CONTEXT_CHECKPOINT_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {"chat_context_checkpoints"}
-PRE_CHAT_MEMORY_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {"chat_history_memories"}
-PRE_CHAT_HISTORY_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {"chat_histories", "chat_messages"}
+PRE_CHAT_REQUEST_REJECTION_MANAGED_TABLES = PRE_CHAT_ATTACHMENTS_MANAGED_TABLES - {"chat_request_rejections"}
+PRE_CONTEXT_CHECKPOINT_MANAGED_TABLES = PRE_CHAT_REQUEST_REJECTION_MANAGED_TABLES - {"chat_context_checkpoints"}
+PRE_CHAT_MEMORY_MANAGED_TABLES = PRE_CONTEXT_CHECKPOINT_MANAGED_TABLES - {"chat_history_memories"}
+PRE_CHAT_HISTORY_MANAGED_TABLES = PRE_CHAT_MEMORY_MANAGED_TABLES - {"chat_histories", "chat_messages"}
 PRE_CONFLICT_TICKET_MANAGED_TABLES = PRE_CHAT_HISTORY_MANAGED_TABLES - {"auth_conflict_tickets"}
 
 
@@ -70,6 +76,11 @@ def run_database_migrations() -> None:
 
         if CURRENT_MANAGED_TABLES.issubset(existing_tables):
             command.stamp(config, "head")
+            return
+
+        if PRE_OPERATOR_EVENTS_MANAGED_TABLES.issubset(existing_tables):
+            command.stamp(config, "20260601_000017")
+            command.upgrade(config, "head")
             return
 
         if PRE_CHAT_ATTACHMENTS_MANAGED_TABLES.issubset(existing_tables):

@@ -18,6 +18,9 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 ## Public Routes
 - `GET /health`
   - backend health probe
+  - when `DEPLOYMENT_SMOKE_REQUIRED=true`, this probe runs the deployment smoke check until it passes
+  - Docker keeps `backend` unhealthy, and therefore keeps `frontend` from starting, until this returns `200`
+  - deployment smoke bypasses public auth/session/chat routes, so this probe does not create user/session/chat records
 - `GET /api/v1/models`
   - returns the backend-owned public model catalog
   - frontend model/tool selector must use this as source of truth

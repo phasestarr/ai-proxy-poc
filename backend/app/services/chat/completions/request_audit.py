@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.types import SessionContext
 from app.config.time import utc_now
-from app.db.postgres.models.chat_request_rejection import ChatRequestRejection
+from app.db.postgres.models.operator_event import OperatorEvent
 from app.providers.types import ProviderRoute
 from app.schemas.chat import ChatCompletionRequest
 from app.services.chat.errors import ChatProxyError
@@ -36,22 +36,73 @@ def persist_chat_request_rejection(
     route: ProviderRoute | None = None,
 ) -> None:
     normalized_payload = normalize_rejection_payload(payload)
-    rejection = ChatRequestRejection(
-        id=str(uuid4()),
-        user_id=session.user_id if session else None,
-        auth_session_id=session.session_id if session else None,
+    event_type = "usage_cap_exceeded" if error_code == "usage_cap_exceeded" else "chat_request_rejected"
+    persist_operator_event(
+        db,
+        event_type=event_type,
+        severity="error" if http_status is not None and http_status >= 500 else "warning",
+        session=session,
         chat_history_id=normalized_payload.chat_history_id,
         draft_chat_id=normalized_payload.draft_chat_id,
         model_id=route.model.public_id if route else normalized_payload.model_id,
         provider=route.model.provider if route else None,
-        error_code=error_code,
+        operation="chat_completion",
+        result_code=error_code,
         http_status=http_status,
         retry_after_seconds=retry_after_seconds,
+        message=error_code,
         detail=detail,
+    )
+
+
+def persist_operator_event(
+    db: Session,
+    *,
+    event_type: str,
+    severity: str = "info",
+    session: SessionContext | None = None,
+    user_id: str | None = None,
+    auth_session_id: str | None = None,
+    chat_history_id: str | None = None,
+    chat_message_id: str | None = None,
+    stored_file_id: str | None = None,
+    draft_chat_id: str | None = None,
+    model_id: str | None = None,
+    provider: str | None = None,
+    operation: str | None = None,
+    result_code: str | None = None,
+    http_status: int | None = None,
+    retry_after_seconds: int | None = None,
+    message: str | None = None,
+    detail: str | None = None,
+    metadata: dict[str, object] | None = None,
+    commit: bool = True,
+) -> OperatorEvent:
+    event = OperatorEvent(
+        id=str(uuid4()),
+        event_type=event_type,
+        severity=severity,
+        user_id=session.user_id if session else user_id,
+        auth_session_id=session.session_id if session else auth_session_id,
+        chat_history_id=chat_history_id,
+        chat_message_id=chat_message_id,
+        stored_file_id=stored_file_id,
+        draft_chat_id=draft_chat_id,
+        model_id=model_id,
+        provider=provider,
+        operation=operation,
+        result_code=result_code,
+        http_status=http_status,
+        retry_after_seconds=retry_after_seconds,
+        message=message,
+        detail=detail,
+        event_metadata=metadata,
         created_at=utc_now(),
     )
-    db.add(rejection)
-    db.commit()
+    db.add(event)
+    if commit:
+        db.commit()
+    return event
 
 
 def persist_chat_request_validation_rejection(

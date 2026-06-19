@@ -71,7 +71,7 @@ Compose derives:
 - `AUTH_SESSION_LIMIT_STRATEGY`
 - `AUTH_CONFLICT_TICKET_MINUTES`
 - `HOUSEKEEPING_INTERVAL_MINUTES`
-  - runs auth cleanup, attachment remote reconciliation, and attachment remote TTL cleanup
+  - runs auth cleanup, stale send cleanup, attachment remote reconciliation, and attachment remote TTL cleanup
 
 ### Microsoft Auth
 
@@ -89,9 +89,26 @@ client ID and secret blank only when Microsoft login is intentionally disabled.
 ### Chat Coordination
 
 - `CHAT_DRAFT_TTL_SECONDS`
-- `CHAT_INFLIGHT_LOCK_TTL_SECONDS`
+- `CHAT_PROVIDER_IDLE_TIMEOUT_SECONDS`
+  - first provider stream event must arrive before this many seconds
+  - Redis conversation leases use the same TTL
+  - housekeeping closes stale send turns that never recorded a first provider event
 - `CHAT_RATE_LIMIT_PER_MINUTE`
 - `CHAT_RATE_LIMIT_PER_HOUR`
+
+### Usage Caps
+
+- `USAGE_DEFAULT_CAP_USD`
+  - default per-user effective usage cap when no `user_usage_caps` override exists
+  - template default: `100`
+
+### Deployment Readiness
+
+- `DEPLOYMENT_SMOKE_REQUIRED`
+  - when `true`, `/health` runs deployment smoke until it passes
+  - `frontend` waits for backend health, so public UI does not start until smoke succeeds
+  - use `true` for server deployments and `false` for local runs that should not call provider APIs during startup
+  - Compose only reads the file passed by `--env-file`; `docker-compose.local.yml` does not automatically load `.env.local`
 
 ### Chat Attachments
 

@@ -8,6 +8,7 @@ Current runtime and code ownership for AI Proxy.
 - `frontend` serves the SPA and proxies `/api/*` and `/health` to `backend:8000`
 - `backend` service uses PostgreSQL, Redis, Vertex AI, OpenAI, and Anthropic
 - runtime is Docker Compose first; backend should not depend on host-local services
+- optional deployment smoke gating keeps `backend` unhealthy until smoke passes, so `frontend` does not start
 
 ## Top-Level Components
 - `frontend/`
@@ -57,7 +58,7 @@ Current runtime and code ownership for AI Proxy.
 5. `backend/app/services/chat/completions/preflight.py`
    - validates the selected route
    - resolves owned chat histories or owned first-send drafts
-   - enforces provider readiness and chat rate limits
+   - enforces provider readiness, usage caps, and chat rate limits
 6. `backend/app/services/chat/completions/request_builder.py`
    - rebuilds provider context from persisted history
    - assembles the provider request
@@ -118,6 +119,8 @@ Session expiry semantics:
   - per-turn attachment snapshots in `chat_message_attachments`
   - active chat context checkpoints
   - remembered-chat summary placeholders
+  - unified operator events in `operator_events`
+  - user usage cap overrides and reset baselines in `user_usage_caps`
 - Redis is used for:
   - one in-flight chat lease per conversation id, including first-send drafts
   - ephemeral first-send chat drafts
@@ -136,8 +139,10 @@ Session expiry semantics:
   - final success or error outcome
   - assistant usage JSON with normalized usage, provider raw usage, and price snapshot
   - history-level `usage_summary` rollup cache
-- backend-local rejects such as validation failures, session locks, rate limits, and provider-readiness failures are not persisted as chat turns
-- those backend-local rejects are instead audit-logged in `chat_request_rejections`
+- backend-local rejects such as validation failures, session locks, usage caps, rate limits, and provider-readiness failures are not persisted as chat turns
+- those backend-local rejects are audit-logged in `operator_events`
+- provider execution must produce its first stream event within `CHAT_PROVIDER_IDLE_TIMEOUT_SECONDS`; after the first provider event, the response is allowed to run normally
+- housekeeping closes stale `send` turns that never recorded a first provider event and writes `operator_events`
 - if provider execution fails, the assistant message is kept renderable but marked `excluded_from_context=true`
 - persisted provider-attempted failures keep provider-specific `result_code`, `result_message`, `finish_reason`, and safe `error_detail`
 - future provider context is rebuilt from:
@@ -188,6 +193,24 @@ Session expiry semantics:
   - OpenAI: supported
   - Anthropic: supported
   - Vertex: supported through private GCS `fileData` refs
+
+## Operational Data Model
+- `operator_events`
+  - single operator-facing event log for request rejects, usage cap rejects, provider turn failures, stale execution cleanup, and attachment cleanup failures
+  - replaces the old `chat_request_rejections` table
+- `user_usage_caps`
+  - optional per-user cap override
+  - `baseline_estimated_price_usd` is moved forward by `reset-cap`, so operators can unlock a user without cron/time-window logic
+- default cap is `USAGE_DEFAULT_CAP_USD` when a user has no row in `user_usage_caps`
+- enforcement uses raw assistant message price snapshots, not only `chat_histories.usage_summary`
+
+## Deployment Smoke Readiness
+- `/health` is the Docker startup gate
+- when `DEPLOYMENT_SMOKE_REQUIRED=true`, `/health` runs deployment smoke until it passes, caches that pass in process memory, and then becomes lightweight
+- because `frontend` depends on `backend: service_healthy`, public traffic does not reach the product until smoke passes
+- the smoke code lives in `backend/app/deployment_smoke/`
+- it bypasses public auth/session/chat routes and does not create product users, sessions, histories, messages, stored files, or operator-event rows
+- `python -m app.deployment_smoke` manually exercises one direct text request per provider plus direct provider/GCS attachment upload-delete checks
 
 ## Frontend Refresh Semantics
 - the frontend does not persist the active conversation in `localStorage` or `sessionStorage`

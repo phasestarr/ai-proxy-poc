@@ -40,7 +40,6 @@ app = FastAPI(
     version="0.1.0",
 )
 
-
 @app.exception_handler(AuthResponseError)
 async def handle_auth_response_error(_, exc: AuthResponseError) -> JSONResponse:
     response = JSONResponse(

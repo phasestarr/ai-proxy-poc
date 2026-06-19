@@ -139,6 +139,7 @@ Anthropic:
    - `backend/app/services/chat/completions/route_selection.py`
 3. preflight checks
    - `backend/app/services/chat/completions/preflight.py`
+   - enforces per-user usage caps before provider execution
 4. orchestration and lease ownership
    - `backend/app/services/chat/completions/orchestrator.py`
    - acquires the `chat_history_id` Redis lease
@@ -175,6 +176,7 @@ Anthropic:
 12. provider dispatch and execution
    - `backend/app/providers/dispatcher.py`
    - `backend/app/providers/<provider>/stream.py`
+   - first provider event must arrive before `CHAT_PROVIDER_IDLE_TIMEOUT_SECONDS`
 13. usage normalization and history rollup
    - `backend/app/providers/<provider>/usage.py`
    - `backend/app/services/chat/histories/usage_summary.py`
@@ -246,6 +248,9 @@ Main files:
 - refresh does not restore draft or selected history from browser storage
 - the frontend does not auto-recover interrupted SSE
 - Redis inflight lease is the effective concurrency guard
+- the lease TTL is `CHAT_PROVIDER_IDLE_TIMEOUT_SECONDS`
+- provider execution timeout only applies before the first provider event
+- housekeeping closes stale send turns that never recorded a first provider event
 - `interaction_state` is a UI hint, not the only concurrency authority
 - delete behavior uses the Redis lease heuristic
   - if the lease is still active, delete is blocked
@@ -254,6 +259,30 @@ Main files:
 ## Attachment Provider Cleanup
 
 Attachment provider lifecycle and cleanup commands live in docs/ATTACHMENT_PROVIDER_FILES.md.
+
+## Operator Events And Usage Caps
+
+- `operator_events` is the single operator-facing event log.
+- `chat_request_rejections` has been migrated into `operator_events` and dropped.
+- Usage cap commands live in `docs/USAGE_CAPS.md`.
+- Audit queries live in `docs/FOR_AUDIT_QUERY.md`.
+
+## Deployment Smoke Readiness
+
+When `DEPLOYMENT_SMOKE_REQUIRED=true`, backend `/health` runs the deployment
+smoke check until it passes. `frontend` depends on backend health, so the public
+UI container does not start until smoke succeeds.
+
+Smoke code is isolated under `backend/app/deployment_smoke/`. It calls provider
+clients and provider attachment upload-delete helpers directly. It does not use
+the public auth/session/chat API, and it must not create user, session, chat,
+stored-file, or operator-event rows.
+
+Manual smoke run from the backend container:
+
+```powershell
+docker exec ai-proxy-api python -m app.deployment_smoke
+```
 
 ## Context Compaction Conditions
 - soft threshold: `50000` input tokens

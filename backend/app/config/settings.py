@@ -40,7 +40,7 @@ class AppSettings(BaseSettings):
     microsoft_oauth_transaction_minutes: int
 
     chat_draft_ttl_seconds: int
-    chat_inflight_lock_ttl_seconds: int
+    chat_provider_idle_timeout_seconds: int
     chat_rate_limit_per_minute: int
     chat_rate_limit_per_hour: int
     chat_attachment_max_files_per_history: int
@@ -49,8 +49,10 @@ class AppSettings(BaseSettings):
     chat_attachment_max_total_bytes_per_history: int
     chat_attachment_max_total_tokens_per_provider: int
     chat_attachment_remote_ttl_hours: int
+    usage_default_cap_usd: float = 100.0
     startup_dependency_max_attempts: int
     startup_dependency_retry_seconds: float
+    deployment_smoke_required: bool = False
 
     microsoft_authority: str
     microsoft_client_id: str

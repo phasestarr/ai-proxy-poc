@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
+from app.config.settings import settings
 from app.config.chat_outcomes import SUCCESS_RESULT_CODE, pick_success_message
 from app.db.postgres.session import SessionLocal
 from app.providers.anthropic.outcomes import ANTHROPIC_SUCCESS_RESULT_CODE, pick_anthropic_success_message
@@ -14,9 +16,11 @@ from app.services.chat.completions.preflight import build_safe_error_detail
 from app.services.chat.completions.sse import LiveChatStreamSink, build_error_event
 from app.services.chat.completions.turn_persistence import (
     PersistedChatTurn,
+    persist_chat_turn_first_response,
     persist_chat_turn_failure,
     persist_chat_turn_success,
 )
+from app.services.chat.completions.request_audit import persist_operator_event
 from app.services.chat.errors import ChatProxyError
 from app.services.chat.histories.usage_summary import extract_token_summary
 
@@ -35,31 +39,73 @@ async def run_chat_completion_turn(
     last_status_code: str | None = None
 
     try:
-        async for chunk in stream_provider_chat_completion(prepared_request=prepared_request):
-            last_chunk = chunk
-            if chunk.status_code and chunk.status_message and chunk.status_code != last_status_code:
-                last_status_code = chunk.status_code
-                sink.emit(
-                    "status",
-                    ChatStreamStatusEvent(
-                        provider=route.model.provider,
-                        status_code=chunk.status_code,
-                        status_message=chunk.status_message,
-                    ),
+        stream = stream_provider_chat_completion(prepared_request=prepared_request).__aiter__()
+        try:
+            first_chunk = await asyncio.wait_for(
+                anext(stream),
+                timeout=max(1, settings.chat_provider_idle_timeout_seconds),
+            )
+        except StopAsyncIteration:
+            first_chunk = None
+        except TimeoutError:
+            error = ChatProxyError(
+                code="provider_first_response_timeout",
+                origin="proxy",
+                detail=build_safe_error_detail("provider_first_response_timeout"),
+                http_status=504,
+                provider=route.model.provider,
+            )
+            persist_turn_failure(turn, accumulated_text, error)
+            with SessionLocal() as event_db:
+                persist_operator_event(
+                    event_db,
+                    event_type="chat_provider_first_response_timeout",
+                    severity="error",
+                    user_id=None,
+                    chat_history_id=turn.history_id,
+                    chat_message_id=turn.assistant_message_id,
+                    model_id=route.model.public_id,
+                    provider=route.model.provider,
+                    operation="chat_completion",
+                    result_code=error.code,
+                    http_status=error.http_status,
+                    message=error.result_message,
+                    detail=error.detail,
+                    metadata={
+                        "timeout_seconds": max(1, settings.chat_provider_idle_timeout_seconds),
+                        "user_message_id": turn.user_message_id,
+                    },
                 )
-            if chunk.text:
-                accumulated_text = f"{accumulated_text}{chunk.text}"
-                sink.emit(
-                    "delta",
-                    ChatStreamDeltaEvent(delta_text=chunk.text),
-                )
+            sink.emit("error", build_error_event(error))
+            return
+
+        if first_chunk is not None:
+            mark_turn_first_response(turn)
+            last_chunk, accumulated_text, last_status_code = emit_provider_chunk(
+                chunk=first_chunk,
+                route=route,
+                sink=sink,
+                accumulated_text=accumulated_text,
+                last_status_code=last_status_code,
+            )
+
+        async for chunk in stream:
+            last_chunk, accumulated_text, last_status_code = emit_provider_chunk(
+                chunk=chunk,
+                route=route,
+                sink=sink,
+                accumulated_text=accumulated_text,
+                last_status_code=last_status_code,
+            )
     except ProviderExecutionError as exc:
         error = map_provider_execution_error(exc)
         persist_turn_failure(turn, accumulated_text, error)
+        persist_turn_failure_event(turn=turn, route=route, error=error)
         sink.emit("error", build_error_event(error))
         return
     except ChatProxyError as exc:
         persist_turn_failure(turn, accumulated_text, exc)
+        persist_turn_failure_event(turn=turn, route=route, error=exc)
         sink.emit("error", build_error_event(exc))
         return
     except Exception:
@@ -71,6 +117,7 @@ async def run_chat_completion_turn(
             http_status=500,
         )
         persist_turn_failure(turn, accumulated_text, error)
+        persist_turn_failure_event(turn=turn, route=route, error=error)
         sink.emit("error", build_error_event(error))
         return
 
@@ -79,7 +126,7 @@ async def run_chat_completion_turn(
         finish_reason=last_chunk.finish_reason if last_chunk else None,
     )
     with SessionLocal() as stream_db:
-        persist_chat_turn_success(
+        persisted = persist_chat_turn_success(
             stream_db,
             history_id=turn.history_id,
             assistant_message_id=turn.assistant_message_id,
@@ -89,6 +136,8 @@ async def run_chat_completion_turn(
             result_code=result_code,
             result_message=result_message,
         )
+    if not persisted:
+        return
     sink.emit(
         "done",
         ChatStreamDoneEvent(
@@ -100,6 +149,41 @@ async def run_chat_completion_turn(
             usage=map_usage_summary(last_chunk),
         ),
     )
+
+
+def emit_provider_chunk(
+    *,
+    chunk: ProviderStreamChunk,
+    route: ProviderRoute,
+    sink: LiveChatStreamSink,
+    accumulated_text: str,
+    last_status_code: str | None,
+) -> tuple[ProviderStreamChunk, str, str | None]:
+    if chunk.status_code and chunk.status_message and chunk.status_code != last_status_code:
+        last_status_code = chunk.status_code
+        sink.emit(
+            "status",
+            ChatStreamStatusEvent(
+                provider=route.model.provider,
+                status_code=chunk.status_code,
+                status_message=chunk.status_message,
+            ),
+        )
+    if chunk.text:
+        accumulated_text = f"{accumulated_text}{chunk.text}"
+        sink.emit(
+            "delta",
+            ChatStreamDeltaEvent(delta_text=chunk.text),
+        )
+    return chunk, accumulated_text, last_status_code
+
+
+def mark_turn_first_response(turn: PersistedChatTurn) -> None:
+    with SessionLocal() as stream_db:
+        persist_chat_turn_first_response(
+            stream_db,
+            assistant_message_id=turn.assistant_message_id,
+        )
 
 
 def map_usage_summary(chunk: ProviderStreamChunk | None) -> ChatUsageSummary | None:
@@ -135,6 +219,31 @@ def persist_turn_failure(
             result_code=error.code,
             result_message=error.result_message,
             detail=error.detail,
+        )
+
+
+def persist_turn_failure_event(
+    *,
+    turn: PersistedChatTurn,
+    route: ProviderRoute,
+    error: ChatProxyError,
+) -> None:
+    with SessionLocal() as event_db:
+        persist_operator_event(
+            event_db,
+            event_type="chat_turn_failed",
+            severity="error" if (error.http_status or 500) >= 500 else "warning",
+            chat_history_id=turn.history_id,
+            chat_message_id=turn.assistant_message_id,
+            model_id=route.model.public_id,
+            provider=route.model.provider,
+            operation="chat_completion",
+            result_code=error.code,
+            http_status=error.http_status,
+            retry_after_seconds=error.retry_after_seconds,
+            message=error.result_message,
+            detail=error.detail,
+            metadata={"user_message_id": turn.user_message_id, "origin": error.origin},
         )
 
 

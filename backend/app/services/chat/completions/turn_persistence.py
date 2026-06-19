@@ -151,11 +151,13 @@ def persist_chat_turn_success(
     usage: ProviderUsageMetadata | None,
     result_code: str,
     result_message: str,
-) -> None:
+) -> bool:
     now = utc_now()
     assistant_message = db.get(ChatMessage, assistant_message_id)
     if assistant_message is None:
-        return
+        return False
+    if assistant_message.status != "streaming":
+        return False
 
     assistant_message.content = content
     assistant_message.status = "done"
@@ -174,6 +176,23 @@ def persist_chat_turn_success(
         aggregated_at=now,
     )
     db.commit()
+    return True
+
+
+def persist_chat_turn_first_response(
+    db: Session,
+    *,
+    assistant_message_id: str,
+) -> None:
+    now = utc_now()
+    assistant_message = db.get(ChatMessage, assistant_message_id)
+    if assistant_message is None or assistant_message.status != "streaming":
+        return
+    if assistant_message.result_code is None:
+        assistant_message.result_code = "provider_first_response_received"
+        assistant_message.result_message = "Provider response started."
+    assistant_message.updated_at = now
+    db.commit()
 
 
 def persist_chat_turn_failure(
@@ -186,14 +205,17 @@ def persist_chat_turn_failure(
     result_code: str,
     result_message: str,
     detail: str,
-) -> None:
+) -> bool:
     now = utc_now()
+    assistant_message = db.get(ChatMessage, assistant_message_id)
+    if assistant_message is not None and assistant_message.status != "streaming":
+        return False
+
     user_message = db.get(ChatMessage, user_message_id)
     if user_message is not None:
         user_message.excluded_from_context = True
         user_message.updated_at = now
 
-    assistant_message = db.get(ChatMessage, assistant_message_id)
     if assistant_message is not None:
         assistant_message.content = content
         assistant_message.status = "error"
@@ -207,6 +229,7 @@ def persist_chat_turn_failure(
     _touch_history(db, history_id=history_id, now=now)
     _set_history_ready(db, history_id=history_id)
     db.commit()
+    return assistant_message is not None
 
 def _get_next_message_sequence(
     db: Session,

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import StoredFileProviderState
+from app.services.chat.completions.request_audit import persist_operator_event
 from app.services.chat.attachments.remote_files import (
     delete_remote_provider_file,
     mark_provider_state_not_uploaded,
@@ -38,7 +39,7 @@ async def reconcile_attachment_remote_files(db: Session) -> int:
                 provider=state.provider,
                 provider_file_id=provider_file_id,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Attachment remote file existence check failed.",
                 extra={
@@ -46,6 +47,19 @@ async def reconcile_attachment_remote_files(db: Session) -> int:
                     "provider_file_id": provider_file_id,
                     "stored_file_id": state.stored_file_id,
                 },
+            )
+            persist_operator_event(
+                db,
+                event_type="attachment_remote_reconcile_failed",
+                severity="error",
+                stored_file_id=state.stored_file_id,
+                provider=state.provider,
+                operation="attachment_remote_reconcile",
+                result_code="attachment_remote_check_failed",
+                message="Attachment remote file existence check failed.",
+                detail=str(exc),
+                metadata={"provider_file_id": provider_file_id},
+                commit=False,
             )
             continue
 
@@ -87,7 +101,7 @@ async def purge_stale_remote_attachment_files(
                 provider=state.provider,
                 provider_file_id=provider_file_id,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Stale attachment remote file cleanup failed.",
                 extra={
@@ -95,6 +109,19 @@ async def purge_stale_remote_attachment_files(
                     "provider_file_id": provider_file_id,
                     "stored_file_id": state.stored_file_id,
                 },
+            )
+            persist_operator_event(
+                db,
+                event_type="attachment_remote_purge_failed",
+                severity="error",
+                stored_file_id=state.stored_file_id,
+                provider=state.provider,
+                operation="attachment_remote_purge",
+                result_code="attachment_remote_delete_failed",
+                message="Stale attachment remote file cleanup failed.",
+                detail=str(exc),
+                metadata={"provider_file_id": provider_file_id},
+                commit=False,
             )
             continue
 

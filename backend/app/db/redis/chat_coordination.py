@@ -76,14 +76,14 @@ def acquire_chat_execution_lease(*, chat_history_id: str) -> ChatExecutionLease:
             lock_key,
             owner_token,
             nx=True,
-            ex=max(1, settings.chat_inflight_lock_ttl_seconds),
+            ex=max(1, settings.chat_provider_idle_timeout_seconds),
         )
         if acquired:
             return ChatExecutionLease(lock_key=lock_key, owner_token=owner_token)
 
         retry_after_seconds = _normalize_retry_after(
             redis_client.ttl(lock_key),
-            fallback_seconds=settings.chat_inflight_lock_ttl_seconds,
+            fallback_seconds=settings.chat_provider_idle_timeout_seconds,
         )
         raise ChatRequestInProgressError(retry_after_seconds=retry_after_seconds)
     except ChatRequestInProgressError:

@@ -10,6 +10,7 @@ from app.workers.chat_attachment_cleanup import (
     purge_stale_remote_attachment_files,
     reconcile_attachment_remote_files,
 )
+from app.workers.chat_execution_cleanup import cleanup_stale_chat_executions
 from app.workers.chat_history_cleanup import delete_stale_empty_histories
 
 logger = logging.getLogger("uvicorn.error")
@@ -18,6 +19,7 @@ logger = logging.getLogger("uvicorn.error")
 @dataclass(slots=True, frozen=True)
 class HousekeepingResult:
     expired_auth_rows_deleted: int
+    stale_chat_executions_cleaned: int
     stale_empty_histories_deleted: int
     attachment_refs_reconciled: int
     attachment_remote_files_purged: int
@@ -26,12 +28,16 @@ class HousekeepingResult:
 async def run_housekeeping_once() -> HousekeepingResult:
     now = utc_now()
     expired_auth_rows_deleted = 0
+    stale_chat_executions_cleaned = 0
     stale_empty_histories_deleted = 0
     attachment_refs_reconciled = 0
     attachment_remote_files_purged = 0
 
     with SessionLocal() as db:
         expired_auth_rows_deleted = purge_expired_auth_data(db, now=now)
+
+    with SessionLocal() as db:
+        stale_chat_executions_cleaned = cleanup_stale_chat_executions(db, now=now)
 
     with SessionLocal() as db:
         stale_empty_histories_deleted = delete_stale_empty_histories(db, now=now)
@@ -44,6 +50,7 @@ async def run_housekeeping_once() -> HousekeepingResult:
 
     result = HousekeepingResult(
         expired_auth_rows_deleted=expired_auth_rows_deleted,
+        stale_chat_executions_cleaned=stale_chat_executions_cleaned,
         stale_empty_histories_deleted=stale_empty_histories_deleted,
         attachment_refs_reconciled=attachment_refs_reconciled,
         attachment_remote_files_purged=attachment_remote_files_purged,
@@ -52,6 +59,7 @@ async def run_housekeeping_once() -> HousekeepingResult:
         "Housekeeping completed.",
         extra={
             "expired_auth_rows_deleted": result.expired_auth_rows_deleted,
+            "stale_chat_executions_cleaned": result.stale_chat_executions_cleaned,
             "stale_empty_histories_deleted": result.stale_empty_histories_deleted,
             "attachment_refs_reconciled": result.attachment_refs_reconciled,
             "attachment_remote_files_purged": result.attachment_remote_files_purged,

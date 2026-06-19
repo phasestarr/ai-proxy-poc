@@ -5,6 +5,7 @@ import logging
 
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import StoredFile, StoredFileProviderState
+from app.db.postgres.session import SessionLocal
 from app.providers.anthropic.attachments import (
     anthropic_file_exists,
     count_anthropic_file_tokens,
@@ -24,6 +25,7 @@ from app.providers.vertex.attachments import (
     vertex_file_exists,
 )
 from app.services.chat.errors import ChatProxyError
+from app.services.chat.completions.request_audit import persist_operator_event
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -198,7 +200,7 @@ async def best_effort_delete_provider_files(*, stored_file: StoredFile) -> None:
                 provider=provider_state.provider,
                 provider_file_id=provider_state.provider_file_id,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Attachment provider file cleanup failed.",
                 extra={
@@ -206,6 +208,12 @@ async def best_effort_delete_provider_files(*, stored_file: StoredFile) -> None:
                     "provider_file_id": provider_state.provider_file_id,
                     "stored_file_id": stored_file.id,
                 },
+            )
+            _log_attachment_remote_delete_failure(
+                provider=provider_state.provider,
+                provider_file_id=provider_state.provider_file_id,
+                stored_file_id=stored_file.id,
+                detail=str(exc),
             )
 
 
@@ -243,6 +251,12 @@ async def delete_provider_files_for_stored_file(*, stored_file: StoredFile) -> b
                 "stored_file_id": stored_file.id,
             },
         )
+        _log_attachment_remote_delete_failure(
+            provider=provider_state.provider,
+            provider_file_id=provider_state.provider_file_id,
+            stored_file_id=stored_file.id,
+            detail=str(outcome),
+        )
     return delete_succeeded
 
 
@@ -252,13 +266,19 @@ async def best_effort_delete_remote_provider_file(*, provider: str, provider_fil
             provider=provider,
             provider_file_id=provider_file_id,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Attachment provider file cleanup failed.",
             extra={
                 "provider": provider,
                 "provider_file_id": provider_file_id,
             },
+        )
+        _log_attachment_remote_delete_failure(
+            provider=provider,
+            provider_file_id=provider_file_id,
+            stored_file_id=None,
+            detail=str(exc),
         )
 
 
@@ -291,3 +311,28 @@ def mark_provider_state_not_uploaded(state: StoredFileProviderState) -> None:
     state.remote_file_error = None
     state.uploaded_at = None
     state.last_used_at = None
+
+
+def _log_attachment_remote_delete_failure(
+    *,
+    provider: str,
+    provider_file_id: str | None,
+    stored_file_id: str | None,
+    detail: str,
+) -> None:
+    try:
+        with SessionLocal() as db:
+            persist_operator_event(
+                db,
+                event_type="attachment_remote_delete_failed",
+                severity="error",
+                stored_file_id=stored_file_id,
+                provider=provider,
+                operation="attachment_remote_delete",
+                result_code="attachment_remote_delete_failed",
+                message="Attachment provider file cleanup failed.",
+                detail=detail,
+                metadata={"provider_file_id": provider_file_id},
+            )
+    except Exception:
+        logger.exception("Failed to persist attachment cleanup operator event.")

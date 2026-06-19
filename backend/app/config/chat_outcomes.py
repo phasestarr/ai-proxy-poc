@@ -38,11 +38,13 @@ ERROR_MESSAGES: dict[str, str] = {
     "provider_bad_request": "The selected provider rejected the request.",
     "provider_failed": "The selected provider failed while processing the request.",
     "provider_not_configured": "The selected provider is not configured.",
+    "provider_first_response_timeout": "The selected provider did not start responding in time.",
     "provider_rate_limited": "The selected provider is rate limiting requests.",
     "provider_unavailable": "The selected provider is temporarily unavailable.",
     "rate_limit_hour": "Hourly chat limit reached. Try again later.",
     "rate_limit_minute": "Too many requests. Try again shortly.",
     "request_in_progress": "A chat request is already running for this chat history.",
+    "usage_cap_exceeded": "Usage cap reached. Ask the operator to reset or raise the cap.",
 }
 
 

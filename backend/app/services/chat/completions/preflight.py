@@ -18,6 +18,7 @@ from app.schemas.chat import ChatCompletionRequest
 from app.services.chat.completions.route_selection import prepare_chat_completion_request
 from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError, build_preparation_error
 from app.services.chat.histories.service import load_user_history
+from app.services.usage_caps import enforce_user_usage_cap
 
 
 @dataclass(slots=True, frozen=True)
@@ -54,6 +55,13 @@ def run_chat_preflight(
         payload=payload,
         session=session,
         db=db,
+    )
+
+    enforce_user_usage_cap(
+        db,
+        session=session,
+        payload=payload,
+        route=route,
     )
 
     try:
