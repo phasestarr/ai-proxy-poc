@@ -55,8 +55,6 @@ async def prepare_history_attachments_for_provider(
                     "token_count": int(provider_state.token_count),
                 }
             )
-            if provider_state.provider_file_id and provider_state.remote_file_status == "ready":
-                continue
             upload_targets[stored_file.id] = (history_file.display_name, stored_file, provider_state)
 
         if provider_token_total > settings.chat_attachment_max_total_tokens_per_provider:
@@ -76,9 +74,6 @@ async def prepare_history_attachments_for_provider(
         for stored_file_id, provider_file_id in uploaded_provider_ids.items():
             _, _, provider_state = upload_targets[stored_file_id]
             provider_state.provider_file_id = provider_file_id
-            provider_state.remote_file_status = "ready"
-            provider_state.remote_file_error = None
-            provider_state.uploaded_at = now
             provider_state.last_used_at = now
 
         for history_file in active_history_files:

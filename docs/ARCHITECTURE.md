@@ -173,9 +173,9 @@ Session expiry semantics:
 - provider-managed files are not the source of truth
   - OpenAI and Anthropic `file_id` values are disposable execution refs
   - deleting a provider file does not delete the logical attachment if the PostgreSQL row still exists
-- provider uploads happen at attach time and are recreated at send time if housekeeping removed or reconciled away the remote copy
+- provider uploads happen at attach time and are recreated at send time if the stored remote id is missing or the remote copy was deleted out of band
 - only active history attachments are injected into future provider requests
-- provider-side remote attachment copies are reconciled by housekeeping; missing provider refs become `not_uploaded` while DB-owned blobs remain the source of truth
+- provider-side remote attachment copies are reconciled by housekeeping; send-time also verifies stored remote ids and recreates missing remote copies while DB-owned blobs remain the source of truth
 - provider-side remote attachment copies are deleted after `CHAT_ATTACHMENT_REMOTE_TTL_HOURS` without use while DB-owned blobs remain the source of truth
 - attachment token limits are separate from text compaction
   - text compaction remains text-only

@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import StoredFileProviderState
-from app.services.chat.attachments.remote_files import delete_remote_provider_file, remote_provider_file_exists
+from app.services.chat.attachments.remote_files import (
+    delete_remote_provider_file,
+    mark_provider_state_not_uploaded,
+    remote_provider_file_exists,
+)
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -19,7 +23,6 @@ async def reconcile_attachment_remote_files(db: Session) -> int:
         select(StoredFileProviderState)
         .where(
             StoredFileProviderState.provider_file_id.is_not(None),
-            StoredFileProviderState.remote_file_status == "ready",
         )
         .order_by(StoredFileProviderState.updated_at.asc(), StoredFileProviderState.id.asc())
     ).scalars().all()
@@ -67,7 +70,6 @@ async def purge_stale_remote_attachment_files(
         select(StoredFileProviderState)
         .where(
             StoredFileProviderState.provider_file_id.is_not(None),
-            StoredFileProviderState.remote_file_status == "ready",
             StoredFileProviderState.last_used_at.is_not(None),
             StoredFileProviderState.last_used_at < cutoff,
         )
@@ -101,11 +103,3 @@ async def purge_stale_remote_attachment_files(
 
     db.commit()
     return purged_count
-
-
-def mark_provider_state_not_uploaded(state: StoredFileProviderState) -> None:
-    state.provider_file_id = None
-    state.remote_file_status = "not_uploaded"
-    state.remote_file_error = None
-    state.uploaded_at = None
-    state.last_used_at = None

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import StoredFile, StoredFileProviderState
 from app.providers.anthropic.attachments import (
     anthropic_file_exists,
@@ -93,26 +94,69 @@ async def upload_provider_files(
 ) -> dict[str, str]:
     uploaded_ids: dict[str, str] = {}
     for stored_file_id, (display_name, stored_file, provider_state) in upload_targets.items():
+        provider_file_id = await ensure_remote_provider_file(
+            provider=provider,
+            stored_file=stored_file,
+            display_name=display_name,
+            provider_state=provider_state,
+        )
+        uploaded_ids[stored_file_id] = provider_file_id
+    return uploaded_ids
+
+
+async def ensure_remote_provider_file(
+    *,
+    provider: str,
+    stored_file: StoredFile,
+    display_name: str,
+    provider_state: StoredFileProviderState,
+) -> str:
+    existing_provider_file_id = (provider_state.provider_file_id or "").strip() or None
+    if existing_provider_file_id is not None:
         try:
-            provider_file_id = await upload_provider_file(
+            remote_exists = await remote_provider_file_exists(
                 provider=provider,
-                stored_file_id=stored_file_id,
-                display_name=display_name,
-                mime_type=stored_file.mime_type,
-                file_bytes=stored_file.content,
+                provider_file_id=existing_provider_file_id,
             )
         except Exception as exc:
-            provider_state.remote_file_status = "failed"
             provider_state.remote_file_error = str(exc)
             raise ChatProxyError(
                 code="attachments_upload_failed",
                 origin="proxy",
-                detail=f"{provider} file upload failed",
+                detail=f"{provider} file existence check failed",
                 http_status=502,
                 provider=provider,
             ) from exc
-        uploaded_ids[stored_file_id] = provider_file_id
-    return uploaded_ids
+        if remote_exists:
+            provider_state.remote_file_status = "ready"
+            provider_state.remote_file_error = None
+            return existing_provider_file_id
+        mark_provider_state_not_uploaded(provider_state)
+
+    try:
+        provider_file_id = await upload_provider_file(
+            provider=provider,
+            stored_file_id=stored_file.id,
+            display_name=display_name,
+            mime_type=stored_file.mime_type,
+            file_bytes=stored_file.content,
+        )
+    except Exception as exc:
+        provider_state.remote_file_status = "failed"
+        provider_state.remote_file_error = str(exc)
+        raise ChatProxyError(
+            code="attachments_upload_failed",
+            origin="proxy",
+            detail=f"{provider} file upload failed",
+            http_status=502,
+            provider=provider,
+        ) from exc
+
+    provider_state.provider_file_id = provider_file_id
+    provider_state.remote_file_status = "ready"
+    provider_state.remote_file_error = None
+    provider_state.uploaded_at = utc_now()
+    return provider_file_id
 
 
 async def upload_provider_file(
@@ -147,7 +191,7 @@ async def upload_provider_file(
 
 async def best_effort_delete_provider_files(*, stored_file: StoredFile) -> None:
     for provider_state in stored_file.provider_states:
-        if not provider_state.provider_file_id or provider_state.remote_file_status != "ready":
+        if not provider_state.provider_file_id:
             continue
         try:
             await delete_remote_provider_file(
@@ -169,7 +213,7 @@ async def delete_provider_files_for_stored_file(*, stored_file: StoredFile) -> b
     delete_targets = [
         provider_state
         for provider_state in stored_file.provider_states
-        if provider_state.provider_file_id and provider_state.remote_file_status == "ready"
+        if provider_state.provider_file_id
     ]
     if not delete_targets:
         return True
@@ -187,11 +231,7 @@ async def delete_provider_files_for_stored_file(*, stored_file: StoredFile) -> b
     delete_succeeded = True
     for provider_state, outcome in zip(delete_targets, outcomes, strict=False):
         if not isinstance(outcome, Exception):
-            provider_state.provider_file_id = None
-            provider_state.remote_file_status = "not_uploaded"
-            provider_state.remote_file_error = None
-            provider_state.uploaded_at = None
-            provider_state.last_used_at = None
+            mark_provider_state_not_uploaded(provider_state)
             continue
         delete_succeeded = False
         logger.error(
@@ -243,3 +283,11 @@ async def remote_provider_file_exists(*, provider: str, provider_file_id: str) -
     if provider == "vertex_ai":
         return await vertex_file_exists(file_uri=provider_file_id)
     raise RuntimeError(f"unsupported attachment provider: {provider}")
+
+
+def mark_provider_state_not_uploaded(state: StoredFileProviderState) -> None:
+    state.provider_file_id = None
+    state.remote_file_status = "not_uploaded"
+    state.remote_file_error = None
+    state.uploaded_at = None
+    state.last_used_at = None

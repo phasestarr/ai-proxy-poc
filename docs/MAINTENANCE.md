@@ -232,7 +232,7 @@ Main files:
 - cross-history duplicate content is allowed
   - backend reuses the same `stored_files` row for the same user hash
 - provider token counts are resolved at attach time for OpenAI, Anthropic, and Vertex
-- provider-managed file upload happens at attach time and may be recreated at send time after housekeeping clears a missing or stale remote ref
+- provider-managed file upload happens at attach time and may be recreated at send time if the stored remote id is missing or the remote copy was deleted out of band
 - provider-managed file delete happens when the last logical history reference is removed; the DB row is kept if remote delete fails
 - provider-managed remote copies are also deleted after `CHAT_ATTACHMENT_REMOTE_TTL_HOURS` without use
 - attachment limits are separate from text compaction

@@ -101,8 +101,6 @@ async def resolve_provider_token_counts(
             state is not None
             and state.token_count_status == "ready"
             and state.token_count is not None
-            and state.provider_file_id
-            and state.remote_file_status == "ready"
         ):
             results[provider] = {
                 "token_count": state.token_count,

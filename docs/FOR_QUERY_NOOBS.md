@@ -1,7 +1,19 @@
 # PostgreSQL Query Cheat Sheet
 
-This file is for inspecting the real PostgreSQL database from Docker Compose,
-even if you are not comfortable with SQL yet.
+This file is for developers inspecting the real PostgreSQL database from Docker
+Compose, even if you are not comfortable with SQL yet.
+
+Use this file when you need to answer questions like:
+
+- who is this user
+- which chat histories belong to them
+- what messages are in one history
+- which files are attached to one history
+- which session row belongs to this browser
+- what state the backend stored for mixed product/diagnostic rows
+
+For operator-facing usage/spending and local reject audit queries, use
+`docs/FOR_AUDIT_QUERY.md`.
 
 The basic rule is:
 
@@ -10,9 +22,8 @@ The basic rule is:
 3. paste that `id` into the next query
 4. only use raw text queries when you already know which row you want
 
-Long text fields such as chat content, stored error detail, and JSON payloads
-are intentionally kept out of the default table views. Those have a separate
-`Raw Text / JSON` section near the bottom.
+Long text fields and JSON payloads are intentionally kept out of the default
+table views. The raw-text and JSON queries are near the bottom.
 
 ## Connect
 
@@ -38,7 +49,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT version
 
 - Before any `DELETE`, first run a `SELECT` with the same `WHERE` clause.
 - Do not casually delete child rows such as `chat_messages`,
-  `chat_history_memories`, `auth_provider_sessions`, or `guest_identities`.
+  `chat_message_attachments`, `auth_provider_sessions`, or `guest_identities`.
 - Prefer deleting cascade roots:
   - `users`
   - `auth_sessions`
@@ -47,10 +58,12 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT version
   bridge IP such as `172.18.0.1`, not your LAN IP.
 - Human users are intentional account data. They are not "zombie rows" just
   because they are old.
+- If you need operator-facing usage/spending rollups or local reject audit
+  queries, switch to `docs/FOR_AUDIT_QUERY.md`.
 
 ## Current Tables
 
-Application tables:
+Application and mixed tables you will usually touch from this file:
 
 1. `users`
 2. `ms_identities`
@@ -67,6 +80,9 @@ Application tables:
 13. `chat_message_attachments`
 14. `chat_history_memories`
 15. `chat_context_checkpoints`
+
+Mostly-audit table:
+
 16. `chat_request_rejections`
 
 Migration metadata:
@@ -112,13 +128,13 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, accoun
 2. Use the copied `users.id` in the next query:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, interaction_state, busy_reason, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
 ```
 
 3. Use the copied `chat_histories.id` in the next query:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, CASE WHEN usage IS NULL THEN NULL ELSE usage->'normalized' END AS usage_normalized, CASE WHEN usage IS NULL THEN NULL ELSE usage->'price_estimate' END AS usage_price_estimate, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
 ```
 
 4. If you need the real text, use the same history id here:
@@ -138,7 +154,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.id, gi.
 2. Copy `guest_identities.user_id` and use it in the user-history query:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, interaction_state, busy_reason, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
 ```
 
 ### Workflow C: delete one chat history safely
@@ -146,7 +162,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_i
 1. Inspect the history first:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE id = 'PUT_CHAT_HISTORY_ID_HERE';"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, interaction_state, busy_reason, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE id = 'PUT_CHAT_HISTORY_ID_HERE';"
 ```
 
 2. Optional: inspect child rows before delete:
@@ -174,7 +190,7 @@ That delete cascades:
 1. Inspect logical attachments in the history:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT chf.id, chf.chat_history_id, chf.stored_file_id, chf.display_name, chf.mime_type, chf.byte_size, chf.created_at FROM chat_history_files chf WHERE chf.chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY chf.created_at, chf.id;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT chf.id, chf.chat_history_id, chf.stored_file_id, chf.display_name, chf.mime_type, chf.byte_size, chf.is_active, chf.created_at FROM chat_history_files chf WHERE chf.chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY chf.created_at, chf.id;"
 ```
 
 2. Inspect the deduplicated stored blobs behind those attachments:
@@ -200,7 +216,7 @@ Role:
 
 - Parent table for guest and Microsoft users.
 - Deleting a user cascades identities, sessions, conflict tickets, chat
-  histories, chat messages, and remembered-chat placeholder rows.
+  histories, chat messages, files, and internal child rows.
 
 Inspect:
 
@@ -211,7 +227,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, accoun
 Rows owned by each user:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.account_type, u.display_name, u.email, COUNT(DISTINCT s.id) AS sessions, COUNT(DISTINCT ch.id) AS chat_histories, COUNT(DISTINCT chm.id) AS remembered_histories, COUNT(DISTINCT mi.id) AS ms_identity_count, COUNT(DISTINCT gi.id) AS guest_identity_count FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN chat_histories ch ON ch.user_id = u.id LEFT JOIN chat_history_memories chm ON chm.user_id = u.id LEFT JOIN ms_identities mi ON mi.user_id = u.id LEFT JOIN guest_identities gi ON gi.user_id = u.id GROUP BY u.id ORDER BY u.created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT u.id, u.account_type, u.display_name, u.email, COUNT(DISTINCT s.id) AS sessions, COUNT(DISTINCT ch.id) AS chat_histories, COUNT(DISTINCT chf.id) AS history_files, COUNT(DISTINCT chm.id) AS remembered_histories, COUNT(DISTINCT mi.id) AS ms_identity_count, COUNT(DISTINCT gi.id) AS guest_identity_count FROM users u LEFT JOIN auth_sessions s ON s.user_id = u.id LEFT JOIN chat_histories ch ON ch.user_id = u.id LEFT JOIN chat_history_files chf ON chf.user_id = u.id LEFT JOIN chat_history_memories chm ON chm.user_id = u.id LEFT JOIN ms_identities mi ON mi.user_id = u.id LEFT JOIN guest_identities gi ON gi.user_id = u.id GROUP BY u.id ORDER BY u.created_at DESC;"
 ```
 
 Delete one user:
@@ -319,18 +335,19 @@ Role:
 - `pin_order` is `NULL` for unpinned histories.
 - `usage_summary` is a backend-maintained rollup cache built from assistant
   `chat_messages.usage`.
-- A deleted history cascades messages, remembered-chat placeholder rows, and context checkpoint rows.
+- A deleted history cascades messages, remembered-chat rows, and context
+  checkpoint rows.
 
 All histories with owner info:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, COALESCE(gi.ip_address, u.email, u.display_name) AS owner, ch.title, ch.pin_order, ch.created_at, ch.updated_at, ch.last_message_at, ch.usage_summary, COUNT(cm.id) AS message_count FROM chat_histories ch JOIN users u ON u.id = ch.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_messages cm ON cm.chat_history_id = ch.id GROUP BY ch.id, gi.ip_address, u.email, u.display_name ORDER BY ch.pin_order NULLS LAST, COALESCE(ch.last_message_at, ch.created_at) DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, COALESCE(gi.ip_address, u.email, u.display_name) AS owner, ch.title, ch.pin_order, ch.interaction_state, ch.busy_reason, ch.created_at, ch.updated_at, ch.last_message_at, ch.usage_summary, COUNT(cm.id) AS message_count FROM chat_histories ch JOIN users u ON u.id = ch.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_messages cm ON cm.chat_history_id = ch.id GROUP BY ch.id, gi.ip_address, u.email, u.display_name ORDER BY ch.pin_order NULLS LAST, COALESCE(ch.last_message_at, ch.created_at) DESC;"
 ```
 
 Histories for one user:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, interaction_state, busy_reason, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
 ```
 
 Delete one chat history:
@@ -405,7 +422,8 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT sf.id, sf.
 
 Role:
 
-- Provider-specific token counts and provider-managed remote file refs for one stored blob.
+- Provider-specific token counts and provider-managed remote file refs for one
+  stored blob.
 - `provider_file_id` is the actual unique remote identifier.
 - `filename` is not stored here because it is not a safe identity key.
 
@@ -432,7 +450,7 @@ Role:
 Inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, chat_history_id, stored_file_id, display_name, mime_type, byte_size, created_at FROM chat_history_files ORDER BY created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, chat_history_id, stored_file_id, display_name, mime_type, byte_size, is_active, created_at FROM chat_history_files ORDER BY created_at DESC;"
 ```
 
 Histories sharing the same stored blob:
@@ -446,7 +464,8 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT stored_fil
 Role:
 
 - Snapshot of which attachments were sent with one persisted user turn.
-- Useful when you need to prove which provider file ids were in scope for a given message.
+- Useful when you need to prove which provider file ids were in scope for a
+  given message.
 
 Inspect:
 
@@ -458,36 +477,6 @@ One message's attachment snapshot:
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT attachment_index, chat_history_file_id, stored_file_id, display_name, mime_type, provider, provider_file_id, token_count FROM chat_message_attachments WHERE chat_message_id = 'PUT_CHAT_MESSAGE_ID_HERE' ORDER BY attachment_index;"
-```
-
-## Provider-Managed Attachment Files
-
-Attachment provider file inspection and cleanup commands live in docs/ATTACHMENT_PROVIDER_FILES.md.
-
-### chat_request_rejections
-
-Role:
-
-- Backend-local reject audit table.
-- Records validation failures, rate limits, lock conflicts, provider-readiness failures, and other local rejects before a persisted turn starts.
-- Provider-attempted failures do not go here; those stay on `chat_messages`.
-
-Inspect:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, auth_session_id, chat_history_id, draft_chat_id, model_id, provider, error_code, http_status, retry_after_seconds, created_at FROM chat_request_rejections ORDER BY created_at DESC LIMIT 100;"
-```
-
-One user's recent local rejects:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, auth_session_id, chat_history_id, draft_chat_id, model_id, provider, error_code, http_status, retry_after_seconds, created_at FROM chat_request_rejections WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY created_at DESC;"
-```
-
-Raw reject detail:
-
-```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, user_id, chat_history_id, draft_chat_id, error_code, http_status, retry_after_seconds, detail, created_at FROM chat_request_rejections WHERE id = 'PUT_REJECTION_ID_HERE';"
 ```
 
 ### chat_history_memories
@@ -558,6 +547,11 @@ Checkpoint summary raw text for one user:
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT id, chat_history_id, status, covered_through_sequence, summary_text, error_detail, usage FROM chat_context_checkpoints WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY created_at DESC;"
 ```
+
+## Provider-Managed Attachment Files
+
+Attachment provider file inspection and cleanup commands live in
+`docs/ATTACHMENT_PROVIDER_FILES.md`.
 
 ### alembic_version
 
@@ -689,6 +683,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, CO
   `backend/app/db/postgres/models/oauth_transactions.py`,
   `backend/app/db/postgres/models/user.py`
 - Chat history model: `backend/app/db/postgres/models/chat_history.py`
+- Attachment models: `backend/app/db/postgres/models/chat_attachment.py`
 - Auth/session logic: `backend/app/auth/session_lifecycle.py`,
   `backend/app/auth/guest_sessions.py`,
   `backend/app/auth/conflict_tickets.py`
@@ -697,13 +692,8 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, CO
 - Chat persistence logic: `backend/app/services/chat/histories/service.py`,
   `backend/app/services/chat/completions/turn_persistence.py`,
   `backend/app/services/chat/completions/context/pipeline.py`,
-  `backend/app/services/chat/histories/usage_summary.py`,
-  `backend/app/services/chat/completions/request_audit.py`
-- Chat stream/background orchestration: `backend/app/services/chat/completions/orchestrator.py`
-- Draft coordination: `backend/app/db/redis/chat_drafts.py`
-- Local reject audit model: `backend/app/db/postgres/models/chat_request_rejection.py`
-- Provider usage/pricing: `backend/app/providers/<provider>/usage.py`
-- Backend chat outcome messages:
-  `backend/app/providers/openai/outcomes.py`,
-  `backend/app/providers/anthropic/outcomes.py`,
-  `backend/app/providers/vertex/outcomes.py`
+  `backend/app/services/chat/histories/usage_summary.py`
+- Attachment service: `backend/app/services/chat/attachments/service.py`,
+  `backend/app/services/chat/attachments/storage.py`,
+  `backend/app/services/chat/attachments/payloads.py`
+
