@@ -37,6 +37,7 @@ Keep backend-owned generic helper work pinned to these lighter tiers unless a sp
 
 Current generic-helper call sites:
 - internal context compression -> `backend/app/compression/service.py`
+- internal context compression output size is instruction-targeted, not backend `maxOutputTokens` capped
 - OpenAI attachment token counting -> `backend/app/providers/openai/attachments.py`
 - Anthropic attachment token counting -> `backend/app/providers/anthropic/attachments.py`
 - Vertex attachment token counting -> `backend/app/providers/vertex/attachments.py`
@@ -202,6 +203,8 @@ Main files:
   - `chat_message_attachments`
 - `backend/app/api/v1/endpoints/chat.py`
   - `POST /api/v1/chat/files`
+  - `GET /api/v1/chat/histories/{history_id}/files/{file_id}/content`
+  - `PATCH /api/v1/chat/histories/{history_id}/files/{file_id}`
   - `DELETE /api/v1/chat/histories/{history_id}/files/{file_id}`
 - `backend/app/providers/openai/attachments.py`
   - OpenAI token counting, upload, delete, and payload injection

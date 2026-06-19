@@ -62,12 +62,20 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 - `POST /api/v1/chat/drafts`
   - authenticated
   - creates a 15-minute Redis-backed draft id for the first send of a new local conversation
+- `POST /api/v1/chat/files`
+  - authenticated
+  - uploads one file to either an owned `chat_history_id` or an owned `draft_chat_id`
+  - may promote a draft into a persisted chat history when the first uploaded file succeeds
 - `PATCH /api/v1/chat/histories/{history_id}/files/{file_id}`
   - authenticated
   - updates one owned history attachment activation state
 - `GET /api/v1/chat/histories/{history_id}/files/{file_id}/content`
   - authenticated
   - returns one owned history attachment for inline preview
+- `DELETE /api/v1/chat/histories/{history_id}/files/{file_id}`
+  - authenticated
+  - deletes one owned history attachment
+  - deletes the empty history when the last file is removed from a file-only history
 
 ## Chat Request Contract
 

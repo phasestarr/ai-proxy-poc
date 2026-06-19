@@ -214,6 +214,7 @@ Session expiry semantics:
 - soft compaction threshold: `50000` estimated input tokens
 - exact input-token count is attempted from `40000` estimated input tokens upward
 - compression currently uses an internal Vertex AI pipeline with `gemini-3-flash-preview`
+- compression does not set a backend output-token cap; the summary size is controlled by the compression instruction target
 - chat history rendering still uses raw `chat_messages`
 - checkpoint summaries are inference-only and live in a dedicated table
 

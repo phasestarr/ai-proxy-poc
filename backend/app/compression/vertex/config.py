@@ -3,7 +3,6 @@ from __future__ import annotations
 
 COMPRESSION_VERTEX_MODEL = "gemini-3-flash-preview"
 COMPRESSION_VERTEX_LOCATION = "global"
-COMPRESSION_MAX_OUTPUT_TOKENS = 2_048
 
 
 def build_compression_generate_content_config(*, types, system_instruction: str):
@@ -25,6 +24,5 @@ def build_compression_generate_content_config(*, types, system_instruction: str)
 
     return types.GenerateContentConfig(
         systemInstruction=system_instruction,
-        maxOutputTokens=COMPRESSION_MAX_OUTPUT_TOKENS,
         thinkingConfig=thinking_config,
     )
