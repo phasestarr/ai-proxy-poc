@@ -24,7 +24,6 @@ from app.providers.openai.models import resolve_openai_model_runtime
 from app.providers.openai.outcomes import (
     build_openai_empty_output_detail,
     build_openai_failed_detail,
-    build_openai_incomplete_detail,
     build_openai_status_error_detail,
     get_openai_result_message,
 )
@@ -251,18 +250,7 @@ def extract_openai_stream_error(event) -> _OpenAIStreamFailure | None:
             error_code=error_code,
         )
 
-    if event_type != "response.incomplete":
-        return None
-
-    response = getattr(event, "response", None)
-    incomplete_details = getattr(response, "incomplete_details", None)
-    reason = getattr(incomplete_details, "reason", None) if incomplete_details is not None else None
-    result_code = "openai_response_incomplete"
-    return _OpenAIStreamFailure(
-        result_code=result_code,
-        result_message=get_openai_result_message(result_code),
-        detail=build_openai_incomplete_detail(reason=reason),
-    )
+    return None
 
 
 def _is_terminal_completion_chunk(chunk: ProviderStreamChunk) -> bool:

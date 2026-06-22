@@ -103,6 +103,7 @@ export function updateAssistantStatus(
 export function completeAssistantMessage(
   messages: TranscriptMessage[],
   assistantMessageId: number,
+  resultCode: string,
   resultMessage: string,
   finishReason: string | null,
 ): TranscriptMessage[] {
@@ -114,7 +115,7 @@ export function completeAssistantMessage(
           streamStatusCode: undefined,
           streamStatusMessage: undefined,
           completionNote: resultMessage,
-          resultCode: "success",
+          resultCode,
           detail: finishReason ? `finish reason: ${finishReason}` : undefined,
         }
       : message,

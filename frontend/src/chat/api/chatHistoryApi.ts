@@ -1,5 +1,6 @@
 import { getApiErrorMessage, readJson } from "../../api/http";
 import { AuthenticationRequiredError, SessionConflictError } from "../../auth/authErrors";
+import { ChatDraftExpiredError } from "./errors";
 import type {
   ChatCompletionApiError,
   ChatDraftApiEnvelope,
@@ -232,6 +233,9 @@ export async function uploadChatFile(
   }
 
   const payload = (await readJson(response)) as ChatHistoryFilesApiEnvelope | ChatCompletionApiError | null;
+  if (response.status === 404 && draftChatId && !chatHistoryId) {
+    throw new ChatDraftExpiredError(getApiErrorMessage(response, payload, "chat draft expired"));
+  }
   if (!response.ok) {
     throw new Error(getApiErrorMessage(response, payload, "failed to upload chat file"));
   }

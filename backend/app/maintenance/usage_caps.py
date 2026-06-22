@@ -10,7 +10,7 @@ from app.config.time import utc_now
 from app.db.postgres.models.user import User
 from app.db.postgres.models.user_usage_cap import UserUsageCap
 from app.db.postgres.session import SessionLocal
-from app.services.usage_caps import get_user_estimated_usage_usd
+from app.services.usage_ledger import get_user_estimated_usage_usd
 
 
 def main() -> None:
@@ -56,15 +56,11 @@ def list_usage_caps(db, *, limit: int) -> None:
             """
             WITH usage_by_user AS (
                 SELECT
-                    ch.user_id,
-                    COALESCE(SUM((cm.usage->'price_estimate'->>'total_cost_usd')::numeric), 0) AS current_usage_usd
-                FROM chat_histories ch
-                LEFT JOIN chat_messages cm
-                  ON cm.chat_history_id = ch.id
-                 AND cm.role = 'assistant'
-                 AND cm.usage IS NOT NULL
-                 AND cm.usage->'price_estimate' IS NOT NULL
-                GROUP BY ch.user_id
+                    ule.user_id,
+                    COALESCE(SUM(ule.total_cost_usd), 0) AS current_usage_usd
+                FROM usage_ledger_events ule
+                WHERE ule.status IN ('billable', 'adjustment')
+                GROUP BY ule.user_id
             )
             SELECT
                 u.id,

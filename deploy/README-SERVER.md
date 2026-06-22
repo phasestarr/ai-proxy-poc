@@ -24,7 +24,7 @@ Before first startup:
 - keep `AUTH_COOKIE_SECURE=true`
 - keep `AI_PROXY_CONTAINER_NAME=ai-proxy` unless sibling `root-proxy` changes too
 - confirm `GOOGLE_APPLICATION_CREDENTIALS` points to a file mounted from `../secrets/`
-- confirm provider keys and retrieval/vector settings match the providers you intend to expose
+- confirm Vertex AI, OpenAI, and Anthropic provider keys/settings are ready for deployment smoke
 
 ## Commands
 

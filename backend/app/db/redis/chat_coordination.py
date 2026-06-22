@@ -31,6 +31,13 @@ end
 return 0
 """
 
+EXTEND_LOCK_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('expire', KEYS[1], ARGV[2])
+end
+return 0
+"""
+
 
 class ChatCoordinationUnavailableError(RuntimeError):
     """Raised when Redis-backed coordination cannot run."""
@@ -66,24 +73,34 @@ class ChatExecutionLease:
     owner_token: str
 
 
-def acquire_chat_execution_lease(*, chat_history_id: str) -> ChatExecutionLease:
+def acquire_chat_execution_lease(
+    *,
+    chat_history_id: str,
+    ttl_seconds: int | None = None,
+) -> ChatExecutionLease:
     redis_client = get_redis_client()
     lock_key = _build_lock_key(chat_history_id=chat_history_id)
     owner_token = secrets.token_urlsafe(24)
+    effective_ttl_seconds = max(
+        1,
+        ttl_seconds
+        if ttl_seconds is not None
+        else settings.chat_provider_first_response_timeout_seconds,
+    )
 
     try:
         acquired = redis_client.set(
             lock_key,
             owner_token,
             nx=True,
-            ex=max(1, settings.chat_provider_idle_timeout_seconds),
+            ex=effective_ttl_seconds,
         )
         if acquired:
             return ChatExecutionLease(lock_key=lock_key, owner_token=owner_token)
 
         retry_after_seconds = _normalize_retry_after(
             redis_client.ttl(lock_key),
-            fallback_seconds=settings.chat_provider_idle_timeout_seconds,
+            fallback_seconds=effective_ttl_seconds,
         )
         raise ChatRequestInProgressError(retry_after_seconds=retry_after_seconds)
     except ChatRequestInProgressError:
@@ -140,6 +157,25 @@ def release_chat_execution_lease(lease: ChatExecutionLease | None) -> None:
         )
     except RedisError:
         return
+
+
+def extend_chat_execution_lease(
+    lease: ChatExecutionLease,
+    *,
+    ttl_seconds: int,
+) -> bool:
+    try:
+        result = get_redis_client().eval(
+            EXTEND_LOCK_SCRIPT,
+            1,
+            lease.lock_key,
+            lease.owner_token,
+            max(1, ttl_seconds),
+        )
+    except RedisError as exc:
+        raise ChatCoordinationUnavailableError("chat coordination backend is unavailable") from exc
+    return bool(result)
+
 
 def _build_lock_key(*, chat_history_id: str) -> str:
     return f"{LOCK_KEY_PREFIX}:{chat_history_id}"

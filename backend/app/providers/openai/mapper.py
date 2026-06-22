@@ -72,6 +72,22 @@ def map_openai_stream_event(
             ),
         )
 
+    if event_type == "response.incomplete":
+        response = getattr(event, "response", None)
+        incomplete_details = getattr(response, "incomplete_details", None)
+        reason = getattr(incomplete_details, "reason", None) if incomplete_details is not None else None
+        return ProviderStreamChunk(
+            response_id=getattr(response, "id", None),
+            model_version=getattr(response, "model", None),
+            finish_reason=reason or getattr(response, "status", None) or "incomplete",
+            usage=map_openai_usage(
+                getattr(response, "usage", None),
+                public_model_id=public_model_id,
+                selected_tool_ids=selected_tool_ids,
+                response_output=getattr(response, "output", None),
+            ),
+        )
+
     return None
 
 

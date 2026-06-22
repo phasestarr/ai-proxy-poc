@@ -36,6 +36,9 @@ docker exec ai-proxy-api python -m app.maintenance.attachment_provider_files --h
 - If a selected provider copy was deleted out of band, send-time checks the current remote id, notices the miss, and recreates it from PostgreSQL before continuing.
 - Housekeeping clears dead remote refs and deletes stale remote copies after the configured TTL.
 - PostgreSQL blobs stay in place even after remote copies are deleted.
+- When the last logical history reference is deleted, `stored_files.lifecycle_state` moves from `active` to `pending_delete` while provider remote refs are deleted.
+- If any provider delete fails, the blob remains in PostgreSQL as `delete_failed` with `delete_error`, `delete_attempt_count`, `delete_last_attempt_at`, and `delete_next_attempt_at`.
+- Housekeeping retries due `pending_delete` and `delete_failed` blobs with backoff. It logs `attachment_blob_delete_failed` only on the transition into failed state, so repeated retry failures do not flood `operator_events`.
 
 ## Quick Checks
 
@@ -55,6 +58,12 @@ Inspect one user's local blobs:
 
 ```powershell
 docker exec ai-proxy-api python -m app.maintenance.attachment_provider_files list-db-blobs --user-id PUT_USER_ID_HERE
+```
+
+Inspect blobs waiting for delete retry directly in PostgreSQL:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, lifecycle_state, delete_attempt_count, delete_error, delete_last_attempt_at, delete_next_attempt_at FROM stored_files WHERE lifecycle_state IN ('pending_delete', 'delete_failed') ORDER BY delete_next_attempt_at NULLS FIRST, updated_at;"
 ```
 
 Inspect DB-tracked remote refs only:
@@ -125,7 +134,7 @@ docker exec ai-proxy-api python -m app.maintenance.attachment_provider_files ins
 
 The consistency report checks:
 
-- local PostgreSQL blob count and orphan local blobs
+- local PostgreSQL blob count, orphan local blobs, and blob lifecycle state
 - DB provider refs missing from remote storage
 - remote files missing any DB ref
 - duplicate DB provider file ids
@@ -168,7 +177,7 @@ docker exec ai-proxy-api python -m app.maintenance.attachment_provider_files rec
 - clears DB refs whose remote file is already gone
 - deletes remote files that have no DB ref
 
-It does not delete local PostgreSQL orphan blobs. Those are reported for manual review.
+It does not delete local PostgreSQL orphan blobs. Runtime housekeeping deletes unreferenced blobs through the `pending_delete` / `delete_failed` lifecycle after provider remote refs are cleared.
 
 With the current runtime, reconciliation is no longer required for basic recovery after an out-of-band remote delete. The next send now verifies the stored remote id and reuploads if the file is gone. Reconciliation is still useful for cleaning stale metadata and remote orphan files.
 

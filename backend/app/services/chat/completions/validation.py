@@ -22,18 +22,18 @@ from app.services.usage_caps import enforce_user_usage_cap
 
 
 @dataclass(slots=True, frozen=True)
-class ChatPreflightResult:
+class ChatValidationResult:
     route: ProviderRoute
     history_id: str
     draft_chat_id: str | None = None
 
 
-def run_chat_preflight(
+def run_chat_validation(
     *,
     payload: ChatCompletionRequest,
     session: SessionContext,
     db: Session,
-) -> ChatPreflightResult:
+) -> ChatValidationResult:
     try:
         prepared = prepare_chat_completion_request(payload, session=session)
     except ValueError as exc:
@@ -76,7 +76,7 @@ def run_chat_preflight(
             http_status=503,
         ) from exc
 
-    return ChatPreflightResult(
+    return ChatValidationResult(
         route=route,
         history_id=history_id,
         draft_chat_id=draft_chat_id,

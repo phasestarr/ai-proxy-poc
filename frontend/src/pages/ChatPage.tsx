@@ -5,6 +5,7 @@ import { AuthenticationRequiredError, SessionConflictError } from "../auth/authE
 import type { AuthSession, SessionConflictInfo } from "../auth/authTypes";
 import {
   createChatDraft,
+  ChatDraftExpiredError,
   deleteChatFile,
   deleteChatHistory,
   fetchChatHistories,
@@ -18,6 +19,7 @@ import {
   type ChatDraft,
   type ChatHistoryFile,
   type ChatHistory,
+  type ChatHistoryFilesMutation,
   type ChatHistorySummary,
   unpinChatHistory,
 } from "../chat/api";
@@ -337,7 +339,22 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
         setActiveDraft(createdDraft);
       }
 
-      const result = await uploadChatFile(file, activeChatHistoryIdRef.current, targetDraftChatId);
+      let result: ChatHistoryFilesMutation;
+      try {
+        result = await uploadChatFile(file, activeChatHistoryIdRef.current, targetDraftChatId);
+      } catch (error) {
+        if (error instanceof ChatDraftExpiredError && !activeChatHistoryIdRef.current && targetDraftChatId) {
+          activeDraftChatIdRef.current = null;
+          setActiveDraft(null);
+          const createdDraft = await createChatDraft();
+          targetDraftChatId = createdDraft.draftChatId;
+          activeDraftChatIdRef.current = targetDraftChatId;
+          setActiveDraft(createdDraft);
+          result = await uploadChatFile(file, null, targetDraftChatId);
+        } else {
+          throw error;
+        }
+      }
       setAttachmentLimits(result.attachmentLimits);
       if (result.history) {
         setActiveChatHistoryId(result.history.id);
@@ -591,48 +608,72 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
         throw new Error("conversation id is required before streaming");
       }
 
-      await streamChatReply({
-        chatHistoryId: targetHistoryId,
-        draftChatId: targetDraftChatId,
-        messages: requestMessages,
-        selection: chatSelection,
-        onStart: (start) => {
-          didStart = true;
-          setActiveChatHistoryId(start.chatHistoryId);
+      const streamOnce = () =>
+        streamChatReply({
+          chatHistoryId: targetHistoryId,
+          draftChatId: targetDraftChatId,
+          messages: requestMessages,
+          selection: chatSelection,
+          onStart: (start) => {
+            didStart = true;
+            setActiveChatHistoryId(start.chatHistoryId);
+            setActiveDraft(null);
+            void refreshHistorySummaries();
+          },
+          onStatus: (statusEvent) => {
+            setMessages((current) =>
+              updateAssistantStatus(current, assistantMessageId, statusEvent.statusCode, statusEvent.statusMessage),
+            );
+          },
+          onDelta: (deltaText) => {
+            startTransition(() => {
+              setMessages((current) => appendAssistantDelta(current, assistantMessageId, deltaText));
+            });
+          },
+          onDone: (completion) => {
+            setMessages((current) =>
+              completeAssistantMessage(
+                current,
+                assistantMessageId,
+                completion.resultCode,
+                completion.resultMessage,
+                completion.finishReason,
+              ),
+            );
+          },
+          onError: (streamError) => {
+            streamErrorHandled = true;
+            const detail = streamError.detail ?? streamError.resultMessage ?? "chat streaming failed";
+            const resultMessage = streamError.resultMessage ?? detail;
+            setMessages((current) =>
+              failAssistantMessage(
+                current,
+                userMessageId,
+                assistantMessageId,
+                streamError.resultCode,
+                resultMessage,
+                detail,
+              ),
+            );
+          },
+        });
+
+      try {
+        await streamOnce();
+      } catch (error) {
+        if (error instanceof ChatDraftExpiredError && !targetHistoryId && targetDraftChatId && !didStart) {
+          targetDraftChatId = null;
+          activeDraftChatIdRef.current = null;
           setActiveDraft(null);
-          void refreshHistorySummaries();
-        },
-        onStatus: (statusEvent) => {
-          setMessages((current) =>
-            updateAssistantStatus(current, assistantMessageId, statusEvent.statusCode, statusEvent.statusMessage),
-          );
-        },
-        onDelta: (deltaText) => {
-          startTransition(() => {
-            setMessages((current) => appendAssistantDelta(current, assistantMessageId, deltaText));
-          });
-        },
-        onDone: (completion) => {
-          setMessages((current) =>
-            completeAssistantMessage(current, assistantMessageId, completion.resultMessage, completion.finishReason),
-          );
-        },
-        onError: (streamError) => {
-          streamErrorHandled = true;
-          const detail = streamError.detail ?? streamError.resultMessage ?? "chat streaming failed";
-          const resultMessage = streamError.resultMessage ?? detail;
-          setMessages((current) =>
-            failAssistantMessage(
-              current,
-              userMessageId,
-              assistantMessageId,
-              streamError.resultCode,
-              resultMessage,
-              detail,
-            ),
-          );
-        },
-      });
+          const createdDraft = await createChatDraft();
+          targetDraftChatId = createdDraft.draftChatId;
+          activeDraftChatIdRef.current = targetDraftChatId;
+          setActiveDraft(createdDraft);
+          await streamOnce();
+        } else {
+          throw error;
+        }
+      }
     } catch (error) {
       if (error instanceof AuthenticationRequiredError) {
         onSessionExpired();

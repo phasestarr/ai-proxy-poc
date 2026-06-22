@@ -64,7 +64,9 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
   - returns `text/event-stream`
 - `POST /api/v1/chat/drafts`
   - authenticated
-  - creates a 15-minute Redis-backed draft id for the first send of a new local conversation
+  - creates a Redis-backed draft id for the first send of a new local conversation
+  - draft TTL uses `CHAT_DRAFT_TTL_SECONDS`
+  - attachment mutation locks use `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`
 - `POST /api/v1/chat/files`
   - authenticated
   - uploads one file to either an owned `chat_history_id` or an owned `draft_chat_id`
@@ -107,7 +109,7 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 Important:
 - those validation limits are request-schema limits, not provider token-window limits
 - when `chat_history_id` is present, backend rebuilds provider context from persisted non-error messages and treats the request's last user message as the new turn
-- when `draft_chat_id` is present, backend treats the request as the first turn of a new persisted history if preflight succeeds
+- when `draft_chat_id` is present, backend treats the request as the first turn of a new persisted history if send validation succeeds
 - backend may run an internal context-compaction step before the main provider request when estimated provider input is above the soft threshold
 - local validation or coordination rejects do not create a persisted turn
 - on the first real send from a brand-new local conversation, the frontend calls `POST /api/v1/chat/drafts` first, then calls `POST /api/v1/chat/completions`

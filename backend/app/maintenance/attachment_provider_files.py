@@ -63,6 +63,11 @@ class DbStoredFileRow:
     sha256: str
     mime_type: str
     byte_size: int
+    lifecycle_state: str
+    delete_error: str | None
+    delete_attempt_count: int
+    delete_last_attempt_at: datetime | None
+    delete_next_attempt_at: datetime | None
     created_at: datetime
     updated_at: datetime
     history_ref_count: int
@@ -76,6 +81,7 @@ class LocalBlobSummary:
     stored_file_id: str
     user_id: str
     byte_size: int
+    lifecycle_state: str
     created_at: datetime
 
 
@@ -323,6 +329,11 @@ def list_db_blobs(
                     StoredFile.sha256,
                     StoredFile.mime_type,
                     StoredFile.byte_size,
+                    StoredFile.lifecycle_state,
+                    StoredFile.delete_error,
+                    StoredFile.delete_attempt_count,
+                    StoredFile.delete_last_attempt_at,
+                    StoredFile.delete_next_attempt_at,
                     StoredFile.created_at,
                     StoredFile.updated_at,
                 ),
@@ -382,6 +393,11 @@ def list_db_blobs(
                     sha256=stored_file.sha256,
                     mime_type=stored_file.mime_type,
                     byte_size=stored_file.byte_size,
+                    lifecycle_state=stored_file.lifecycle_state,
+                    delete_error=stored_file.delete_error,
+                    delete_attempt_count=stored_file.delete_attempt_count,
+                    delete_last_attempt_at=stored_file.delete_last_attempt_at,
+                    delete_next_attempt_at=stored_file.delete_next_attempt_at,
                     created_at=stored_file.created_at,
                     updated_at=stored_file.updated_at,
                     history_ref_count=len(history_refs),
@@ -921,6 +937,7 @@ def list_local_blob_summary() -> dict[str, list[LocalBlobSummary]]:
                     StoredFile.id,
                     StoredFile.user_id,
                     StoredFile.byte_size,
+                    StoredFile.lifecycle_state,
                     StoredFile.created_at,
                 ),
                 selectinload(StoredFile.history_files).load_only(ChatHistoryFile.id),
@@ -933,6 +950,7 @@ def list_local_blob_summary() -> dict[str, list[LocalBlobSummary]]:
                 stored_file_id=stored_file.id,
                 user_id=stored_file.user_id,
                 byte_size=stored_file.byte_size,
+                lifecycle_state=stored_file.lifecycle_state,
                 created_at=stored_file.created_at,
             )
             for stored_file in stored_files
@@ -942,6 +960,7 @@ def list_local_blob_summary() -> dict[str, list[LocalBlobSummary]]:
                 stored_file_id=stored_file.id,
                 user_id=stored_file.user_id,
                 byte_size=stored_file.byte_size,
+                lifecycle_state=stored_file.lifecycle_state,
                 created_at=stored_file.created_at,
             )
             for stored_file in stored_files

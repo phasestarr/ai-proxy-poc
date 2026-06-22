@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.auth.types import SessionContext
@@ -12,6 +11,7 @@ from app.db.postgres.models.user_usage_cap import UserUsageCap
 from app.providers.types import ProviderRoute
 from app.schemas.chat import ChatCompletionRequest
 from app.services.chat.errors import ChatProxyError
+from app.services.usage_ledger import get_user_estimated_usage_usd
 
 
 @dataclass(slots=True, frozen=True)
@@ -71,24 +71,6 @@ def get_user_usage_cap_state(db: Session, *, user_id: str) -> UserUsageCapState:
         cap_usd=cap_usd,
         enabled=enabled,
     )
-
-
-def get_user_estimated_usage_usd(db: Session, *, user_id: str) -> Decimal:
-    value = db.execute(
-        text(
-            """
-            SELECT COALESCE(SUM((cm.usage->'price_estimate'->>'total_cost_usd')::numeric), 0)
-            FROM chat_messages cm
-            JOIN chat_histories ch ON ch.id = cm.chat_history_id
-            WHERE ch.user_id = :user_id
-              AND cm.role = 'assistant'
-              AND cm.usage IS NOT NULL
-              AND cm.usage->'price_estimate' IS NOT NULL
-            """
-        ),
-        {"user_id": user_id},
-    ).scalar_one()
-    return _decimal(value)
 
 
 def _decimal(value: object) -> Decimal:

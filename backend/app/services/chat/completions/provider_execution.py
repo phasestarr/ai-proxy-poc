@@ -6,13 +6,30 @@ import logging
 from app.config.settings import settings
 from app.config.chat_outcomes import SUCCESS_RESULT_CODE, pick_success_message
 from app.db.postgres.session import SessionLocal
-from app.providers.anthropic.outcomes import ANTHROPIC_SUCCESS_RESULT_CODE, pick_anthropic_success_message
+from app.db.redis.chat_coordination import (
+    ChatCoordinationUnavailableError,
+    ChatExecutionLease,
+    extend_chat_execution_lease,
+)
+from app.providers.anthropic.outcomes import (
+    ANTHROPIC_SUCCESS_RESULT_CODE,
+    get_anthropic_result_message,
+    pick_anthropic_success_message,
+)
 from app.providers.dispatcher import ProviderExecutionError, stream_provider_chat_completion
-from app.providers.openai.outcomes import OPENAI_SUCCESS_RESULT_CODE, pick_openai_success_message
+from app.providers.openai.outcomes import (
+    OPENAI_SUCCESS_RESULT_CODE,
+    get_openai_result_message,
+    pick_openai_success_message,
+)
 from app.providers.types import PreparedProviderChatRequest, ProviderRoute, ProviderStreamChunk
-from app.providers.vertex.outcomes import VERTEX_SUCCESS_RESULT_CODE, pick_vertex_success_message
+from app.providers.vertex.outcomes import (
+    VERTEX_SUCCESS_RESULT_CODE,
+    get_vertex_result_message,
+    pick_vertex_success_message,
+)
 from app.schemas.chat import ChatStreamDeltaEvent, ChatStreamDoneEvent, ChatStreamStatusEvent, ChatUsageSummary
-from app.services.chat.completions.preflight import build_safe_error_detail
+from app.services.chat.completions.validation import build_safe_error_detail
 from app.services.chat.completions.sse import LiveChatStreamSink, build_error_event
 from app.services.chat.completions.turn_persistence import (
     PersistedChatTurn,
@@ -33,54 +50,54 @@ async def run_chat_completion_turn(
     prepared_request: PreparedProviderChatRequest,
     route: ProviderRoute,
     sink: LiveChatStreamSink,
+    lease: ChatExecutionLease,
+    first_response_deadline: float,
+    first_response_timeout_seconds: int,
 ) -> None:
     last_chunk: ProviderStreamChunk | None = None
     accumulated_text = ""
     last_status_code: str | None = None
+    stream_timeout_seconds = max(1, settings.chat_provider_stream_timeout_seconds)
+    stream = None
 
     try:
         stream = stream_provider_chat_completion(prepared_request=prepared_request).__aiter__()
         try:
-            first_chunk = await asyncio.wait_for(
-                anext(stream),
-                timeout=max(1, settings.chat_provider_idle_timeout_seconds),
+            first_chunk = await _next_provider_chunk(
+                stream,
+                deadline=first_response_deadline,
             )
         except StopAsyncIteration:
             first_chunk = None
         except TimeoutError:
-            error = ChatProxyError(
-                code="provider_first_response_timeout",
-                origin="proxy",
-                detail=build_safe_error_detail("provider_first_response_timeout"),
-                http_status=504,
-                provider=route.model.provider,
+            await _close_provider_stream(stream)
+            persist_provider_timeout(
+                turn=turn,
+                route=route,
+                sink=sink,
+                accumulated_text=accumulated_text,
+                first_response_received=False,
+                first_response_timeout_seconds=first_response_timeout_seconds,
+                stream_timeout_seconds=stream_timeout_seconds,
             )
-            persist_turn_failure(turn, accumulated_text, error)
-            with SessionLocal() as event_db:
-                persist_operator_event(
-                    event_db,
-                    event_type="chat_provider_first_response_timeout",
-                    severity="error",
-                    user_id=None,
-                    chat_history_id=turn.history_id,
-                    chat_message_id=turn.assistant_message_id,
-                    model_id=route.model.public_id,
-                    provider=route.model.provider,
-                    operation="chat_completion",
-                    result_code=error.code,
-                    http_status=error.http_status,
-                    message=error.result_message,
-                    detail=error.detail,
-                    metadata={
-                        "timeout_seconds": max(1, settings.chat_provider_idle_timeout_seconds),
-                        "user_message_id": turn.user_message_id,
-                    },
-                )
-            sink.emit("error", build_error_event(error))
             return
 
         if first_chunk is not None:
-            mark_turn_first_response(turn)
+            if not mark_turn_first_response(
+                turn,
+                lease=lease,
+                stream_timeout_seconds=stream_timeout_seconds,
+            ):
+                persist_provider_timeout(
+                    turn=turn,
+                    route=route,
+                    sink=sink,
+                    accumulated_text=accumulated_text,
+                    first_response_received=False,
+                    first_response_timeout_seconds=first_response_timeout_seconds,
+                    stream_timeout_seconds=stream_timeout_seconds,
+                )
+                return
             last_chunk, accumulated_text, last_status_code = emit_provider_chunk(
                 chunk=first_chunk,
                 route=route,
@@ -89,7 +106,24 @@ async def run_chat_completion_turn(
                 last_status_code=last_status_code,
             )
 
-        async for chunk in stream:
+        stream_deadline = asyncio.get_running_loop().time() + stream_timeout_seconds
+        while True:
+            try:
+                chunk = await _next_provider_chunk(stream, deadline=stream_deadline)
+            except StopAsyncIteration:
+                break
+            except TimeoutError:
+                await _close_provider_stream(stream)
+                persist_provider_timeout(
+                    turn=turn,
+                    route=route,
+                    sink=sink,
+                    accumulated_text=accumulated_text,
+                    first_response_received=True,
+                    first_response_timeout_seconds=first_response_timeout_seconds,
+                    stream_timeout_seconds=stream_timeout_seconds,
+                )
+                return
             last_chunk, accumulated_text, last_status_code = emit_provider_chunk(
                 chunk=chunk,
                 route=route,
@@ -120,6 +154,9 @@ async def run_chat_completion_turn(
         persist_turn_failure_event(turn=turn, route=route, error=error)
         sink.emit("error", build_error_event(error))
         return
+    finally:
+        if stream is not None:
+            await _close_provider_stream(stream)
 
     result_code, result_message = build_success_outcome(
         route=route,
@@ -129,6 +166,8 @@ async def run_chat_completion_turn(
         persisted = persist_chat_turn_success(
             stream_db,
             history_id=turn.history_id,
+            user_id=turn.user_id,
+            auth_session_id=turn.auth_session_id,
             assistant_message_id=turn.assistant_message_id,
             content=accumulated_text,
             finish_reason=last_chunk.finish_reason if last_chunk else None,
@@ -178,12 +217,25 @@ def emit_provider_chunk(
     return chunk, accumulated_text, last_status_code
 
 
-def mark_turn_first_response(turn: PersistedChatTurn) -> None:
+def mark_turn_first_response(
+    turn: PersistedChatTurn,
+    *,
+    lease: ChatExecutionLease,
+    stream_timeout_seconds: int,
+) -> bool:
+    try:
+        if not extend_chat_execution_lease(lease, ttl_seconds=stream_timeout_seconds):
+            return False
+    except ChatCoordinationUnavailableError:
+        logger.exception("Failed to extend chat execution lease after first provider response.")
+        return False
     with SessionLocal() as stream_db:
         persist_chat_turn_first_response(
             stream_db,
             assistant_message_id=turn.assistant_message_id,
+            stream_timeout_seconds=stream_timeout_seconds,
         )
+    return True
 
 
 def map_usage_summary(chunk: ProviderStreamChunk | None) -> ChatUsageSummary | None:
@@ -233,6 +285,8 @@ def persist_turn_failure_event(
             event_db,
             event_type="chat_turn_failed",
             severity="error" if (error.http_status or 500) >= 500 else "warning",
+            user_id=turn.user_id,
+            auth_session_id=turn.auth_session_id,
             chat_history_id=turn.history_id,
             chat_message_id=turn.assistant_message_id,
             model_id=route.model.public_id,
@@ -249,14 +303,143 @@ def persist_turn_failure_event(
 
 def build_success_outcome(*, route: ProviderRoute, finish_reason: str | None) -> tuple[str, str]:
     if route.model.provider == "openai":
+        if finish_reason and finish_reason != "completed":
+            result_code = "openai_response_incomplete"
+            return result_code, get_openai_result_message(result_code)
         return OPENAI_SUCCESS_RESULT_CODE, pick_openai_success_message()
     if route.model.provider == "anthropic":
-        if finish_reason == "stop_sequence":
-            return "anthropic_stop_stop_sequence", pick_anthropic_success_message()
-        return ANTHROPIC_SUCCESS_RESULT_CODE, pick_anthropic_success_message()
+        result_code = map_anthropic_finish_result_code(finish_reason)
+        if result_code in {ANTHROPIC_SUCCESS_RESULT_CODE, "anthropic_stop_stop_sequence"}:
+            return result_code, pick_anthropic_success_message()
+        return result_code, get_anthropic_result_message(result_code)
     if route.model.provider == "vertex_ai":
-        return VERTEX_SUCCESS_RESULT_CODE, pick_vertex_success_message()
+        result_code = map_vertex_finish_result_code(finish_reason)
+        if result_code == VERTEX_SUCCESS_RESULT_CODE:
+            return result_code, pick_vertex_success_message()
+        return result_code, get_vertex_result_message(result_code)
     return SUCCESS_RESULT_CODE, pick_success_message()
+
+
+def map_anthropic_finish_result_code(finish_reason: str | None) -> str:
+    if finish_reason in {None, "end_turn"}:
+        return ANTHROPIC_SUCCESS_RESULT_CODE
+    result_code_by_stop_reason = {
+        "stop_sequence": "anthropic_stop_stop_sequence",
+        "max_tokens": "anthropic_stop_max_tokens",
+        "tool_use": "anthropic_stop_tool_use",
+        "pause_turn": "anthropic_stop_pause_turn",
+        "refusal": "anthropic_stop_refusal",
+        "model_context_window_exceeded": "anthropic_stop_model_context_window_exceeded",
+    }
+    return result_code_by_stop_reason.get(finish_reason, "anthropic_stream_error")
+
+
+def map_vertex_finish_result_code(finish_reason: str | None) -> str:
+    if finish_reason in {None, "STOP"}:
+        return VERTEX_SUCCESS_RESULT_CODE
+    result_code_by_finish_reason = {
+        "MAX_TOKENS": "vertex_finish_max_tokens",
+        "SAFETY": "vertex_finish_safety",
+        "RECITATION": "vertex_finish_recitation",
+        "OTHER": "vertex_finish_other",
+        "BLOCKLIST": "vertex_finish_blocklist",
+        "PROHIBITED_CONTENT": "vertex_finish_prohibited_content",
+        "SPII": "vertex_finish_spii",
+        "MALFORMED_FUNCTION_CALL": "vertex_finish_malformed_function_call",
+        "MODEL_ARMOR": "vertex_finish_model_armor",
+        "IMAGE_SAFETY": "vertex_finish_image_safety",
+        "IMAGE_PROHIBITED_CONTENT": "vertex_finish_image_prohibited_content",
+        "IMAGE_RECITATION": "vertex_finish_image_recitation",
+        "IMAGE_OTHER": "vertex_finish_image_other",
+        "UNEXPECTED_TOOL_CALL": "vertex_finish_unexpected_tool_call",
+        "NO_IMAGE": "vertex_finish_no_image",
+    }
+    return result_code_by_finish_reason.get(finish_reason, "vertex_stream_error")
+
+
+async def _next_provider_chunk(
+    stream,
+    *,
+    timeout_seconds: float | None = None,
+    deadline: float | None = None,
+) -> ProviderStreamChunk:
+    effective_timeout_seconds = timeout_seconds
+    if deadline is not None:
+        remaining_seconds = deadline - asyncio.get_running_loop().time()
+        if remaining_seconds <= 0:
+            raise TimeoutError
+        effective_timeout_seconds = (
+            remaining_seconds
+            if effective_timeout_seconds is None
+            else min(effective_timeout_seconds, remaining_seconds)
+        )
+    if effective_timeout_seconds is None:
+        effective_timeout_seconds = max(1, settings.chat_provider_stream_timeout_seconds)
+    return await asyncio.wait_for(
+        anext(stream),
+        timeout=effective_timeout_seconds,
+    )
+
+
+async def _close_provider_stream(stream) -> None:
+    close = getattr(stream, "aclose", None)
+    if not callable(close):
+        return
+    try:
+        await close()
+    except Exception:
+        logger.exception("Failed to close provider stream.")
+
+
+def persist_provider_timeout(
+    *,
+    turn: PersistedChatTurn,
+    route: ProviderRoute,
+    sink: LiveChatStreamSink,
+    accumulated_text: str,
+    first_response_received: bool,
+    first_response_timeout_seconds: int,
+    stream_timeout_seconds: int,
+) -> None:
+    code = "provider_response_timeout" if first_response_received else "provider_first_response_timeout"
+    event_type = (
+        "chat_provider_response_timeout"
+        if first_response_received
+        else "chat_provider_first_response_timeout"
+    )
+    error = ChatProxyError(
+        code=code,
+        origin="proxy",
+        detail=build_safe_error_detail(code),
+        http_status=504,
+        provider=route.model.provider,
+    )
+    persist_turn_failure(turn, accumulated_text, error)
+    with SessionLocal() as event_db:
+        persist_operator_event(
+            event_db,
+            event_type=event_type,
+            severity="error",
+            user_id=turn.user_id,
+            auth_session_id=turn.auth_session_id,
+            chat_history_id=turn.history_id,
+            chat_message_id=turn.assistant_message_id,
+            model_id=route.model.public_id,
+            provider=route.model.provider,
+            operation="chat_completion",
+            result_code=error.code,
+            http_status=error.http_status,
+            message=error.result_message,
+            detail=error.detail,
+            metadata={
+                "first_response_timeout_seconds": first_response_timeout_seconds,
+                "stream_timeout_seconds": stream_timeout_seconds,
+                "timeout_phase": "stream" if first_response_received else "first_response",
+                "user_message_id": turn.user_message_id,
+                "first_response_received": first_response_received,
+            },
+        )
+    sink.emit("error", build_error_event(error))
 
 
 def map_provider_execution_error(exc: ProviderExecutionError) -> ChatProxyError:

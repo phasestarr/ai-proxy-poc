@@ -217,14 +217,14 @@ async def best_effort_delete_provider_files(*, stored_file: StoredFile) -> None:
             )
 
 
-async def delete_provider_files_for_stored_file(*, stored_file: StoredFile) -> bool:
+async def delete_provider_files_for_stored_file(*, stored_file: StoredFile) -> tuple[bool, list[str]]:
     delete_targets = [
         provider_state
         for provider_state in stored_file.provider_states
         if provider_state.provider_file_id
     ]
     if not delete_targets:
-        return True
+        return True, []
 
     outcomes = await asyncio.gather(
         *(
@@ -237,11 +237,13 @@ async def delete_provider_files_for_stored_file(*, stored_file: StoredFile) -> b
         return_exceptions=True,
     )
     delete_succeeded = True
+    errors: list[str] = []
     for provider_state, outcome in zip(delete_targets, outcomes, strict=False):
         if not isinstance(outcome, Exception):
             mark_provider_state_not_uploaded(provider_state)
             continue
         delete_succeeded = False
+        errors.append(f"{provider_state.provider}: {outcome}")
         logger.error(
             "Attachment provider file cleanup failed; keeping stored file.",
             exc_info=(type(outcome), outcome, outcome.__traceback__),
@@ -251,13 +253,7 @@ async def delete_provider_files_for_stored_file(*, stored_file: StoredFile) -> b
                 "stored_file_id": stored_file.id,
             },
         )
-        _log_attachment_remote_delete_failure(
-            provider=provider_state.provider,
-            provider_file_id=provider_state.provider_file_id,
-            stored_file_id=stored_file.id,
-            detail=str(outcome),
-        )
-    return delete_succeeded
+    return delete_succeeded, errors
 
 
 async def best_effort_delete_remote_provider_file(*, provider: str, provider_file_id: str) -> None:

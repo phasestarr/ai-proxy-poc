@@ -24,7 +24,6 @@ from app.providers.anthropic.models import resolve_anthropic_model_runtime
 from app.providers.anthropic.outcomes import (
     build_anthropic_empty_output_detail,
     build_anthropic_status_error_detail,
-    build_anthropic_stop_detail,
     build_anthropic_stream_error_detail,
     get_anthropic_result_message,
 )
@@ -128,14 +127,6 @@ async def stream_prepared_anthropic_chat_completion(
                 "Claude stream ended without a terminal stop_reason.",
                 result_code=result_code,
                 result_message=get_anthropic_result_message(result_code),
-            )
-
-        terminal_failure = _map_anthropic_terminal_failure(last_stop_reason)
-        if terminal_failure is not None:
-            raise AnthropicProviderError(
-                terminal_failure.detail,
-                result_code=terminal_failure.result_code,
-                result_message=terminal_failure.result_message,
             )
 
         if not saw_visible_text:
@@ -262,25 +253,6 @@ def extract_anthropic_stream_error(event) -> _AnthropicStreamFailure | None:
         result_message=get_anthropic_result_message(result_code),
         detail=build_anthropic_stream_error_detail(error_type=error_type, message=message),
         error_code=error_type,
-    )
-
-
-def _map_anthropic_terminal_failure(stop_reason: str | None) -> _AnthropicStreamFailure | None:
-    if stop_reason in {None, "end_turn", "stop_sequence"}:
-        return None
-
-    result_code_by_stop_reason = {
-        "max_tokens": "anthropic_stop_max_tokens",
-        "tool_use": "anthropic_stop_tool_use",
-        "pause_turn": "anthropic_stop_pause_turn",
-        "refusal": "anthropic_stop_refusal",
-        "model_context_window_exceeded": "anthropic_stop_model_context_window_exceeded",
-    }
-    result_code = result_code_by_stop_reason.get(stop_reason, "anthropic_stream_error")
-    return _AnthropicStreamFailure(
-        result_code=result_code,
-        result_message=get_anthropic_result_message(result_code),
-        detail=build_anthropic_stop_detail(stop_reason=stop_reason),
     )
 
 

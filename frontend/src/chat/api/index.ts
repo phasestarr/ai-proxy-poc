@@ -11,6 +11,7 @@ export {
   uploadChatFile,
   unpinChatHistory,
 } from "./chatHistoryApi";
+export { ChatDraftExpiredError } from "./errors";
 export { streamChatReply } from "./streamChatApi";
 export type {
   ChatAttachmentLimits,

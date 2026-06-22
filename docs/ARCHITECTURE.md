@@ -38,7 +38,7 @@ Current runtime and code ownership for AI Proxy.
 13. File upload goes through `POST /api/v1/chat/files` with either a real `chat_history_id` or a `draft_chat_id`.
 14. If the first file upload succeeds, the backend promotes that draft id into the persisted `chat_history.id` immediately and deletes the Redis draft.
 15. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions` with either a real `chat_history_id` or a `draft_chat_id`.
-16. If send preflight succeeds, the backend promotes that draft id into the persisted `chat_history.id` immediately before the first turn starts.
+16. If send validation succeeds, the backend promotes that draft id into the persisted `chat_history.id` immediately before the first turn starts.
 17. The frontend consumes SSE `start`, `delta`, `status`, `done`, and `error`.
 
 ## Backend Flow
@@ -55,7 +55,7 @@ Current runtime and code ownership for AI Proxy.
    - owns HTTP shape only
 4. `backend/app/services/chat/completions/route_selection.py`
    - resolves `model_id` and `tool_ids`
-5. `backend/app/services/chat/completions/preflight.py`
+5. `backend/app/services/chat/completions/validation.py`
    - validates the selected route
    - resolves owned chat histories or owned first-send drafts
    - enforces provider readiness, usage caps, and chat rate limits
@@ -103,7 +103,7 @@ Session expiry semantics:
 - idle timeout is `last_seen_at + 6 hours`
 - session-limit eviction also marks the older session as `expired`
 - expired sessions are cleaned up by the background housekeeping loop
-- Redis chat drafts that never become a persisted history expire by TTL and do not require database cleanup
+- Redis chat drafts that never become a persisted history expire by `CHAT_DRAFT_TTL_SECONDS` and do not require database cleanup
 
 ## Data Ownership
 - PostgreSQL is the system of record for:
@@ -120,6 +120,7 @@ Session expiry semantics:
   - active chat context checkpoints
   - remembered-chat summary placeholders
   - unified operator events in `operator_events`
+  - append-only usage ledger rows in `usage_ledger_events`
   - user usage cap overrides and reset baselines in `user_usage_caps`
 - Redis is used for:
   - one in-flight chat lease per conversation id, including first-send drafts
@@ -128,10 +129,10 @@ Session expiry semantics:
 - provider-side conversation state is not treated as the source of truth
 
 ## Chat Persistence Model
-- `POST /api/v1/chat/completions` creates a backend-owned turn only after backend preflight checks pass, any required context compaction succeeds, and provider dispatch is about to begin
+- `POST /api/v1/chat/completions` creates a backend-owned turn only after backend validation passes, any required context compaction succeeds, and provider dispatch is about to begin
 - on the first send in a brand-new local conversation, the frontend creates a Redis-backed draft before calling `POST /api/v1/chat/completions`
 - `POST /api/v1/chat/completions` accepts either an owned `chat_history_id` or an owned `draft_chat_id`
-- if a draft-backed send passes backend preflight, the backend creates `chat_histories.id = draft_chat_id` immediately before persisting the turn
+- if a draft-backed send passes backend validation, the backend creates `chat_histories.id = draft_chat_id` immediately before persisting the turn
 - backend persists:
   - user message
   - assistant placeholder
@@ -141,8 +142,12 @@ Session expiry semantics:
   - history-level `usage_summary` rollup cache
 - backend-local rejects such as validation failures, session locks, usage caps, rate limits, and provider-readiness failures are not persisted as chat turns
 - those backend-local rejects are audit-logged in `operator_events`
-- provider execution must produce its first stream event within `CHAT_PROVIDER_IDLE_TIMEOUT_SECONDS`; after the first provider event, the response is allowed to run normally
-- housekeeping closes stale `send` turns that never recorded a first provider event and writes `operator_events`
+- provider execution uses two fixed timeout phases:
+  - `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS` for the first provider chunk after local validation and request preparation are complete
+  - `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS` for total stream time after the first provider chunk
+- the assistant placeholder stores `deadline_at`; first chunk arrival stores `first_response_at` and replaces `deadline_at` with the stream deadline
+- if either deadline is exceeded, the backend marks the assistant row `status='error'`, clears `deadline_at`, excludes the turn from future context, and writes an `operator_events` timeout row
+- if provider output arrives after timeout handling, it is not authoritative because the assistant row is no longer `streaming`
 - if provider execution fails, the assistant message is kept renderable but marked `excluded_from_context=true`
 - persisted provider-attempted failures keep provider-specific `result_code`, `result_message`, `finish_reason`, and safe `error_detail`
 - future provider context is rebuilt from:
@@ -157,6 +162,7 @@ Session expiry semantics:
 - `stored_files`
   - stores backend-owned file bytes in PostgreSQL
   - deduplicates identical file content per user by `sha256`
+  - uses `lifecycle_state` values `active`, `pending_delete`, and `delete_failed` to track physical cleanup state
 - `chat_history_files`
   - stores one logical attachment row per history
   - blocks same-history duplicate content by `UNIQUE(chat_history_id, stored_file_id)`
@@ -172,6 +178,7 @@ Session expiry semantics:
 - file-first flow:
   - frontend creates a draft
   - backend validates the upload, counts tokens for supported providers, stores the blob, creates the persisted history using the draft id, and deletes the draft
+- attachment operations use `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS` for their Redis lease and stale Postgres state recovery; provider X/Y timeouts do not apply until a chat send is dispatched
 - text-first flow:
   - frontend creates a draft only when the first send starts
   - backend promotes the draft to a persisted history immediately before the first persisted turn is created
@@ -182,6 +189,7 @@ Session expiry semantics:
 - only active history attachments are injected into future provider requests
 - provider-side remote attachment copies are reconciled by housekeeping; send-time also verifies stored remote ids and recreates missing remote copies while DB-owned blobs remain the source of truth
 - provider-side remote attachment copies are deleted after `CHAT_ATTACHMENT_REMOTE_TTL_HOURS` without use while DB-owned blobs remain the source of truth
+- when the last logical attachment reference is removed, the blob moves to `pending_delete`; remote delete failures move it to `delete_failed` with retry metadata, and housekeeping retries due rows with backoff
 - attachment token limits are separate from text compaction
   - text compaction remains text-only
   - attachments are rejected if their provider-specific total exceeds the configured attachment token limit
@@ -201,8 +209,12 @@ Session expiry semantics:
 - `user_usage_caps`
   - optional per-user cap override
   - `baseline_estimated_price_usd` is moved forward by `reset-cap`, so operators can unlock a user without cron/time-window logic
+- `usage_ledger_events`
+  - append-only spend/audit ledger
+  - successful assistant turns append a `billable` row with user, session, provider, model, token, raw-usage, and price snapshots
+  - ledger rows intentionally snapshot chat ids instead of depending on deletable chat-history rows
 - default cap is `USAGE_DEFAULT_CAP_USD` when a user has no row in `user_usage_caps`
-- enforcement uses raw assistant message price snapshots, not only `chat_histories.usage_summary`
+- enforcement uses `usage_ledger_events.total_cost_usd`, not deletable `chat_messages` or `chat_histories.usage_summary`
 
 ## Deployment Smoke Readiness
 - `/health` is the Docker startup gate
@@ -210,7 +222,8 @@ Session expiry semantics:
 - because `frontend` depends on `backend: service_healthy`, public traffic does not reach the product until smoke passes
 - the smoke code lives in `backend/app/deployment_smoke/`
 - it bypasses public auth/session/chat routes and does not create product users, sessions, histories, messages, stored files, or operator-event rows
-- `python -m app.deployment_smoke` manually exercises one direct text request per provider plus direct provider/GCS attachment upload-delete checks
+- `python -m app.deployment_smoke` manually exercises one direct text request per exposed provider plus direct provider/GCS attachment upload-delete checks
+- current deployment expects Vertex AI, OpenAI, and Anthropic to be configured and ready
 
 ## Frontend Refresh Semantics
 - the frontend does not persist the active conversation in `localStorage` or `sessionStorage`
@@ -356,7 +369,7 @@ Anthropic:
   - `backend/app/providers/dispatcher.py`
 - change chat execution lifecycle:
   - `backend/app/services/chat/completions/orchestrator.py`
-  - `backend/app/services/chat/completions/preflight.py`
+  - `backend/app/services/chat/completions/validation.py`
   - `backend/app/services/chat/completions/request_builder.py`
   - `backend/app/services/chat/completions/provider_execution.py`
   - `backend/app/services/chat/completions/turn_persistence.py`

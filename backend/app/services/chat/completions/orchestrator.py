@@ -3,7 +3,7 @@ Purpose:
 - Implement chat streaming orchestration for the backend service layer.
 
 Responsibilities:
-- Run provider-neutral request preflight before background execution starts
+- Run provider-neutral request validation before background execution starts
 - Build the real provider context from DB-backed chat state
 - Trigger context compaction before the main provider call when needed
 - Persist a backend-owned chat turn only after the final request is ready
@@ -14,24 +14,28 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta
 import logging
 
 from sqlalchemy.orm import Session
 
 from app.auth.types import SessionContext
+from app.config.settings import settings
+from app.config.time import utc_now
 from app.db.postgres.session import SessionLocal
 from app.db.redis.chat_drafts import set_chat_draft_state
 from app.db.redis.chat_coordination import (
     ChatCoordinationUnavailableError,
     ChatRequestInProgressError,
     acquire_chat_execution_lease,
+    extend_chat_execution_lease,
     release_chat_execution_lease,
 )
 from app.providers.types import PreparedProviderChatRequest
 from app.schemas.chat import ChatCompletionRequest, ChatStreamStatusEvent
 from app.services.chat.attachments import prepare_history_attachments_for_provider
 from app.services.chat.completions.context.budget import needs_context_compaction
-from app.services.chat.completions.preflight import ChatPreflightResult, build_safe_error_detail, run_chat_preflight
+from app.services.chat.completions.validation import ChatValidationResult, build_safe_error_detail, run_chat_validation
 from app.services.chat.completions.provider_execution import run_chat_completion_turn
 from app.services.chat.completions.request_audit import persist_chat_proxy_rejection
 from app.services.chat.completions.request_builder import build_prepared_request, run_context_compaction
@@ -88,15 +92,15 @@ def create_chat_completion_stream(
         ) from exc
 
     try:
-        preflight = run_chat_preflight(
+        validation = run_chat_validation(
             payload=payload,
             session=session,
             db=db,
         )
-        _mark_preflight_target_validating(
+        _mark_validation_target_validating(
             db=db,
             session=session,
-            preflight=preflight,
+            validation=validation,
         )
     except ChatHistoryNotFoundError as exc:
         release_chat_execution_lease(lease)
@@ -110,7 +114,7 @@ def create_chat_completion_stream(
         _run_chat_request_pipeline(
             payload=payload,
             session=session,
-            preflight=preflight,
+            validation=validation,
             lease=lease,
             sink=sink,
         )
@@ -122,7 +126,7 @@ async def _run_chat_request_pipeline(
     *,
     payload: ChatCompletionRequest,
     session: SessionContext,
-    preflight: ChatPreflightResult,
+    validation: ChatValidationResult,
     lease,
     sink: LiveChatStreamSink,
 ) -> None:
@@ -132,9 +136,9 @@ async def _run_chat_request_pipeline(
         built_context, prepared_request = await build_prepared_request(
             payload=payload,
             session=session,
-            route=preflight.route,
-            history_id=preflight.history_id,
-            draft_chat_id=preflight.draft_chat_id,
+            route=validation.route,
+            history_id=validation.history_id,
+            draft_chat_id=validation.draft_chat_id,
         )
         emit_input_token_statuses(sink=sink, prepared_request=prepared_request)
 
@@ -162,9 +166,9 @@ async def _run_chat_request_pipeline(
             _, prepared_request = await build_prepared_request(
                 payload=payload,
                 session=session,
-                route=preflight.route,
-                history_id=preflight.history_id,
-                draft_chat_id=preflight.draft_chat_id,
+                route=validation.route,
+                history_id=validation.history_id,
+                draft_chat_id=validation.draft_chat_id,
             )
             emit_input_token_statuses(sink=sink, prepared_request=prepared_request)
             if needs_context_compaction(prepared_request):
@@ -177,9 +181,15 @@ async def _run_chat_request_pipeline(
 
         prepared_request, attachment_snapshots = await prepare_history_attachments_for_provider(
             user_id=session.user_id,
-            history_id=preflight.history_id,
-            route=preflight.route,
+            history_id=validation.history_id,
+            route=validation.route,
             prepared_request=prepared_request,
+        )
+
+        first_response_timeout_seconds = _first_response_timeout_seconds()
+        first_response_deadline, first_response_deadline_at = _start_provider_response_window(
+            lease=lease,
+            timeout_seconds=first_response_timeout_seconds,
         )
 
         with SessionLocal() as turn_db:
@@ -187,10 +197,11 @@ async def _run_chat_request_pipeline(
                 turn_db,
                 payload=payload,
                 session=session,
-                history_id=preflight.history_id,
-                draft_chat_id=preflight.draft_chat_id,
-                route=preflight.route,
+                history_id=validation.history_id,
+                draft_chat_id=validation.draft_chat_id,
+                route=validation.route,
                 attachment_snapshots=attachment_snapshots,
+                first_response_deadline_at=first_response_deadline_at,
             )
             turn_started = True
 
@@ -198,22 +209,26 @@ async def _run_chat_request_pipeline(
         await run_chat_completion_turn(
             turn=turn,
             prepared_request=prepared_request,
-            route=preflight.route,
+            route=validation.route,
             sink=sink,
+            lease=lease,
+            first_response_deadline=first_response_deadline,
+            first_response_timeout_seconds=first_response_timeout_seconds,
         )
     except ChatProxyError as exc:
-        if not turn_started:
-            _best_effort_reset_preflight_target_ready(
+        if not turn_started and _should_reset_validation_target(exc):
+            _best_effort_reset_validation_target_ready(
                 session=session,
-                preflight=preflight,
+                validation=validation,
             )
+        if not turn_started:
             with SessionLocal() as rejection_db:
                 persist_chat_proxy_rejection(
                     rejection_db,
                     session=session,
                     payload=payload,
                     error=exc,
-                    route=preflight.route,
+                    route=validation.route,
                 )
         sink.emit("error", build_error_event(exc))
     except Exception:
@@ -225,9 +240,9 @@ async def _run_chat_request_pipeline(
             http_status=500,
         )
         if not turn_started:
-            _best_effort_reset_preflight_target_ready(
+            _best_effort_reset_validation_target_ready(
                 session=session,
-                preflight=preflight,
+                validation=validation,
             )
             with SessionLocal() as rejection_db:
                 persist_chat_proxy_rejection(
@@ -235,7 +250,7 @@ async def _run_chat_request_pipeline(
                     session=session,
                     payload=payload,
                     error=error,
-                    route=preflight.route,
+                    route=validation.route,
                 )
         sink.emit("error", build_error_event(error))
     finally:
@@ -290,15 +305,52 @@ def build_input_token_status_message(*, prefix: str, token_count: int) -> str:
     return f"{prefix}: {token_count:,}"
 
 
-def _mark_preflight_target_validating(
+def _first_response_timeout_seconds() -> int:
+    return max(1, settings.chat_provider_first_response_timeout_seconds)
+
+
+def _start_provider_response_window(
+    *,
+    lease,
+    timeout_seconds: int,
+) -> tuple[float, datetime]:
+    try:
+        lease_extended = extend_chat_execution_lease(lease, ttl_seconds=timeout_seconds)
+    except ChatCoordinationUnavailableError as exc:
+        raise ChatProxyError(
+            code="coordination_unavailable",
+            origin="proxy",
+            detail=build_safe_error_detail("coordination_unavailable"),
+            http_status=503,
+        ) from exc
+
+    if not lease_extended:
+        raise ChatProxyError(
+            code="request_in_progress",
+            origin="proxy",
+            detail=build_safe_error_detail("request_in_progress"),
+            http_status=409,
+        )
+
+    return (
+        asyncio.get_running_loop().time() + timeout_seconds,
+        utc_now() + timedelta(seconds=timeout_seconds),
+    )
+
+
+def _should_reset_validation_target(error: ChatProxyError) -> bool:
+    return error.code != "request_in_progress"
+
+
+def _mark_validation_target_validating(
     *,
     db: Session,
     session: SessionContext,
-    preflight: ChatPreflightResult,
+    validation: ChatValidationResult,
 ) -> None:
-    if preflight.draft_chat_id:
+    if validation.draft_chat_id:
         set_chat_draft_state(
-            draft_chat_id=preflight.draft_chat_id,
+            draft_chat_id=validation.draft_chat_id,
             interaction_state=INTERACTION_STATE_VALIDATING,
             busy_reason=BUSY_REASON_SEND,
         )
@@ -307,7 +359,7 @@ def _mark_preflight_target_validating(
     history = load_user_history(
         db,
         user_id=session.user_id,
-        history_id=preflight.history_id,
+        history_id=validation.history_id,
     )
     if history is None:
         raise ChatHistoryUnavailableError("chat history not found")
@@ -319,15 +371,15 @@ def _mark_preflight_target_validating(
     db.commit()
 
 
-def _reset_preflight_target_ready(
+def _reset_validation_target_ready(
     *,
     db: Session,
     session: SessionContext,
-    preflight: ChatPreflightResult,
+    validation: ChatValidationResult,
 ) -> None:
-    if preflight.draft_chat_id:
+    if validation.draft_chat_id:
         set_chat_draft_state(
-            draft_chat_id=preflight.draft_chat_id,
+            draft_chat_id=validation.draft_chat_id,
             interaction_state=INTERACTION_STATE_READY,
             busy_reason=None,
         )
@@ -336,7 +388,7 @@ def _reset_preflight_target_ready(
     history = load_user_history(
         db,
         user_id=session.user_id,
-        history_id=preflight.history_id,
+        history_id=validation.history_id,
     )
     if history is None:
         return
@@ -348,17 +400,17 @@ def _reset_preflight_target_ready(
     db.commit()
 
 
-def _best_effort_reset_preflight_target_ready(
+def _best_effort_reset_validation_target_ready(
     *,
     session: SessionContext,
-    preflight: ChatPreflightResult,
+    validation: ChatValidationResult,
 ) -> None:
     try:
         with SessionLocal() as state_db:
-            _reset_preflight_target_ready(
+            _reset_validation_target_ready(
                 db=state_db,
                 session=session,
-                preflight=preflight,
+                validation=validation,
             )
     except Exception:
         logger.exception("Failed to restore conversation state after chat pipeline failure.")

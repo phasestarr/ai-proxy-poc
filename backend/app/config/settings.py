@@ -40,7 +40,9 @@ class AppSettings(BaseSettings):
     microsoft_oauth_transaction_minutes: int
 
     chat_draft_ttl_seconds: int
-    chat_provider_idle_timeout_seconds: int
+    chat_attachment_operation_timeout_seconds: int
+    chat_provider_first_response_timeout_seconds: int
+    chat_provider_stream_timeout_seconds: int
     chat_rate_limit_per_minute: int
     chat_rate_limit_per_hour: int
     chat_attachment_max_files_per_history: int

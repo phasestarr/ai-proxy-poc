@@ -8,6 +8,7 @@ Run the stack directly on `localhost` without sibling `root-proxy`.
 - Local env file lives at repo root as `../.env.local`
 - Frontend is published on `http://localhost:8080`
 - Local runtime uses local provider credentials and local Microsoft app registration when those features are enabled
+- Deployment smoke requires Vertex AI, OpenAI, and Anthropic when `DEPLOYMENT_SMOKE_REQUIRED=true`
 - Local env keeps `AUTH_COOKIE_SECURE=false`
 
 ## First-Time Setup

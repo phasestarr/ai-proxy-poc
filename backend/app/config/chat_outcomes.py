@@ -39,6 +39,7 @@ ERROR_MESSAGES: dict[str, str] = {
     "provider_failed": "The selected provider failed while processing the request.",
     "provider_not_configured": "The selected provider is not configured.",
     "provider_first_response_timeout": "The selected provider did not start responding in time.",
+    "provider_response_timeout": "The selected provider stopped responding in time.",
     "provider_rate_limited": "The selected provider is rate limiting requests.",
     "provider_unavailable": "The selected provider is temporarily unavailable.",
     "rate_limit_hour": "Hourly chat limit reached. Try again later.",

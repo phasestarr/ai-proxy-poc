@@ -84,11 +84,12 @@ Application and mixed tables you will usually touch from this file:
 Mostly-audit table:
 
 16. `operator_events`
-17. `user_usage_caps`
+17. `usage_ledger_events`
+18. `user_usage_caps`
 
 Migration metadata:
 
-18. `alembic_version`
+19. `alembic_version`
 
 ## Whole-Database Inspect
 
@@ -101,7 +102,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT table_name
 Row counts:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'stored_files', COUNT(*) FROM stored_files UNION ALL SELECT 'stored_file_provider_states', COUNT(*) FROM stored_file_provider_states UNION ALL SELECT 'chat_history_files', COUNT(*) FROM chat_history_files UNION ALL SELECT 'chat_message_attachments', COUNT(*) FROM chat_message_attachments UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories UNION ALL SELECT 'chat_context_checkpoints', COUNT(*) FROM chat_context_checkpoints UNION ALL SELECT 'operator_events', COUNT(*) FROM operator_events UNION ALL SELECT 'user_usage_caps', COUNT(*) FROM user_usage_caps ORDER BY table_name;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'stored_files', COUNT(*) FROM stored_files UNION ALL SELECT 'stored_file_provider_states', COUNT(*) FROM stored_file_provider_states UNION ALL SELECT 'chat_history_files', COUNT(*) FROM chat_history_files UNION ALL SELECT 'chat_message_attachments', COUNT(*) FROM chat_message_attachments UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories UNION ALL SELECT 'chat_context_checkpoints', COUNT(*) FROM chat_context_checkpoints UNION ALL SELECT 'operator_events', COUNT(*) FROM operator_events UNION ALL SELECT 'usage_ledger_events', COUNT(*) FROM usage_ledger_events UNION ALL SELECT 'user_usage_caps', COUNT(*) FROM user_usage_caps ORDER BY table_name;"
 ```
 
 Foreign-key cascade rules:
@@ -135,7 +136,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_i
 3. Use the copied `chat_histories.id` in the next query:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, CASE WHEN usage IS NULL THEN NULL ELSE usage->'normalized' END AS usage_normalized, CASE WHEN usage IS NULL THEN NULL ELSE usage->'price_estimate' END AS usage_price_estimate, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, CASE WHEN usage IS NULL THEN NULL ELSE usage->'normalized' END AS usage_normalized, CASE WHEN usage IS NULL THEN NULL ELSE usage->'price_estimate' END AS usage_price_estimate, first_response_at, deadline_at, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
 ```
 
 4. If you need the real text, use the same history id here:
@@ -197,7 +198,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT chf.id, ch
 2. Inspect the deduplicated stored blobs behind those attachments:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT sf.id, sf.user_id, sf.sha256, sf.mime_type, sf.byte_size, sf.created_at FROM stored_files sf WHERE sf.id IN (SELECT chf.stored_file_id FROM chat_history_files chf WHERE chf.chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE') ORDER BY sf.created_at, sf.id;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT sf.id, sf.user_id, sf.sha256, sf.mime_type, sf.byte_size, sf.lifecycle_state, sf.delete_attempt_count, sf.delete_error, sf.delete_next_attempt_at, sf.created_at FROM stored_files sf WHERE sf.id IN (SELECT chf.stored_file_id FROM chat_history_files chf WHERE chf.chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE') ORDER BY sf.created_at, sf.id;"
 ```
 
 3. Inspect provider refs and token metadata for those blobs:
@@ -368,13 +369,13 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.
 Table-friendly inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, CASE WHEN usage IS NULL THEN NULL ELSE usage->'normalized' END AS usage_normalized, CASE WHEN usage IS NULL THEN NULL ELSE usage->'price_estimate' END AS usage_price_estimate, completed_at, created_at, updated_at FROM chat_messages ORDER BY created_at DESC LIMIT 100;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, CASE WHEN usage IS NULL THEN NULL ELSE usage->'normalized' END AS usage_normalized, CASE WHEN usage IS NULL THEN NULL ELSE usage->'price_estimate' END AS usage_price_estimate, first_response_at, deadline_at, completed_at, created_at, updated_at FROM chat_messages ORDER BY created_at DESC LIMIT 100;"
 ```
 
 Messages for one history:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, CASE WHEN usage IS NULL THEN NULL ELSE usage->'normalized' END AS usage_normalized, CASE WHEN usage IS NULL THEN NULL ELSE usage->'price_estimate' END AS usage_price_estimate, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, CASE WHEN usage IS NULL THEN NULL ELSE usage->'normalized' END AS usage_normalized, CASE WHEN usage IS NULL THEN NULL ELSE usage->'price_estimate' END AS usage_price_estimate, first_response_at, deadline_at, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
 ```
 
 Status counts:
@@ -386,7 +387,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, ex
 Stale streaming rows:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, length(content) AS content_length, model_id, provider, created_at, updated_at FROM chat_messages WHERE status = 'streaming' AND updated_at < NOW() - INTERVAL '10 minutes' ORDER BY updated_at;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, role, length(content) AS content_length, model_id, provider, result_code, first_response_at, deadline_at, created_at, updated_at FROM chat_messages WHERE status = 'streaming' AND deadline_at IS NOT NULL AND deadline_at < NOW() ORDER BY deadline_at;"
 ```
 
 Error outcome summary:
@@ -410,13 +411,13 @@ Role:
 Inspect:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, sha256, mime_type, byte_size, created_at, updated_at FROM stored_files ORDER BY created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, sha256, mime_type, byte_size, lifecycle_state, delete_attempt_count, delete_error, delete_last_attempt_at, delete_next_attempt_at, created_at, updated_at FROM stored_files ORDER BY created_at DESC;"
 ```
 
 Blob references:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT sf.id, sf.sha256, sf.mime_type, sf.byte_size, COUNT(chf.id) AS history_refs FROM stored_files sf LEFT JOIN chat_history_files chf ON chf.stored_file_id = sf.id GROUP BY sf.id ORDER BY sf.created_at DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT sf.id, sf.sha256, sf.mime_type, sf.byte_size, sf.lifecycle_state, sf.delete_attempt_count, COUNT(chf.id) AS history_refs FROM stored_files sf LEFT JOIN chat_history_files chf ON chf.stored_file_id = sf.id GROUP BY sf.id ORDER BY sf.created_at DESC;"
 ```
 
 ### stored_file_provider_states
@@ -478,6 +479,26 @@ One message's attachment snapshot:
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT attachment_index, chat_history_file_id, stored_file_id, display_name, mime_type, provider, provider_file_id, token_count FROM chat_message_attachments WHERE chat_message_id = 'PUT_CHAT_MESSAGE_ID_HERE' ORDER BY attachment_index;"
+```
+
+### usage_ledger_events
+
+Role:
+
+- Append-only usage/spend audit rows for successful assistant turns.
+- Cap enforcement reads this table, not deletable chat transcript rows.
+- Chat ids are snapshots; deleting a product chat does not remove ledger spend.
+
+Inspect recent ledger rows:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, provider, model_id, result_code, total_tokens_reported, total_cost_usd, price_completeness, chat_history_id_snapshot, chat_message_id_snapshot, created_at FROM usage_ledger_events ORDER BY created_at DESC LIMIT 100;"
+```
+
+One user's ledger total:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT user_id, COUNT(*) AS ledger_events, SUM(COALESCE(total_tokens_reported, 0)) AS total_tokens_total, SUM(total_cost_usd) AS estimated_price_total_usd FROM usage_ledger_events WHERE user_id = 'PUT_USER_ID_HERE' AND status IN ('billable', 'adjustment') GROUP BY user_id;"
 ```
 
 ### chat_history_memories
@@ -653,7 +674,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'oauth_tra
 5. Stale streaming messages:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, model_id, provider, updated_at FROM chat_messages WHERE status = 'streaming' AND updated_at < NOW() - INTERVAL '10 minutes';"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, chat_history_id, sequence, model_id, provider, first_response_at, deadline_at, updated_at FROM chat_messages WHERE status = 'streaming' AND deadline_at IS NOT NULL AND deadline_at < NOW();"
 ```
 
 6. Recent chat errors by code:
@@ -672,6 +693,12 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, CO
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT status, COUNT(*) FROM chat_context_checkpoints GROUP BY status ORDER BY status;"
+```
+
+9. Attachment blobs waiting for remote delete retry:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, lifecycle_state, delete_attempt_count, delete_next_attempt_at FROM stored_files WHERE lifecycle_state IN ('pending_delete', 'delete_failed') ORDER BY delete_next_attempt_at NULLS FIRST, updated_at;"
 ```
 
 ## Code Pointers

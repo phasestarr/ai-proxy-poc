@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies.session import require_authenticated_session, require_capability
 from app.api.v1.dependencies.db import get_db
+from app.config.settings import settings
 from app.api.v1.presenters.chat import (
     build_attachment_limits_view,
     build_chat_history_file_view,
@@ -229,7 +230,10 @@ async def upload_history_file(
 
     lease = None
     try:
-        lease = acquire_chat_execution_lease(chat_history_id=normalized_history_id or normalized_draft_id or "")
+        lease = acquire_chat_execution_lease(
+            chat_history_id=normalized_history_id or normalized_draft_id or "",
+            ttl_seconds=_attachment_operation_timeout_seconds(),
+        )
         _mark_upload_target_validating(
             db=db,
             user_id=session.user_id,
@@ -311,7 +315,10 @@ async def delete_history_file(
 ) -> ChatHistoryFilesEnvelope:
     lease = None
     try:
-        lease = acquire_chat_execution_lease(chat_history_id=history_id)
+        lease = acquire_chat_execution_lease(
+            chat_history_id=history_id,
+            ttl_seconds=_attachment_operation_timeout_seconds(),
+        )
         _set_history_busy_state(
             db=db,
             user_id=session.user_id,
@@ -381,7 +388,10 @@ async def update_history_file(
 ) -> ChatHistoryFilesEnvelope:
     lease = None
     try:
-        lease = acquire_chat_execution_lease(chat_history_id=history_id)
+        lease = acquire_chat_execution_lease(
+            chat_history_id=history_id,
+            ttl_seconds=_attachment_operation_timeout_seconds(),
+        )
         history, files = update_history_file_activation(
             db,
             user_id=session.user_id,
@@ -448,7 +458,10 @@ async def delete_history(
 ) -> Response:
     lease = None
     try:
-        lease = acquire_chat_execution_lease(chat_history_id=history_id)
+        lease = acquire_chat_execution_lease(
+            chat_history_id=history_id,
+            ttl_seconds=_attachment_operation_timeout_seconds(),
+        )
         _set_history_busy_state(
             db=db,
             user_id=session.user_id,
@@ -639,3 +652,7 @@ def _set_history_busy_state(
         busy_reason=busy_reason,
     )
     db.commit()
+
+
+def _attachment_operation_timeout_seconds() -> int:
+    return max(1, settings.chat_attachment_operation_timeout_seconds)

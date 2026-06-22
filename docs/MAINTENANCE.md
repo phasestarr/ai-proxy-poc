@@ -137,8 +137,8 @@ Anthropic:
    - `backend/app/schemas/chat.py`
 2. route resolution
    - `backend/app/services/chat/completions/route_selection.py`
-3. preflight checks
-   - `backend/app/services/chat/completions/preflight.py`
+3. send validation checks
+   - `backend/app/services/chat/completions/validation.py`
    - enforces per-user usage caps before provider execution
 4. orchestration and lease ownership
    - `backend/app/services/chat/completions/orchestrator.py`
@@ -176,10 +176,12 @@ Anthropic:
 12. provider dispatch and execution
    - `backend/app/providers/dispatcher.py`
    - `backend/app/providers/<provider>/stream.py`
-   - first provider event must arrive before `CHAT_PROVIDER_IDLE_TIMEOUT_SECONDS`
+   - first provider chunk must arrive before `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS`
+   - after first chunk, total stream time is bounded by `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS`
 13. usage normalization and history rollup
    - `backend/app/providers/<provider>/usage.py`
    - `backend/app/services/chat/histories/usage_summary.py`
+   - append-only usage ledger writes live in `backend/app/services/usage_ledger.py`
 
 ## Attachment Change Points
 
@@ -238,7 +240,8 @@ Main files:
   - backend reuses the same `stored_files` row for the same user hash
 - provider token counts are resolved at attach time for OpenAI, Anthropic, and Vertex
 - provider-managed file upload happens at attach time and may be recreated at send time if the stored remote id is missing or the remote copy was deleted out of band
-- provider-managed file delete happens when the last logical history reference is removed; the DB row is kept if remote delete fails
+- provider-managed file delete happens when the last logical history reference is removed; the DB row moves through `pending_delete` and `delete_failed` if remote delete fails
+- `stored_files.delete_attempt_count`, `delete_error`, `delete_last_attempt_at`, and `delete_next_attempt_at` are the retry/audit fields for blob cleanup
 - provider-managed remote copies are also deleted after `CHAT_ATTACHMENT_REMOTE_TTL_HOURS` without use
 - attachment limits are separate from text compaction
   - text compaction is still text-only
@@ -248,9 +251,12 @@ Main files:
 - refresh does not restore draft or selected history from browser storage
 - the frontend does not auto-recover interrupted SSE
 - Redis inflight lease is the effective concurrency guard
-- the lease TTL is `CHAT_PROVIDER_IDLE_TIMEOUT_SECONDS`
-- provider execution timeout only applies before the first provider event
-- housekeeping closes stale send turns that never recorded a first provider event
+- first-send draft TTL uses `CHAT_DRAFT_TTL_SECONDS`
+- attachment mutation leases use `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`
+- initial chat send lease TTL uses `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS`
+- provider first response arrival extends the Redis lease to `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS`
+- provider output after either fixed deadline is discarded by treating the turn as timed out
+- housekeeping closes stale send turns whose `chat_messages.deadline_at` has passed and resets stale attachment mutation states after `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`
 - `interaction_state` is a UI hint, not the only concurrency authority
 - delete behavior uses the Redis lease heuristic
   - if the lease is still active, delete is blocked
@@ -277,6 +283,9 @@ Smoke code is isolated under `backend/app/deployment_smoke/`. It calls provider
 clients and provider attachment upload-delete helpers directly. It does not use
 the public auth/session/chat API, and it must not create user, session, chat,
 stored-file, or operator-event rows.
+
+Current smoke expects every exposed provider to be configured and ready:
+Vertex AI, OpenAI, and Anthropic.
 
 Manual smoke run from the backend container:
 

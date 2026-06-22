@@ -25,7 +25,7 @@ from app.services.chat.completions.context.pipeline import (
     build_chat_context,
     build_compaction_source_text,
 )
-from app.services.chat.completions.preflight import build_safe_error_detail
+from app.services.chat.completions.validation import build_safe_error_detail
 from app.services.chat.errors import ChatProxyError
 from app.services.chat.histories.service import load_user_history
 

@@ -74,7 +74,7 @@ Set these environment values before server startup:
 
 - PostgreSQL database, user, and password
 - `AUTH_DATA_ENCRYPTION_KEY` for encrypted auth/session data
-- provider credentials for the model providers you intend to expose
+- provider credentials for all exposed model providers: Vertex AI, OpenAI, and Anthropic
 - `GOOGLE_APPLICATION_CREDENTIALS` and the mounted file under `secrets/` if Vertex is enabled
 - Microsoft Entra client values if Microsoft login is enabled
 - Microsoft redirect URI in Entra: `https://ai.example.com/api/v1/auth/callback/microsoft`
@@ -121,8 +121,8 @@ commands as validation gates. Use Docker Compose from `deploy/`.
 - Optional blank env values must still be present in env files as blank assignments.
 - Microsoft login remains optional until the Microsoft env vars are configured with real values.
 - The frontend does not auto-select a model; clients must choose one from the backend catalog before sending chat.
-- The frontend `New chat` action is local-only; the first real send creates a Redis-backed draft and promotes it to a persisted chat history only after backend preflight succeeds.
-- Redis-backed drafts expire automatically after 15 minutes if they never become a persisted chat history.
+- The frontend `New chat` action is local-only; the first real send creates a Redis-backed draft and promotes it to a persisted chat history only after backend send validation succeeds.
+- Redis-backed drafts use `CHAT_DRAFT_TTL_SECONDS`; attachment mutations use `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`; chat sends use `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS` until the first provider chunk, then `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS`.
 - Database schema is managed by Alembic migrations at backend startup.
 - Guest users are keyed by raw IP address in `guest_identities`; local Docker usually reports the Docker bridge IP such as `172.18.0.1`.
 - Backend-local chat rejects are audit-logged in PostgreSQL without polluting persisted chat transcripts.

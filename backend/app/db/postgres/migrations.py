@@ -39,17 +39,22 @@ CURRENT_MANAGED_TABLES = {
     "chat_history_memories",
     "chat_context_checkpoints",
     "operator_events",
+    "usage_ledger_events",
     "user_usage_caps",
     "stored_files",
     "stored_file_provider_states",
     "chat_history_files",
     "chat_message_attachments",
 }
-PRE_OPERATOR_EVENTS_MANAGED_TABLES = (CURRENT_MANAGED_TABLES - {"operator_events", "user_usage_caps"}) | {
+PRE_USAGE_LEDGER_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {"usage_ledger_events"}
+PRE_OPERATOR_EVENTS_MANAGED_TABLES = (
+    CURRENT_MANAGED_TABLES - {"operator_events", "usage_ledger_events", "user_usage_caps"}
+) | {
     "chat_request_rejections"
 }
 PRE_CHAT_ATTACHMENTS_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {
     "operator_events",
+    "usage_ledger_events",
     "user_usage_caps",
     "stored_files",
     "stored_file_provider_states",
@@ -76,6 +81,11 @@ def run_database_migrations() -> None:
 
         if CURRENT_MANAGED_TABLES.issubset(existing_tables):
             command.stamp(config, "head")
+            return
+
+        if PRE_USAGE_LEDGER_MANAGED_TABLES.issubset(existing_tables):
+            command.stamp(config, "20260619_000018")
+            command.upgrade(config, "head")
             return
 
         if PRE_OPERATOR_EVENTS_MANAGED_TABLES.issubset(existing_tables):

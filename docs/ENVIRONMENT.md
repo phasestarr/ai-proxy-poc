@@ -71,7 +71,7 @@ Compose derives:
 - `AUTH_SESSION_LIMIT_STRATEGY`
 - `AUTH_CONFLICT_TICKET_MINUTES`
 - `HOUSEKEEPING_INTERVAL_MINUTES`
-  - runs auth cleanup, stale send cleanup, attachment remote reconciliation, and attachment remote TTL cleanup
+  - runs auth cleanup, stale send cleanup, attachment remote reconciliation, attachment remote TTL cleanup, and attachment blob delete retry
 
 ### Microsoft Auth
 
@@ -89,10 +89,19 @@ client ID and secret blank only when Microsoft login is intentionally disabled.
 ### Chat Coordination
 
 - `CHAT_DRAFT_TTL_SECONDS`
-- `CHAT_PROVIDER_IDLE_TIMEOUT_SECONDS`
-  - first provider stream event must arrive before this many seconds
-  - Redis conversation leases use the same TTL
-  - housekeeping closes stale send turns that never recorded a first provider event
+  - Redis first-send chat drafts use this TTL before they are promoted into persisted histories
+- `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`
+  - attachment upload/delete/toggle and history-delete Redis leases use this TTL
+  - housekeeping resets persisted histories stuck in attachment mutation states after this timeout
+- `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS`
+  - Redis chat send leases start with this TTL
+  - after send validation and local request preparation finish, the provider first chunk must arrive before this timeout
+  - housekeeping marks streaming turns with no first response as `provider_first_response_timeout`
+- `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS`
+  - after the first provider chunk, the Redis conversation lease is extended to this TTL
+  - provider streaming must emit its terminal done/error path before this fixed timeout
+  - this is not refreshed per chunk; it is the total allowed stream time after first response
+  - housekeeping marks streaming turns that started but did not finish as `provider_response_timeout`
 - `CHAT_RATE_LIMIT_PER_MINUTE`
 - `CHAT_RATE_LIMIT_PER_HOUR`
 
@@ -109,6 +118,7 @@ client ID and secret blank only when Microsoft login is intentionally disabled.
   - `frontend` waits for backend health, so public UI does not start until smoke succeeds
   - use `true` for server deployments and `false` for local runs that should not call provider APIs during startup
   - Compose only reads the file passed by `--env-file`; `docker-compose.local.yml` does not automatically load `.env.local`
+  - current smoke requires all exposed providers: Vertex AI, OpenAI, and Anthropic
 
 ### Chat Attachments
 

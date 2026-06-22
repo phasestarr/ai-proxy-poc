@@ -17,6 +17,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
     Index,
     LargeBinary,
     String,
@@ -32,8 +33,13 @@ from app.db.postgres.base import Base
 class StoredFile(Base):
     __tablename__ = "stored_files"
     __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ('active', 'pending_delete', 'delete_failed')",
+            name="ck_stored_files_lifecycle_state",
+        ),
         UniqueConstraint("user_id", "sha256", name="uq_stored_files_user_sha256"),
         Index("ix_stored_files_user_created", "user_id", "created_at"),
+        Index("ix_stored_files_lifecycle_retry", "lifecycle_state", "delete_next_attempt_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -42,6 +48,11 @@ class StoredFile(Base):
     mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
     byte_size: Mapped[int] = mapped_column(nullable=False)
     content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    delete_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delete_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    delete_last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delete_next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import settings
 from app.config.time import utc_now
-from app.db.postgres.models.chat_attachment import StoredFileProviderState
+from app.db.postgres.models.chat_attachment import StoredFile, StoredFileProviderState
 from app.services.chat.completions.request_audit import persist_operator_event
 from app.services.chat.attachments.remote_files import (
     delete_remote_provider_file,
@@ -22,7 +22,9 @@ logger = logging.getLogger("uvicorn.error")
 async def reconcile_attachment_remote_files(db: Session) -> int:
     states = db.execute(
         select(StoredFileProviderState)
+        .join(StoredFile)
         .where(
+            StoredFile.lifecycle_state == "active",
             StoredFileProviderState.provider_file_id.is_not(None),
         )
         .order_by(StoredFileProviderState.updated_at.asc(), StoredFileProviderState.id.asc())
@@ -82,7 +84,9 @@ async def purge_stale_remote_attachment_files(
     cutoff = current_time - timedelta(hours=max(1, settings.chat_attachment_remote_ttl_hours))
     states = db.execute(
         select(StoredFileProviderState)
+        .join(StoredFile)
         .where(
+            StoredFile.lifecycle_state == "active",
             StoredFileProviderState.provider_file_id.is_not(None),
             StoredFileProviderState.last_used_at.is_not(None),
             StoredFileProviderState.last_used_at < cutoff,

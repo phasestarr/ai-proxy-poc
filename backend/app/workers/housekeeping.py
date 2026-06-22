@@ -12,6 +12,7 @@ from app.workers.chat_attachment_cleanup import (
 )
 from app.workers.chat_execution_cleanup import cleanup_stale_chat_executions
 from app.workers.chat_history_cleanup import delete_stale_empty_histories
+from app.services.chat.attachments.storage import cleanup_due_orphan_stored_files
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -23,6 +24,7 @@ class HousekeepingResult:
     stale_empty_histories_deleted: int
     attachment_refs_reconciled: int
     attachment_remote_files_purged: int
+    attachment_blobs_cleaned: int
 
 
 async def run_housekeeping_once() -> HousekeepingResult:
@@ -32,6 +34,7 @@ async def run_housekeeping_once() -> HousekeepingResult:
     stale_empty_histories_deleted = 0
     attachment_refs_reconciled = 0
     attachment_remote_files_purged = 0
+    attachment_blobs_cleaned = 0
 
     with SessionLocal() as db:
         expired_auth_rows_deleted = purge_expired_auth_data(db, now=now)
@@ -48,12 +51,16 @@ async def run_housekeeping_once() -> HousekeepingResult:
     with SessionLocal() as db:
         attachment_remote_files_purged = await purge_stale_remote_attachment_files(db, now=now)
 
+    with SessionLocal() as db:
+        attachment_blobs_cleaned = await cleanup_due_orphan_stored_files(db, now=now)
+
     result = HousekeepingResult(
         expired_auth_rows_deleted=expired_auth_rows_deleted,
         stale_chat_executions_cleaned=stale_chat_executions_cleaned,
         stale_empty_histories_deleted=stale_empty_histories_deleted,
         attachment_refs_reconciled=attachment_refs_reconciled,
         attachment_remote_files_purged=attachment_remote_files_purged,
+        attachment_blobs_cleaned=attachment_blobs_cleaned,
     )
     logger.info(
         "Housekeeping completed.",
@@ -63,6 +70,7 @@ async def run_housekeeping_once() -> HousekeepingResult:
             "stale_empty_histories_deleted": result.stale_empty_histories_deleted,
             "attachment_refs_reconciled": result.attachment_refs_reconciled,
             "attachment_remote_files_purged": result.attachment_remote_files_purged,
+            "attachment_blobs_cleaned": result.attachment_blobs_cleaned,
         },
     )
     return result

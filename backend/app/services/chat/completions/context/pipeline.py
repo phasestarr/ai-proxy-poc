@@ -115,7 +115,7 @@ def _load_persisted_suffix_messages(
     conditions = [
         ChatMessage.chat_history_id == history_id,
         ChatMessage.excluded_from_context.is_(False),
-        ChatMessage.status != "error",
+        ChatMessage.status == "done",
     ]
     if covered_through_sequence is not None:
         conditions.append(ChatMessage.sequence > covered_through_sequence)

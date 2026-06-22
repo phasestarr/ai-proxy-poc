@@ -21,7 +21,6 @@ from app.providers.vertex.mapper import map_chat_messages_to_vertex_contents, ma
 from app.providers.vertex.count_tokens import VertexCountTokensPayload
 from app.providers.vertex.outcomes import (
     build_vertex_empty_output_detail,
-    build_vertex_finish_detail,
     build_vertex_prompt_block_detail,
     build_vertex_status_error_detail,
     get_vertex_result_message,
@@ -131,14 +130,6 @@ async def stream_prepared_vertex_chat_completion(
                 "Gemini stream ended without a terminal finishReason.",
                 result_code=result_code,
                 result_message=get_vertex_result_message(result_code),
-            )
-
-        terminal_failure = _map_vertex_terminal_failure(last_finish_reason)
-        if terminal_failure is not None:
-            raise VertexProviderError(
-                terminal_failure.detail,
-                result_code=terminal_failure.result_code,
-                result_message=terminal_failure.result_message,
             )
 
         if not saw_visible_text:
@@ -284,35 +275,6 @@ def extract_vertex_stream_error(chunk) -> _VertexStreamFailure | None:
         result_message=get_vertex_result_message(result_code),
         detail=build_vertex_prompt_block_detail(block_reason=block_reason_name, block_message=block_message),
         error_code=block_reason_name,
-    )
-
-
-def _map_vertex_terminal_failure(finish_reason: str | None) -> _VertexStreamFailure | None:
-    if finish_reason in {None, "STOP"}:
-        return None
-
-    result_code_by_finish_reason = {
-        "MAX_TOKENS": "vertex_finish_max_tokens",
-        "SAFETY": "vertex_finish_safety",
-        "RECITATION": "vertex_finish_recitation",
-        "OTHER": "vertex_finish_other",
-        "BLOCKLIST": "vertex_finish_blocklist",
-        "PROHIBITED_CONTENT": "vertex_finish_prohibited_content",
-        "SPII": "vertex_finish_spii",
-        "MALFORMED_FUNCTION_CALL": "vertex_finish_malformed_function_call",
-        "MODEL_ARMOR": "vertex_finish_model_armor",
-        "IMAGE_SAFETY": "vertex_finish_image_safety",
-        "IMAGE_PROHIBITED_CONTENT": "vertex_finish_image_prohibited_content",
-        "IMAGE_RECITATION": "vertex_finish_image_recitation",
-        "IMAGE_OTHER": "vertex_finish_image_other",
-        "UNEXPECTED_TOOL_CALL": "vertex_finish_unexpected_tool_call",
-        "NO_IMAGE": "vertex_finish_no_image",
-    }
-    result_code = result_code_by_finish_reason.get(finish_reason, "vertex_stream_error")
-    return _VertexStreamFailure(
-        result_code=result_code,
-        result_message=get_vertex_result_message(result_code),
-        detail=build_vertex_finish_detail(finish_reason=finish_reason),
     )
 
 

@@ -1,6 +1,7 @@
 import { getApiErrorMessage, readJson } from "../../api/http";
 import { AuthenticationRequiredError, SessionConflictError } from "../../auth/authErrors";
 import { readSseStream } from "../../services/sse";
+import { ChatDraftExpiredError } from "./errors";
 import type {
   ChatCompletionApiError,
   ChatStreamDeltaApiEvent,
@@ -56,6 +57,9 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
 
   if (!response.ok) {
     const payload = (await readJson(response)) as ChatCompletionApiError | null;
+    if (response.status === 404 && options.draftChatId && !options.chatHistoryId) {
+      throw new ChatDraftExpiredError(getApiErrorMessage(response, payload, "chat draft expired"));
+    }
     throw new Error(getApiErrorMessage(response, payload, "request failed"));
   }
 

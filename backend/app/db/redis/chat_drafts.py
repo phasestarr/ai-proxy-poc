@@ -32,7 +32,7 @@ class ChatDraft:
 def create_chat_draft(*, user_id: str) -> ChatDraft:
     now = utc_now()
     draft_chat_id = str(uuid4())
-    expires_at = now + timedelta(seconds=settings.chat_draft_ttl_seconds)
+    expires_at = now + timedelta(seconds=_draft_ttl_seconds())
     draft = ChatDraft(
         draft_chat_id=draft_chat_id,
         user_id=user_id,
@@ -46,7 +46,7 @@ def create_chat_draft(*, user_id: str) -> ChatDraft:
         get_redis_client().set(
             _build_draft_key(draft_chat_id=draft_chat_id),
             _serialize_chat_draft(draft),
-            ex=max(1, settings.chat_draft_ttl_seconds),
+            ex=_draft_ttl_seconds(),
         )
     except RedisError as exc:
         raise ChatDraftUnavailableError("chat draft backend is unavailable") from exc
@@ -96,7 +96,7 @@ def refresh_chat_draft(*, draft_chat_id: str) -> bool:
     try:
         refreshed = get_redis_client().expire(
             _build_draft_key(draft_chat_id=draft_chat_id),
-            max(1, settings.chat_draft_ttl_seconds),
+            _draft_ttl_seconds(),
         )
     except RedisError as exc:
         raise ChatDraftUnavailableError("chat draft backend is unavailable") from exc
@@ -147,8 +147,12 @@ def get_chat_draft_ttl_seconds(*, draft_chat_id: str) -> int:
         raise ChatDraftUnavailableError("chat draft backend is unavailable") from exc
 
     if ttl_seconds is None or ttl_seconds <= 0:
-        return max(1, settings.chat_draft_ttl_seconds)
+        return _draft_ttl_seconds()
     return ttl_seconds
+
+
+def _draft_ttl_seconds() -> int:
+    return max(1, settings.chat_draft_ttl_seconds)
 
 
 def _build_draft_key(*, draft_chat_id: str) -> str:
