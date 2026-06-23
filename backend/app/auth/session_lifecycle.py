@@ -40,6 +40,7 @@ def issue_session(
     raw_session_key = generate_session_key()
     expires_at = now + get_session_ttl()
     auth_session_id = str(uuid4())
+    user = _lock_user_for_session_issue(db, user_id=user.id)
     expired_sessions = _enforce_session_limit(
         db,
         user=user,
@@ -228,6 +229,18 @@ def delete_orphan_guest_user(
 
     if has_sessions is None and has_microsoft_identity is None and has_guest_identity is None:
         db.delete(user)
+
+
+def _lock_user_for_session_issue(
+    db: Session,
+    *,
+    user_id: str,
+) -> User:
+    return db.execute(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update()
+    ).scalar_one()
 
 
 def _enforce_session_limit(

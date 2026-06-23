@@ -47,8 +47,6 @@ Compose derives:
 
 - `APP_NAME`
 - `APP_ENV`
-- `APP_HOST`
-- `APP_PORT`
 - `STARTUP_DEPENDENCY_MAX_ATTEMPTS`
 - `STARTUP_DEPENDENCY_RETRY_SECONDS`
 
@@ -59,7 +57,7 @@ Compose derives:
 - `AUTH_COOKIE_SECURE`
   - server: `true`
   - local: `false`
-- `AUTH_COOKIE_SAMESITE`
+  - session cookies always use `SameSite=strict`
 - `AUTH_COOKIE_PATH`
 - `AUTH_COOKIE_DOMAIN`
   - optional blank value

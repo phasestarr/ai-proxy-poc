@@ -18,14 +18,6 @@ from sqlalchemy import inspect
 from app.config.settings import settings
 from app.db.postgres.session import engine
 
-INITIAL_REVISION = "20260420_000001"
-LEGACY_PRE_ALEMBIC_TABLES = {
-    "users",
-    "auth_identities",
-    "auth_sessions",
-    "auth_provider_sessions",
-    "oauth_transactions",
-}
 CURRENT_MANAGED_TABLES = {
     "users",
     "ms_identities",
@@ -46,26 +38,6 @@ CURRENT_MANAGED_TABLES = {
     "chat_history_files",
     "chat_message_attachments",
 }
-PRE_USAGE_LEDGER_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {"usage_ledger_events"}
-PRE_OPERATOR_EVENTS_MANAGED_TABLES = (
-    CURRENT_MANAGED_TABLES - {"operator_events", "usage_ledger_events", "user_usage_caps"}
-) | {
-    "chat_request_rejections"
-}
-PRE_CHAT_ATTACHMENTS_MANAGED_TABLES = CURRENT_MANAGED_TABLES - {
-    "operator_events",
-    "usage_ledger_events",
-    "user_usage_caps",
-    "stored_files",
-    "stored_file_provider_states",
-    "chat_history_files",
-    "chat_message_attachments",
-}
-PRE_CHAT_REQUEST_REJECTION_MANAGED_TABLES = PRE_CHAT_ATTACHMENTS_MANAGED_TABLES - {"chat_request_rejections"}
-PRE_CONTEXT_CHECKPOINT_MANAGED_TABLES = PRE_CHAT_REQUEST_REJECTION_MANAGED_TABLES - {"chat_context_checkpoints"}
-PRE_CHAT_MEMORY_MANAGED_TABLES = PRE_CONTEXT_CHECKPOINT_MANAGED_TABLES - {"chat_history_memories"}
-PRE_CHAT_HISTORY_MANAGED_TABLES = PRE_CHAT_MEMORY_MANAGED_TABLES - {"chat_histories", "chat_messages"}
-PRE_CONFLICT_TICKET_MANAGED_TABLES = PRE_CHAT_HISTORY_MANAGED_TABLES - {"auth_conflict_tickets"}
 
 
 def run_database_migrations() -> None:
@@ -77,64 +49,13 @@ def run_database_migrations() -> None:
     existing_tables = set(inspect(engine).get_table_names())
     if "alembic_version" not in existing_tables:
         current_tables_present = CURRENT_MANAGED_TABLES.intersection(existing_tables)
-        legacy_tables_present = LEGACY_PRE_ALEMBIC_TABLES.intersection(existing_tables)
 
-        if CURRENT_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "head")
-            return
-
-        if PRE_USAGE_LEDGER_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "20260619_000018")
-            command.upgrade(config, "head")
-            return
-
-        if PRE_OPERATOR_EVENTS_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "20260601_000017")
-            command.upgrade(config, "head")
-            return
-
-        if PRE_CHAT_ATTACHMENTS_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "20260511_000013")
-            command.upgrade(config, "head")
-            return
-
-        if PRE_CHAT_REQUEST_REJECTION_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "20260511_000012")
-            command.upgrade(config, "head")
-            return
-
-        if PRE_CONTEXT_CHECKPOINT_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "20260428_000008")
-            command.upgrade(config, "head")
-            return
-
-        if PRE_CHAT_MEMORY_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "20260427_000007")
-            command.upgrade(config, "head")
-            return
-
-        if PRE_CHAT_HISTORY_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "20260420_000004")
-            command.upgrade(config, "head")
-            return
-
-        if PRE_CONFLICT_TICKET_MANAGED_TABLES.issubset(existing_tables):
-            command.stamp(config, "20260420_000003")
-            command.upgrade(config, "head")
-            return
-
-        if LEGACY_PRE_ALEMBIC_TABLES.issubset(existing_tables):
-            command.stamp(config, INITIAL_REVISION)
-            command.upgrade(config, "head")
-            return
-
-        if current_tables_present or legacy_tables_present:
+        if current_tables_present:
             missing_current_tables = ", ".join(sorted(CURRENT_MANAGED_TABLES - existing_tables)) or "none"
-            missing_legacy_tables = ", ".join(sorted(LEGACY_PRE_ALEMBIC_TABLES - existing_tables)) or "none"
             raise RuntimeError(
-                "Cannot baseline a partially initialized PostgreSQL schema. "
-                f"Missing current managed tables: {missing_current_tables}. "
-                f"Missing legacy managed tables: {missing_legacy_tables}."
+                "PostgreSQL schema contains ai-proxy tables but has no Alembic version. "
+                "Automatic legacy baselining is no longer supported. "
+                f"Missing current managed tables: {missing_current_tables}."
             )
 
     command.upgrade(config, "head")

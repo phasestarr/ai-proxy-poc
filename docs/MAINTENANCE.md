@@ -269,7 +269,7 @@ Attachment provider lifecycle and cleanup commands live in docs/ATTACHMENT_PROVI
 ## Operator Events And Usage Caps
 
 - `operator_events` is the single operator-facing event log.
-- `chat_request_rejections` has been migrated into `operator_events` and dropped.
+- request rejection events are stored in `operator_events`.
 - Usage cap commands live in `docs/USAGE_CAPS.md`.
 - Audit queries live in `docs/FOR_AUDIT_QUERY.md`.
 

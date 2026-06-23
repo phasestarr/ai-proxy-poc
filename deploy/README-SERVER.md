@@ -37,7 +37,7 @@ docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.server
 Stop:
 
 ```bash
-docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.server.yml down -v
+docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.server.yml down
 ```
 
 Restart:

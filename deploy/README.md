@@ -38,6 +38,7 @@ README-LOCAL.md
 
 - `deploy.sh` creates `.env` and `.env.local` from `.env.example` when they are missing
 - `deploy.sh` sets `AUTH_COOKIE_SECURE=false` only in newly-created `.env.local`
+- `deploy.sh` sets `DEPLOYMENT_SMOKE_REQUIRED=false` only in newly-created `.env.local`
 - `deploy.sh` creates external Docker network `edge-net` when it is missing
 - `deploy.sh` does not start, stop, restart, or rebuild containers
 - `docker-compose.yml` is shared by server and local runtime

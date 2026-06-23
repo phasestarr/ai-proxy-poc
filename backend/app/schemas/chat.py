@@ -18,10 +18,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+MAX_CHAT_MESSAGE_CHARS = 65535
+MAX_CHAT_LATEST_PROMPT_CHARS = 32768
+
 
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
-    content: str = Field(..., min_length=1, max_length=65535)
+    content: str = Field(..., min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
 
     @field_validator("content")
     @classmethod
@@ -58,6 +61,8 @@ class ChatCompletionRequest(BaseModel):
             raise ValueError("at least one user message is required")
         if self.messages[-1].role != "user":
             raise ValueError("last message must have role 'user'")
+        if len(self.messages[-1].content) > MAX_CHAT_LATEST_PROMPT_CHARS:
+            raise ValueError(f"latest user prompt must be at most {MAX_CHAT_LATEST_PROMPT_CHARS} characters")
         return self
 
     @property

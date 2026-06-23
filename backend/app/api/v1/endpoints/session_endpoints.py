@@ -73,7 +73,6 @@ def resolve_conflicting_session(
     try:
         created_session = resolve_session_conflict(
             db,
-            raw_session_key=request.cookies.get(settings.auth_session_cookie_name),
             raw_conflict_ticket=request.cookies.get(settings.auth_conflict_cookie_name),
             requested_auth_type=payload.auth_type,
             client_ip=get_client_ip(request),

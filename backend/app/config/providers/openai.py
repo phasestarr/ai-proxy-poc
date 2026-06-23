@@ -29,8 +29,6 @@ class OpenAIProviderSettings(BaseSettings):
     code_interpreter_memory_limit: str = Field(validation_alias="OPENAI_CODE_INTERPRETER_MEMORY_LIMIT")
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 

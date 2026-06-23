@@ -7,6 +7,7 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import ChatHistoryFile, StoredFile
 from app.db.postgres.models.chat_history import ChatHistory
@@ -35,6 +36,8 @@ from app.services.chat.histories.state import (
     INTERACTION_STATE_VALIDATING,
     apply_history_interaction_state,
 )
+
+UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 
 
 def get_history_file(
@@ -67,7 +70,7 @@ async def attach_file_to_history(
 ) -> tuple[ChatHistory, list[ChatHistoryFile]]:
     mime_type = normalize_attachment_mime_type(upload.content_type)
     display_name = build_attachment_display_name(upload.filename, mime_type=mime_type)
-    file_bytes = await upload.read()
+    file_bytes = await _read_upload_bytes(upload)
     validate_attachment_upload(
         display_name=display_name,
         mime_type=mime_type,
@@ -294,3 +297,19 @@ def list_history_files(
         .order_by(ChatHistoryFile.created_at.asc(), ChatHistoryFile.id.asc())
     ).unique().scalars().all()
     return list(rows)
+
+
+async def _read_upload_bytes(upload: UploadFile) -> bytes:
+    max_file_bytes = max(0, settings.chat_attachment_max_file_bytes)
+    chunks: list[bytes] = []
+    total_bytes = 0
+    while True:
+        read_size = min(UPLOAD_READ_CHUNK_BYTES, max_file_bytes + 1 - total_bytes)
+        chunk = await upload.read(read_size)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > max_file_bytes:
+            raise ValueError("file exceeds the per-file size limit")
+        chunks.append(chunk)
+    return b"".join(chunks)

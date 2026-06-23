@@ -4,6 +4,7 @@ import secrets
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.session_lifecycle import issue_session
@@ -23,25 +24,11 @@ def create_guest_session(
     now = utc_now()
     user = _load_guest_user_by_ip(db, ip_address=created_ip)
     if user is None:
-        user = User(
-            id=str(uuid4()),
-            account_type="guest",
-            status="active",
-            display_name=created_ip or _build_guest_display_name(),
-            last_seen_at=now,
+        user = _create_guest_user(
+            db,
+            ip_address=created_ip,
+            now=now,
         )
-        db.add(user)
-        db.flush()
-
-        if created_ip:
-            db.add(
-                GuestIdentity(
-                    id=str(uuid4()),
-                    user_id=user.id,
-                    provider="guest",
-                    ip_address=created_ip,
-                )
-            )
     else:
         user.status = "active"
         if created_ip:
@@ -58,6 +45,44 @@ def create_guest_session(
         user_agent=user_agent,
         session_limit_strategy=session_limit_strategy,
     )
+
+
+def _create_guest_user(
+    db: Session,
+    *,
+    ip_address: str | None,
+    now,
+) -> User:
+    savepoint = db.begin_nested()
+    try:
+        user = User(
+            id=str(uuid4()),
+            account_type="guest",
+            status="active",
+            display_name=ip_address or _build_guest_display_name(),
+            last_seen_at=now,
+        )
+        db.add(user)
+        db.flush()
+
+        if ip_address:
+            db.add(
+                GuestIdentity(
+                    id=str(uuid4()),
+                    user_id=user.id,
+                    provider="guest",
+                    ip_address=ip_address,
+                )
+            )
+            db.flush()
+        savepoint.commit()
+        return user
+    except IntegrityError:
+        savepoint.rollback()
+        existing_user = _load_guest_user_by_ip(db, ip_address=ip_address)
+        if existing_user is None:
+            raise
+        return existing_user
 
 
 def _load_guest_user_by_ip(
@@ -78,4 +103,3 @@ def _load_guest_user_by_ip(
 
 def _build_guest_display_name() -> str:
     return f"Guest-{secrets.token_hex(3).upper()}"
-

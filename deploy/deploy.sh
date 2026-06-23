@@ -16,7 +16,10 @@ else
 fi
 
 if [ ! -f "$local_env" ]; then
-    sed 's/^AUTH_COOKIE_SECURE=.*/AUTH_COOKIE_SECURE=false/' "$env_example" > "$local_env"
+    sed \
+        -e 's/^AUTH_COOKIE_SECURE=.*/AUTH_COOKIE_SECURE=false/' \
+        -e 's/^DEPLOYMENT_SMOKE_REQUIRED=.*/DEPLOYMENT_SMOKE_REQUIRED=false/' \
+        "$env_example" > "$local_env"
     echo "Created local env: $local_env"
 else
     echo "Found existing local env: $local_env"

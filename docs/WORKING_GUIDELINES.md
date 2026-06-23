@@ -11,7 +11,7 @@
   - `backend/app/config/providers/<provider>.py`
 
 ## Runtime Rule
-- Docker Compose is the primary runtime path.
+- Docker Compose is the only runtime path.
 - If code reads a new env var, wire it through:
   - `deploy/docker-compose.yml`
   - `.env.example`

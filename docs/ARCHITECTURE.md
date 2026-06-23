@@ -205,7 +205,6 @@ Session expiry semantics:
 ## Operational Data Model
 - `operator_events`
   - single operator-facing event log for request rejects, usage cap rejects, provider turn failures, stale execution cleanup, and attachment cleanup failures
-  - replaces the old `chat_request_rejections` table
 - `user_usage_caps`
   - optional per-user cap override
   - `baseline_estimated_price_usd` is moved forward by `reset-cap`, so operators can unlock a user without cron/time-window logic

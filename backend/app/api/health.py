@@ -10,7 +10,9 @@ Current responsibilities:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import threading
+from uuid import uuid4
 
 from app.config.settings import settings
 from app.config.time import utc_now
@@ -18,6 +20,7 @@ from app.deployment_smoke.runner import run_smoke_check
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
+logger = logging.getLogger("uvicorn.error")
 
 _SMOKE_LOCK = threading.Lock()
 
@@ -25,7 +28,7 @@ _SMOKE_LOCK = threading.Lock()
 @dataclass(slots=True)
 class DeploymentSmokeState:
     passed: bool = False
-    last_error: str | None = None
+    last_error_id: str | None = None
     last_checked_at: str | None = None
 
 
@@ -55,15 +58,17 @@ def _ensure_deployment_smoke_passed() -> None:
         try:
             run_smoke_check()
         except Exception as exc:
-            _smoke_state.last_error = str(exc)
+            error_id = str(uuid4())
+            _smoke_state.last_error_id = error_id
+            logger.exception("Deployment smoke check failed. error_id=%s", error_id)
             raise HTTPException(
                 status_code=503,
                 detail={
                     "code": "deployment_smoke_failed",
                     "message": "deployment smoke check has not passed",
-                    "last_error": _smoke_state.last_error,
+                    "error_id": error_id,
                     "last_checked_at": _smoke_state.last_checked_at,
                 },
             ) from exc
         _smoke_state.passed = True
-        _smoke_state.last_error = None
+        _smoke_state.last_error_id = None

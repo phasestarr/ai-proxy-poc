@@ -8,9 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.encryption import decrypt_auth_payload, encrypt_auth_payload
-from app.auth.guest_sessions import create_guest_session
 from app.auth.keys import generate_conflict_ticket_key, hash_conflict_ticket_key
-from app.auth.session_lifecycle import issue_session, load_session_by_raw_key
+from app.auth.session_lifecycle import issue_session
 from app.auth.session_policy import get_session_limit
 from app.auth.types import (
     AuthType,
@@ -130,7 +129,6 @@ def inspect_session_conflict_ticket(
 def resolve_session_conflict(
     db: Session,
     *,
-    raw_session_key: str | None,
     raw_conflict_ticket: str | None,
     requested_auth_type: AuthType | None,
     client_ip: str | None,
@@ -145,39 +143,6 @@ def resolve_session_conflict(
             user_agent=user_agent,
         )
 
-    session_row = load_session_by_raw_key(db, raw_session_key) if raw_session_key else None
-    if session_row is not None:
-        user = session_row.user
-        if user.status != "active":
-            raise SessionConflictResolutionError(
-                reason="user_disabled",
-                detail="This user is disabled.",
-                auth_type=session_row.auth_type,
-            )
-
-        created_session = issue_session(
-            db,
-            user=user,
-            auth_type=session_row.auth_type,
-            capabilities=list(session_row.capabilities or []),
-            persistent=session_row.persistent,
-            created_ip=client_ip,
-            user_agent=user_agent,
-            session_limit_strategy="evict_oldest",
-        )
-
-        db.delete(session_row)
-        db.commit()
-        return created_session
-
-    if requested_auth_type == "guest":
-        return create_guest_session(
-            db,
-            created_ip=client_ip,
-            user_agent=user_agent,
-            session_limit_strategy="evict_oldest",
-        )
-
     raise SessionConflictResolutionError(
         reason="missing_session",
         detail="This session can no longer be recovered. Sign in again.",
@@ -188,22 +153,25 @@ def resolve_session_conflict(
 def load_conflict_ticket_by_raw_key(
     db: Session,
     raw_conflict_ticket: str | None,
+    *,
+    lock: bool = False,
 ) -> AuthConflictTicket | None:
     if not raw_conflict_ticket:
         return None
 
-    return db.execute(
-        select(AuthConflictTicket).where(
-            AuthConflictTicket.ticket_hash == hash_conflict_ticket_key(raw_conflict_ticket)
-        )
-    ).scalar_one_or_none()
+    statement = select(AuthConflictTicket).where(
+        AuthConflictTicket.ticket_hash == hash_conflict_ticket_key(raw_conflict_ticket)
+    )
+    if lock:
+        statement = statement.with_for_update()
+    return db.execute(statement).scalar_one_or_none()
 
 
 def load_valid_conflict_ticket(
     db: Session,
     raw_conflict_ticket: str | None,
 ) -> AuthConflictTicket | None:
-    ticket = load_conflict_ticket_by_raw_key(db, raw_conflict_ticket)
+    ticket = load_conflict_ticket_by_raw_key(db, raw_conflict_ticket, lock=True)
     if ticket is None:
         return None
 

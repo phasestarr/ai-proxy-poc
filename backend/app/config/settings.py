@@ -17,8 +17,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AppSettings(BaseSettings):
     app_name: str
     app_env: str
-    app_host: str
-    app_port: int
 
     database_url: str
     redis_url: str
@@ -26,7 +24,6 @@ class AppSettings(BaseSettings):
     auth_session_cookie_name: str
     auth_conflict_cookie_name: str
     auth_cookie_secure: bool
-    auth_cookie_samesite: Literal["lax", "strict", "none"]
     auth_cookie_path: str
     auth_cookie_domain: str | None
     auth_data_encryption_key: str
@@ -63,8 +60,6 @@ class AppSettings(BaseSettings):
     microsoft_scopes: list[str]
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 

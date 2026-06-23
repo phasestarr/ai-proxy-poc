@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.conflict_tickets import create_session_conflict_ticket
@@ -188,7 +189,44 @@ def _resolve_microsoft_user(
     account_home_id = _coerce_claim(account.get("home_account_id")) if isinstance(account, dict) else None
     home_account_id = _coerce_claim(claims.get("oid")) or account_home_id
 
-    identity = db.execute(
+    identity = _load_microsoft_identity(
+        db,
+        tenant_id=tenant_id,
+        subject=subject,
+    )
+
+    now = utc_now()
+    if identity is None:
+        return _create_microsoft_user(
+            db,
+            tenant_id=tenant_id,
+            subject=subject,
+            home_account_id=home_account_id,
+            preferred_username=preferred_username,
+            display_name=display_name,
+            email=email,
+            now=now,
+        )
+
+    user = identity.user
+    if user.status != "active":
+        raise MicrosoftOAuthRedirectError("microsoft_login_failed")
+
+    user.display_name = display_name
+    user.email = email
+    user.last_seen_at = now
+    identity.home_account_id = home_account_id
+    identity.preferred_username = preferred_username
+    return user
+
+
+def _load_microsoft_identity(
+    db: Session,
+    *,
+    tenant_id: str,
+    subject: str,
+) -> MicrosoftIdentity | None:
+    return db.execute(
         select(MicrosoftIdentity).where(
             MicrosoftIdentity.provider == MICROSOFT_PROVIDER,
             MicrosoftIdentity.tenant_id == tenant_id,
@@ -196,8 +234,20 @@ def _resolve_microsoft_user(
         )
     ).scalar_one_or_none()
 
-    now = utc_now()
-    if identity is None:
+
+def _create_microsoft_user(
+    db: Session,
+    *,
+    tenant_id: str,
+    subject: str,
+    home_account_id: str | None,
+    preferred_username: str | None,
+    display_name: str,
+    email: str | None,
+    now,
+) -> User:
+    savepoint = db.begin_nested()
+    try:
         user = User(
             id=str(uuid4()),
             account_type="human",
@@ -219,22 +269,31 @@ def _resolve_microsoft_user(
             preferred_username=preferred_username,
         )
         db.add(identity)
+        db.flush()
+        savepoint.commit()
         return user
-
-    user = identity.user
-    if user.status != "active":
-        raise MicrosoftOAuthRedirectError("microsoft_login_failed")
-
-    user.display_name = display_name
-    user.email = email
-    user.last_seen_at = now
-    identity.home_account_id = home_account_id
-    identity.preferred_username = preferred_username
-    return user
+    except IntegrityError:
+        savepoint.rollback()
+        identity = _load_microsoft_identity(
+            db,
+            tenant_id=tenant_id,
+            subject=subject,
+        )
+        if identity is None:
+            raise
+        user = identity.user
+        if user.status != "active":
+            raise MicrosoftOAuthRedirectError("microsoft_login_failed")
+        user.display_name = display_name
+        user.email = email
+        user.last_seen_at = now
+        identity.home_account_id = home_account_id
+        identity.preferred_username = preferred_username
+        return user
 
 
 def _load_active_transaction(db: Session, state: str | None) -> OAuthTransaction:
-    transaction = _load_transaction(db, state)
+    transaction = _load_transaction(db, state, lock=True)
     if transaction is None:
         raise MicrosoftOAuthRedirectError("microsoft_login_invalid_state")
 
@@ -251,16 +310,22 @@ def _load_active_transaction(db: Session, state: str | None) -> OAuthTransaction
     return transaction
 
 
-def _load_transaction(db: Session, state: str | None) -> OAuthTransaction | None:
+def _load_transaction(
+    db: Session,
+    state: str | None,
+    *,
+    lock: bool = False,
+) -> OAuthTransaction | None:
     if not state:
         return None
 
-    return db.execute(
-        select(OAuthTransaction).where(
-            OAuthTransaction.provider == MICROSOFT_PROVIDER,
-            OAuthTransaction.state == state,
-        )
-    ).scalar_one_or_none()
+    statement = select(OAuthTransaction).where(
+        OAuthTransaction.provider == MICROSOFT_PROVIDER,
+        OAuthTransaction.state == state,
+    )
+    if lock:
+        statement = statement.with_for_update()
+    return db.execute(statement).scalar_one_or_none()
 
 
 def _delete_transaction(db: Session, transaction: OAuthTransaction) -> None:

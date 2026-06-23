@@ -9,10 +9,10 @@ from app.db.postgres.models.chat_history import ChatContextCheckpoint, ChatHisto
 from app.schemas.chat import ChatMessage as RequestChatMessage
 from app.services.chat.completions.context.checkpoints import load_ready_chat_context_checkpoint
 
-CHECKPOINT_SUMMARY_SYSTEM_PREFIX = (
-    "Conversation checkpoint summary:\n"
+CHECKPOINT_SUMMARY_USER_PREFIX = (
+    "Earlier conversation summary for continuity:\n"
     "- This summary replaces older chat turns already covered by the checkpoint.\n"
-    "- Treat it as trusted prior conversation context for the covered turns.\n\n"
+    "- Use it as background context only; the latest user message remains the active request.\n\n"
 )
 
 
@@ -55,7 +55,7 @@ def build_chat_context(
     )
 
     provider_messages: list[RequestChatMessage] = []
-    checkpoint_message = _build_checkpoint_system_message(checkpoint)
+    checkpoint_message = _build_checkpoint_context_message(checkpoint)
     if checkpoint_message is not None:
         provider_messages.append(checkpoint_message)
 
@@ -137,14 +137,14 @@ def _map_rows_to_request_messages(rows: list[ChatMessage]) -> list[RequestChatMe
     return messages
 
 
-def _build_checkpoint_system_message(
+def _build_checkpoint_context_message(
     checkpoint: ChatContextCheckpoint | None,
 ) -> RequestChatMessage | None:
     if checkpoint is None or not checkpoint.summary_text or not checkpoint.summary_text.strip():
         return None
     return RequestChatMessage(
-        role="system",
-        content=f"{CHECKPOINT_SUMMARY_SYSTEM_PREFIX}{checkpoint.summary_text.strip()}",
+        role="user",
+        content=f"{CHECKPOINT_SUMMARY_USER_PREFIX}{checkpoint.summary_text.strip()}",
     )
 
 

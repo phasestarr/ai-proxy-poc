@@ -7,6 +7,8 @@ from starlette.responses import Response
 from app.config.settings import settings
 from app.config.time import utc_now
 
+AUTH_COOKIE_SAMESITE = "strict"
+
 
 def set_session_cookie(
     response: Response,
@@ -20,7 +22,7 @@ def set_session_cookie(
         "value": session_key,
         "httponly": True,
         "secure": settings.auth_cookie_secure,
-        "samesite": settings.auth_cookie_samesite,
+        "samesite": AUTH_COOKIE_SAMESITE,
         "path": settings.auth_cookie_path,
     }
 
@@ -42,7 +44,7 @@ def clear_session_cookie(response: Response) -> None:
         domain=settings.auth_cookie_domain,
         secure=settings.auth_cookie_secure,
         httponly=True,
-        samesite=settings.auth_cookie_samesite,
+        samesite=AUTH_COOKIE_SAMESITE,
     )
 
 
@@ -57,7 +59,7 @@ def set_session_conflict_cookie(
         "value": conflict_ticket,
         "httponly": True,
         "secure": settings.auth_cookie_secure,
-        "samesite": settings.auth_cookie_samesite,
+        "samesite": AUTH_COOKIE_SAMESITE,
         "path": settings.auth_cookie_path,
         "expires": expires_at,
         "max_age": max(0, int((expires_at - utc_now()).total_seconds())),
@@ -76,5 +78,5 @@ def clear_session_conflict_cookie(response: Response) -> None:
         domain=settings.auth_cookie_domain,
         secure=settings.auth_cookie_secure,
         httponly=True,
-        samesite=settings.auth_cookie_samesite,
+        samesite=AUTH_COOKIE_SAMESITE,
     )
