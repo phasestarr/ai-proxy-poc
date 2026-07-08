@@ -70,6 +70,10 @@ class StoredFile(Base):
         back_populates="stored_file",
         cascade="all, delete-orphan",
     )
+    draft_files: Mapped[list["ChatDraftFile"]] = relationship(
+        back_populates="stored_file",
+        cascade="all, delete-orphan",
+    )
 
 
 class StoredFileProviderState(Base):
@@ -153,6 +157,43 @@ class ChatHistoryFile(Base):
     user: Mapped["User"] = relationship(back_populates="chat_history_files")
     history: Mapped["ChatHistory"] = relationship(back_populates="files")
     stored_file: Mapped["StoredFile"] = relationship(back_populates="history_files")
+
+
+class ChatDraftFile(Base):
+    __tablename__ = "chat_draft_files"
+    __table_args__ = (
+        UniqueConstraint("draft_id", "stored_file_id", name="uq_chat_draft_files_draft_stored_file"),
+        Index("ix_chat_draft_files_draft_created", "draft_id", "created_at"),
+        Index("ix_chat_draft_files_user_draft", "user_id", "draft_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    draft_id: Mapped[str] = mapped_column(
+        ForeignKey("chat_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    stored_file_id: Mapped[str] = mapped_column(
+        ForeignKey("stored_files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    byte_size: Mapped[int] = mapped_column(nullable=False)
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship(back_populates="chat_draft_files")
+    draft: Mapped["ChatDraft"] = relationship(back_populates="files")
+    stored_file: Mapped["StoredFile"] = relationship(back_populates="draft_files")
 
 
 class ChatMessageAttachment(Base):

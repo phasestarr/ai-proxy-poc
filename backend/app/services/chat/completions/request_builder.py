@@ -28,6 +28,7 @@ from app.services.chat.completions.context.pipeline import (
 from app.services.chat.completions.validation import build_safe_error_detail
 from app.services.chat.errors import ChatProxyError
 from app.services.chat.histories.service import load_user_history
+from app.services.chat.operations import OperationHandle, assert_operation_current
 
 
 async def build_prepared_request(
@@ -35,8 +36,7 @@ async def build_prepared_request(
     payload: ChatCompletionRequest,
     session: SessionContext,
     route: ProviderRoute,
-    history_id: str,
-    draft_chat_id: str | None = None,
+    history_id: str | None,
 ) -> tuple[BuiltChatContext, PreparedProviderChatRequest]:
     latest_user_message = payload.messages[-1]
     with SessionLocal() as pipeline_db:
@@ -45,7 +45,7 @@ async def build_prepared_request(
             user_id=session.user_id,
             history_id=history_id,
         )
-        if history_id and history is None and draft_chat_id != history_id:
+        if history_id and history is None:
             raise ChatProxyError(
                 code="chat_failed",
                 origin="proxy",
@@ -82,6 +82,7 @@ async def run_context_compaction(
     *,
     history: ChatHistory,
     user_id: str,
+    operation: OperationHandle,
 ) -> None:
     with SessionLocal() as compression_db:
         source_text, covered_through_sequence = build_compaction_source_text(
@@ -108,6 +109,7 @@ async def run_context_compaction(
         ) from exc
 
     with SessionLocal() as compression_db:
+        assert_operation_current(compression_db, operation)
         persist_chat_context_checkpoint_ready(
             compression_db,
             user_id=user_id,

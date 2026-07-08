@@ -10,12 +10,7 @@ export type ChatSelection = {
   toolIds?: string[];
 };
 
-export type ChatDraft = {
-  draftChatId: string;
-  expiresAt: string;
-  interactionState: "ready" | "validating" | "waiting";
-  busyReason: string | null;
-};
+export type ChatOperationState = "ready" | "validating" | "provider_streaming" | "finalizing";
 
 export type ChatAttachmentLimits = {
   maxFilesPerHistory: number;
@@ -40,8 +35,9 @@ export type ChatHistorySummary = {
   id: string;
   title: string;
   pinOrder: number | null;
-  interactionState: "ready" | "validating" | "waiting";
-  busyReason: string | null;
+  lifecycleState: "active" | "deleting";
+  operationState: ChatOperationState;
+  operationType: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
@@ -117,7 +113,6 @@ export type ChatStreamDone = {
 
 export type StreamChatReplyOptions = {
   chatHistoryId?: string | null;
-  draftChatId?: string | null;
   messages: ChatRequestMessage[];
   selection?: ChatSelection;
   signal?: AbortSignal;

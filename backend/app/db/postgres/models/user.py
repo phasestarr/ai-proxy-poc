@@ -53,6 +53,14 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    chat_drafts: Mapped[list["ChatDraft"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    chat_operations: Mapped[list["ChatOperation"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     chat_history_memories: Mapped[list["ChatHistoryMemory"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
@@ -66,6 +74,10 @@ class User(Base):
         cascade="all, delete-orphan",
     )
     chat_history_files: Mapped[list["ChatHistoryFile"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    chat_draft_files: Mapped[list["ChatDraftFile"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )

@@ -27,6 +27,8 @@ CURRENT_MANAGED_TABLES = {
     "auth_conflict_tickets",
     "oauth_transactions",
     "chat_histories",
+    "chat_drafts",
+    "chat_operations",
     "chat_messages",
     "chat_history_memories",
     "chat_context_checkpoints",
@@ -36,6 +38,7 @@ CURRENT_MANAGED_TABLES = {
     "stored_files",
     "stored_file_provider_states",
     "chat_history_files",
+    "chat_draft_files",
     "chat_message_attachments",
 }
 

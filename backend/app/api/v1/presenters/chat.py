@@ -13,12 +13,14 @@ from app.services.chat.histories.usage_summary import extract_token_summary
 
 
 def build_chat_history_summary(history, message_count: int, attachment_count: int) -> ChatHistorySummary:
+    operation = _active_operation(history)
     return ChatHistorySummary(
         id=history.id,
         title=history.title,
         pin_order=history.pin_order,
-        interaction_state=getattr(history, "interaction_state", "ready"),
-        busy_reason=getattr(history, "busy_reason", None),
+        lifecycle_state=getattr(history, "lifecycle_state", "active"),
+        operation_state=_operation_state(operation),
+        operation_type=getattr(operation, "operation_type", None),
         created_at=history.created_at,
         updated_at=history.updated_at,
         last_message_at=history.last_message_at,
@@ -88,3 +90,22 @@ def build_chat_history_file_view(history_file) -> ChatHistoryFileView:
         created_at=history_file.created_at,
         updated_at=history_file.updated_at,
     )
+
+
+def _active_operation(owner):
+    active_operation_id = getattr(owner, "active_operation_id", None)
+    if not active_operation_id:
+        return None
+    for operation in getattr(owner, "operations", []) or []:
+        if operation.id == active_operation_id:
+            return operation
+    return None
+
+
+def _operation_state(operation) -> str:
+    if operation is None:
+        return "ready"
+    state = getattr(operation, "state", "validating")
+    if state in {"validating", "provider_streaming", "finalizing"}:
+        return state
+    return "ready"

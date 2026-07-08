@@ -40,7 +40,7 @@ async def run_housekeeping_once() -> HousekeepingResult:
         expired_auth_rows_deleted = purge_expired_auth_data(db, now=now)
 
     with SessionLocal() as db:
-        stale_chat_executions_cleaned = cleanup_stale_chat_executions(db, now=now)
+        stale_chat_executions_cleaned = await cleanup_stale_chat_executions(db, now=now)
 
     with SessionLocal() as db:
         stale_empty_histories_deleted = delete_stale_empty_histories(db, now=now)

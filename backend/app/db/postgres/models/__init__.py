@@ -8,6 +8,7 @@ Purpose:
 from app.db.postgres.models.auth_conflicts import AuthConflictTicket
 from app.db.postgres.models.auth_sessions import AuthProviderSession, AuthSession
 from app.db.postgres.models.chat_attachment import (
+    ChatDraftFile,
     ChatHistoryFile,
     ChatMessageAttachment,
     StoredFile,
@@ -15,9 +16,11 @@ from app.db.postgres.models.chat_attachment import (
 )
 from app.db.postgres.models.chat_history import (
     ChatContextCheckpoint,
+    ChatDraft,
     ChatHistory,
     ChatHistoryMemory,
     ChatMessage,
+    ChatOperation,
 )
 from app.db.postgres.models.identities import GuestIdentity, MicrosoftIdentity
 from app.db.postgres.models.operator_event import OperatorEvent
@@ -31,12 +34,15 @@ __all__ = [
     "AuthProviderSession",
     "AuthSession",
     "GuestIdentity",
+    "ChatDraft",
+    "ChatDraftFile",
     "ChatHistoryFile",
     "ChatContextCheckpoint",
     "ChatHistory",
     "ChatHistoryMemory",
     "ChatMessage",
     "ChatMessageAttachment",
+    "ChatOperation",
     "MicrosoftIdentity",
     "OperatorEvent",
     "OAuthTransaction",

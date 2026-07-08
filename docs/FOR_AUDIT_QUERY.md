@@ -59,7 +59,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, event_
 Usage-cap rejects:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, chat_history_id, draft_chat_id, model_id, provider, detail, created_at FROM operator_events WHERE event_type = 'usage_cap_exceeded' ORDER BY created_at DESC LIMIT 100;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, chat_history_id, model_id, provider, detail, created_at FROM operator_events WHERE event_type = 'usage_cap_exceeded' ORDER BY created_at DESC LIMIT 100;"
 ```
 
 Stale execution cleanup:

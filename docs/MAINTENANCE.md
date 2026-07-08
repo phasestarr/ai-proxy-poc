@@ -142,7 +142,7 @@ Anthropic:
    - enforces per-user usage caps before provider execution
 4. orchestration and lease ownership
    - `backend/app/services/chat/completions/orchestrator.py`
-   - acquires the `chat_history_id` Redis lease
+   - starts a token-fenced `chat_operations` row for the target history, creating a history first for text-only new chats
    - emits pre-provider SSE status messages
 5. persisted context rebuild and request preparation
    - `backend/app/services/chat/completions/request_builder.py`
@@ -155,7 +155,7 @@ Anthropic:
    - backend-owned default system instruction
 7. context assembly
    - `backend/app/services/chat/completions/context/pipeline.py`
-   - injects checkpoint summary as a `system` message when present
+   - injects checkpoint summary as a `user` message when present
    - includes only raw messages after `covered_through_sequence`
    - appends the latest user request message as the final turn
 8. provider-native payload build
@@ -176,8 +176,9 @@ Anthropic:
 12. provider dispatch and execution
    - `backend/app/providers/dispatcher.py`
    - `backend/app/providers/<provider>/stream.py`
-   - first provider chunk must arrive before `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS`
-   - after first chunk, total stream time is bounded by `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS`
+   - provider events must keep arriving before `CHAT_PROVIDER_EVENT_IDLE_TIMEOUT_SECONDS`
+   - DB heartbeat writes are throttled; incoming chunks still check the operation token
+   - total provider runtime is bounded by `CHAT_PROVIDER_MAX_RUNTIME_SECONDS`
 13. usage normalization and history rollup
    - `backend/app/providers/<provider>/usage.py`
    - `backend/app/services/chat/histories/usage_summary.py`
@@ -248,19 +249,18 @@ Main files:
   - attachment token totals are checked separately per provider
 
 ## Attachment Runtime Semantics
-- refresh does not restore draft or selected history from browser storage
+- refresh does not restore selected history from browser storage
 - the frontend does not auto-recover interrupted SSE
-- Redis inflight lease is the effective concurrency guard
-- first-send draft TTL uses `CHAT_DRAFT_TTL_SECONDS`
-- attachment mutation leases use `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`
-- initial chat send lease TTL uses `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS`
-- provider first response arrival extends the Redis lease to `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS`
-- provider output after either fixed deadline is discarded by treating the turn as timed out
-- housekeeping closes stale send turns whose `chat_messages.deadline_at` has passed and resets stale attachment mutation states after `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`
-- `interaction_state` is a UI hint, not the only concurrency authority
-- delete behavior uses the Redis lease heuristic
-  - if the lease is still active, delete is blocked
-  - if the lease has expired, delete may proceed even if stale UI state still says `validating` or `waiting`
+- `chat_operations.owner_token` plus the owner's active operation fields are the concurrency guard
+- blank-page upload staging draft cleanup uses `CHAT_DRAFT_TTL_SECONDS`
+- validation, compaction, upload/delete/toggle, and history-delete operations use `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`
+- provider event liveness uses `CHAT_PROVIDER_EVENT_IDLE_TIMEOUT_SECONDS`; persisted heartbeat writes are throttled and only happen while provider chunks are arriving
+- provider hard runtime uses `CHAT_PROVIDER_MAX_RUNTIME_SECONDS`
+- provider output after the operation deadline is rejected by the token fence and the turn is treated as timed out
+- housekeeping closes stale operations and streaming assistant rows whose operation/message deadline has passed
+- delete behavior uses the active operation token
+  - if a current operation is active, delete is blocked
+  - if the operation deadline has expired, the next operation start or housekeeping can clear it
 
 ## Attachment Provider Cleanup
 

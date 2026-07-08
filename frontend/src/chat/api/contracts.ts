@@ -52,8 +52,9 @@ export type ChatHistorySummaryApiPayload = {
   id: string;
   title: string;
   pin_order?: number | null;
-  interaction_state?: "ready" | "validating" | "waiting";
-  busy_reason?: string | null;
+  lifecycle_state?: "active" | "deleting";
+  operation_state?: "ready" | "validating" | "provider_streaming" | "finalizing";
+  operation_type?: string | null;
   created_at: string;
   updated_at: string;
   last_message_at?: string | null;
@@ -116,15 +117,5 @@ export type ChatHistoryFilesApiEnvelope = {
   history?: ChatHistorySummaryApiPayload | null;
   files: ChatHistoryFileApiPayload[];
   deleted_history_id?: string | null;
-  attachment_limits: ChatAttachmentLimitsApiPayload;
-};
-
-export type ChatDraftApiEnvelope = {
-  draft: {
-    draft_chat_id: string;
-    expires_at: string;
-    interaction_state?: "ready" | "validating" | "waiting";
-    busy_reason?: string | null;
-  };
   attachment_limits: ChatAttachmentLimitsApiPayload;
 };

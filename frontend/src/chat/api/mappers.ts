@@ -1,6 +1,5 @@
 import type {
   ChatAttachmentLimitsApiPayload,
-  ChatDraftApiEnvelope,
   ChatHistoryFileApiPayload,
   ChatHistoryMessageApiPayload,
   ChatHistorySummaryApiPayload,
@@ -9,7 +8,6 @@ import type {
   ChatStreamStatusApiEvent,
 } from "./contracts";
 import type {
-  ChatDraft,
   ChatAttachmentLimits,
   ChatHistoryFile,
   ChatHistoryMessage,
@@ -59,8 +57,9 @@ export function mapHistorySummary(payload: ChatHistorySummaryApiPayload): ChatHi
     id: payload.id,
     title: payload.title,
     pinOrder: payload.pin_order ?? null,
-    interactionState: payload.interaction_state ?? "ready",
-    busyReason: payload.busy_reason ?? null,
+    lifecycleState: payload.lifecycle_state ?? "active",
+    operationState: payload.operation_state ?? "ready",
+    operationType: payload.operation_type ?? null,
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
     lastMessageAt: payload.last_message_at ?? null,
@@ -111,14 +110,5 @@ export function mapHistoryFile(payload: ChatHistoryFileApiPayload): ChatHistoryF
     },
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
-  };
-}
-
-export function mapDraft(payload: ChatDraftApiEnvelope["draft"]): ChatDraft {
-  return {
-    draftChatId: payload.draft_chat_id,
-    expiresAt: payload.expires_at,
-    interactionState: payload.interaction_state ?? "ready",
-    busyReason: payload.busy_reason ?? null,
   };
 }

@@ -33,13 +33,12 @@ Current runtime and code ownership for AI Proxy.
 8. Chat history list/load/delete goes through `frontend/src/chat/api/chatHistoryApi.ts`.
 9. Chat history rename and pin/unpin also go through `frontend/src/chat/api/chatHistoryApi.ts`.
 10. `New Chat` only resets local UI state; it does not create a backend row.
-11. The frontend does not persist the selected history or draft in browser storage; on refresh it returns to the local welcome state until the user loads a history again.
-12. On the first real send or first file upload without an active history, `ChatPage` creates a backend draft through `POST /api/v1/chat/drafts`.
-13. File upload goes through `POST /api/v1/chat/files` with either a real `chat_history_id` or a `draft_chat_id`.
-14. If the first file upload succeeds, the backend promotes that draft id into the persisted `chat_history.id` immediately and deletes the Redis draft.
-15. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions` with either a real `chat_history_id` or a `draft_chat_id`.
-16. If send validation succeeds, the backend promotes that draft id into the persisted `chat_history.id` immediately before the first turn starts.
-17. The frontend consumes SSE `start`, `delta`, `status`, `done`, and `error`.
+11. The frontend does not persist the selected history in browser storage; on refresh it returns to the local welcome state until the user loads a history again.
+12. On the first file upload without an active history, `POST /api/v1/chat/files` uses an internal Postgres draft during validation/counting/storage and promotes it to a visible chat history before returning success.
+13. File upload goes through `POST /api/v1/chat/files` with a real `chat_history_id`, or neither id for the blank-page attachment flow.
+14. A text-only first send goes directly to `POST /api/v1/chat/completions` with neither id.
+15. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions` with an optional `chat_history_id`.
+16. The frontend consumes SSE `start`, `delta`, `status`, `done`, and `error`.
 
 ## Backend Flow
 1. `backend/app/main.py`
@@ -55,27 +54,30 @@ Current runtime and code ownership for AI Proxy.
    - owns HTTP shape only
 4. `backend/app/services/chat/completions/route_selection.py`
    - resolves `model_id` and `tool_ids`
-5. `backend/app/services/chat/completions/validation.py`
+5. `backend/app/services/chat/operations.py`
+   - starts token-fenced operations on chat histories and internal blank-upload staging drafts
+   - stores validation/provider deadlines in Postgres
+   - rejects late commits when the owner token no longer matches
+6. `backend/app/services/chat/completions/validation.py`
    - validates the selected route
-   - resolves owned chat histories or owned first-send drafts
    - enforces provider readiness, usage caps, and chat rate limits
-6. `backend/app/services/chat/completions/request_builder.py`
+7. `backend/app/services/chat/completions/request_builder.py`
    - rebuilds provider context from persisted history
    - assembles the provider request
    - conditionally resolves exact input-token counts near the soft threshold
    - runs context compaction when needed
-7. `backend/app/services/chat/completions/turn_persistence.py`
+8. `backend/app/services/chat/completions/turn_persistence.py`
    - persists user message and assistant placeholder
-8. `backend/app/services/chat/completions/provider_execution.py`
+9. `backend/app/services/chat/completions/provider_execution.py`
    - executes the provider stream
    - persists final success or failure outcomes
-9. `backend/app/services/chat/completions/orchestrator.py`
+10. `backend/app/services/chat/completions/orchestrator.py`
    - starts backend-owned provider execution
    - emits live SSE events if the browser is still connected
-10. `backend/app/providers/catalog.py`
+11. `backend/app/providers/catalog.py`
    - builds the public model catalog
    - validates model/tool selections
-11. `backend/app/providers/dispatcher.py`
+12. `backend/app/providers/dispatcher.py`
    - checks provider readiness
    - dispatches execution to the selected provider package
 
@@ -103,7 +105,7 @@ Session expiry semantics:
 - idle timeout is `last_seen_at + 6 hours`
 - session-limit eviction also marks the older session as `expired`
 - expired sessions are cleaned up by the background housekeeping loop
-- Redis chat drafts that never become a persisted history expire by `CHAT_DRAFT_TTL_SECONDS` and do not require database cleanup
+- Interrupted internal upload staging drafts are deleted by housekeeping after `CHAT_DRAFT_TTL_SECONDS`
 
 ## Data Ownership
 - PostgreSQL is the system of record for:
@@ -118,21 +120,22 @@ Session expiry semantics:
   - provider attachment metadata in `stored_file_provider_states`
   - per-turn attachment snapshots in `chat_message_attachments`
   - active chat context checkpoints
+  - internal blank-page upload staging drafts in `chat_drafts` while upload validation/counting/storage is in progress
+  - token-fenced chat operations in `chat_operations`
   - remembered-chat summary placeholders
   - unified operator events in `operator_events`
   - append-only usage ledger rows in `usage_ledger_events`
   - user usage cap overrides and reset baselines in `user_usage_caps`
 - Redis is used for:
-  - one in-flight chat lease per conversation id, including first-send drafts
-  - ephemeral first-send chat drafts
   - minute/hour chat rate limits
 - provider-side conversation state is not treated as the source of truth
 
 ## Chat Persistence Model
-- `POST /api/v1/chat/completions` creates a backend-owned turn only after backend validation passes, any required context compaction succeeds, and provider dispatch is about to begin
-- on the first send in a brand-new local conversation, the frontend creates a Redis-backed draft before calling `POST /api/v1/chat/completions`
-- `POST /api/v1/chat/completions` accepts either an owned `chat_history_id` or an owned `draft_chat_id`
-- if a draft-backed send passes backend validation, the backend creates `chat_histories.id = draft_chat_id` immediately before persisting the turn
+- `POST /api/v1/chat/completions` starts a token-fenced `chat_operations` row before validation
+- text-only first sends create a `chat_histories` row at send time and use that row as the operation scope
+- `POST /api/v1/chat/completions` accepts an owned `chat_history_id` or neither id
+- blank-page file upload starts an internal draft-scoped operation, validates/counts/stores the file, creates `chat_histories.id = chat_drafts.id`, copies draft file rows into `chat_history_files`, deletes the staging draft/file rows, and returns the persisted history
+- failed blank-page upload validation/counting/storage deletes the internal draft and any staged file rows before returning the error
 - backend persists:
   - user message
   - assistant placeholder
@@ -140,14 +143,13 @@ Session expiry semantics:
   - final success or error outcome
   - assistant usage JSON with normalized usage, provider raw usage, and price snapshot
   - history-level `usage_summary` rollup cache
-- backend-local rejects such as validation failures, session locks, usage caps, rate limits, and provider-readiness failures are not persisted as chat turns
+- backend-local rejects such as validation failures, active operation conflicts, usage caps, rate limits, and provider-readiness failures are not persisted as chat turns
 - those backend-local rejects are audit-logged in `operator_events`
-- provider execution uses two fixed timeout phases:
-  - `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS` for the first provider chunk after local validation and request preparation are complete
-  - `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS` for total stream time after the first provider chunk
-- the assistant placeholder stores `deadline_at`; first chunk arrival stores `first_response_at` and replaces `deadline_at` with the stream deadline
-- if either deadline is exceeded, the backend marks the assistant row `status='error'`, clears `deadline_at`, excludes the turn from future context, and writes an `operator_events` timeout row
-- if provider output arrives after timeout handling, it is not authoritative because the assistant row is no longer `streaming`
+- local validation, request preparation, compaction, and attachment preparation must complete before `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`
+- provider execution uses `CHAT_PROVIDER_EVENT_IDLE_TIMEOUT_SECONDS` as the next-event idle timeout and `CHAT_PROVIDER_MAX_RUNTIME_SECONDS` as a hard cap
+- the assistant placeholder stores the current operation `deadline_at`; provider event arrival stores `first_response_at` once and refreshes the next-event deadline on the first event, provider-state transitions, and throttled heartbeat intervals
+- if a deadline is exceeded, the backend marks the assistant row `status='error'`, clears `deadline_at`, excludes the turn from future context, clears the active operation token, and writes an `operator_events` timeout row
+- if provider output arrives after timeout handling, it is not authoritative because the operation token no longer matches
 - if provider execution fails, the assistant message is kept renderable but marked `excluded_from_context=true`
 - persisted provider-attempted failures keep provider-specific `result_code`, `result_message`, `finish_reason`, and safe `error_detail`
 - future provider context is rebuilt from:
@@ -156,7 +158,7 @@ Session expiry semantics:
   - the latest request user message
 
 ## Attachment Persistence Model
-- attachments belong to a `chat_history`, not to an individual prompt textarea submit
+- persisted attachments belong to a `chat_history`; blank-page uploads use a `chat_draft` only as internal staging before the upload response is returned
 - the frontend never stores attachment state outside the current in-memory render
 - local file attach creates no durable client state; only backend responses define what exists
 - `stored_files`
@@ -168,6 +170,9 @@ Session expiry semantics:
   - blocks same-history duplicate content by `UNIQUE(chat_history_id, stored_file_id)`
   - allows the same stored file to be referenced by different histories
   - stores whether each attachment is active for future prompt sends
+- `chat_draft_files`
+  - stores logical attachment rows only while blank-page upload validation/counting/storage is in progress
+  - uses the same file ids when the upload is promoted into `chat_history_files`
 - `stored_file_provider_states`
   - caches provider-specific token counts
   - caches provider-managed remote file refs after attach-time upload
@@ -176,12 +181,12 @@ Session expiry semantics:
 - `chat_message_attachments`
   - snapshots which attachments were present when a persisted turn reached provider dispatch
 - file-first flow:
-  - frontend creates a draft
-  - backend validates the upload, counts tokens for supported providers, stores the blob, creates the persisted history using the draft id, and deletes the draft
-- attachment operations use `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS` for their Redis lease and stale Postgres state recovery; provider X/Y timeouts do not apply until a chat send is dispatched
+  - frontend sends `POST /api/v1/chat/files` with no id
+  - backend creates a `chat_drafts` row, validates the upload, counts tokens for supported providers, stores the blob, creates `chat_draft_files`, promotes the draft to `chat_histories`, deletes the staging draft rows, and returns the visible history
+- attachment operations use `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS` and the same DB operation-token fence as chat sends
 - text-first flow:
-  - frontend creates a draft only when the first send starts
-  - backend promotes the draft to a persisted history immediately before the first persisted turn is created
+  - frontend sends `POST /api/v1/chat/completions` with no id
+  - backend creates a persisted history and starts a send operation immediately
 - provider-managed files are not the source of truth
   - OpenAI and Anthropic `file_id` values are disposable execution refs
   - deleting a provider file does not delete the logical attachment if the PostgreSQL row still exists

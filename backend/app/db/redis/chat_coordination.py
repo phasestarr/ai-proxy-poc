@@ -3,16 +3,13 @@ Purpose:
 - Coordinate chat concurrency and quota enforcement through Redis.
 
 Responsibilities:
-- Prevent overlapping chat executions per chat history
 - Enforce per-user short-window and hourly request limits
-- Keep Redis-specific coordination logic out of routers and chat orchestration
+- Keep Redis-specific rate-limit logic out of routers and chat orchestration
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import timedelta
-import secrets
 
 from redis.exceptions import RedisError
 
@@ -20,35 +17,12 @@ from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.redis.client import get_redis_client
 
-LOCK_KEY_PREFIX = "ai-proxy:chat:lock"
 MINUTE_RATE_KEY_PREFIX = "ai-proxy:chat:rate:minute"
 HOUR_RATE_KEY_PREFIX = "ai-proxy:chat:rate:hour"
-
-RELEASE_LOCK_SCRIPT = """
-if redis.call('get', KEYS[1]) == ARGV[1] then
-    return redis.call('del', KEYS[1])
-end
-return 0
-"""
-
-EXTEND_LOCK_SCRIPT = """
-if redis.call('get', KEYS[1]) == ARGV[1] then
-    return redis.call('expire', KEYS[1], ARGV[2])
-end
-return 0
-"""
 
 
 class ChatCoordinationUnavailableError(RuntimeError):
     """Raised when Redis-backed coordination cannot run."""
-
-
-class ChatRequestInProgressError(RuntimeError):
-    """Raised when the current chat history already owns an active chat request."""
-
-    def __init__(self, retry_after_seconds: int) -> None:
-        self.retry_after_seconds = retry_after_seconds
-        super().__init__("a chat request is already in progress for this chat history")
 
 
 class ChatRateLimitExceededError(RuntimeError):
@@ -65,48 +39,6 @@ class ChatRateLimitExceededError(RuntimeError):
         self.limit = limit
         self.retry_after_seconds = retry_after_seconds
         super().__init__(f"chat rate limit exceeded: {limit} requests per {window}")
-
-
-@dataclass(slots=True)
-class ChatExecutionLease:
-    lock_key: str
-    owner_token: str
-
-
-def acquire_chat_execution_lease(
-    *,
-    chat_history_id: str,
-    ttl_seconds: int | None = None,
-) -> ChatExecutionLease:
-    redis_client = get_redis_client()
-    lock_key = _build_lock_key(chat_history_id=chat_history_id)
-    owner_token = secrets.token_urlsafe(24)
-    effective_ttl_seconds = max(
-        1,
-        ttl_seconds
-        if ttl_seconds is not None
-        else settings.chat_provider_first_response_timeout_seconds,
-    )
-
-    try:
-        acquired = redis_client.set(
-            lock_key,
-            owner_token,
-            nx=True,
-            ex=effective_ttl_seconds,
-        )
-        if acquired:
-            return ChatExecutionLease(lock_key=lock_key, owner_token=owner_token)
-
-        retry_after_seconds = _normalize_retry_after(
-            redis_client.ttl(lock_key),
-            fallback_seconds=effective_ttl_seconds,
-        )
-        raise ChatRequestInProgressError(retry_after_seconds=retry_after_seconds)
-    except ChatRequestInProgressError:
-        raise
-    except RedisError as exc:
-        raise ChatCoordinationUnavailableError("chat coordination backend is unavailable") from exc
 
 
 def enforce_chat_rate_limits(*, user_id: str) -> None:
@@ -144,43 +76,6 @@ def enforce_chat_rate_limits(*, user_id: str) -> None:
         )
 
 
-def release_chat_execution_lease(lease: ChatExecutionLease | None) -> None:
-    if lease is None:
-        return
-
-    try:
-        get_redis_client().eval(
-            RELEASE_LOCK_SCRIPT,
-            1,
-            lease.lock_key,
-            lease.owner_token,
-        )
-    except RedisError:
-        return
-
-
-def extend_chat_execution_lease(
-    lease: ChatExecutionLease,
-    *,
-    ttl_seconds: int,
-) -> bool:
-    try:
-        result = get_redis_client().eval(
-            EXTEND_LOCK_SCRIPT,
-            1,
-            lease.lock_key,
-            lease.owner_token,
-            max(1, ttl_seconds),
-        )
-    except RedisError as exc:
-        raise ChatCoordinationUnavailableError("chat coordination backend is unavailable") from exc
-    return bool(result)
-
-
-def _build_lock_key(*, chat_history_id: str) -> str:
-    return f"{LOCK_KEY_PREFIX}:{chat_history_id}"
-
-
 def _build_minute_rate_key(*, user_id: str, current_time) -> str:
     minute_bucket = current_time.strftime("%Y%m%d%H%M")
     return f"{MINUTE_RATE_KEY_PREFIX}:{user_id}:{minute_bucket}"
@@ -189,12 +84,6 @@ def _build_minute_rate_key(*, user_id: str, current_time) -> str:
 def _build_hour_rate_key(*, user_id: str, current_time) -> str:
     hour_bucket = current_time.strftime("%Y%m%d%H")
     return f"{HOUR_RATE_KEY_PREFIX}:{user_id}:{hour_bucket}"
-
-
-def _normalize_retry_after(ttl_seconds: int, *, fallback_seconds: int) -> int:
-    if ttl_seconds is None or ttl_seconds <= 0:
-        return max(1, fallback_seconds)
-    return ttl_seconds
 
 
 def _seconds_until_next_minute(current_time) -> int:

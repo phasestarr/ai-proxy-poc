@@ -35,7 +35,6 @@ class OperatorEvent(Base):
     chat_history_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     chat_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     stored_file_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    draft_chat_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     operation: Mapped[str | None] = mapped_column(String(64), nullable=True)

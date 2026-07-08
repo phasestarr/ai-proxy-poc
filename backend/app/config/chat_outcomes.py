@@ -24,6 +24,7 @@ SUCCESS_MESSAGES: tuple[WeightedOutcomeMessage, ...] = (
 
 ERROR_MESSAGES: dict[str, str] = {
     "chat_failed": "Chat processing failed.",
+    "chat_validation_timeout": "Chat validation took too long.",
     "attachments_too_large": "Attached files exceed the provider file token limit.",
     "attachments_token_count_failed": "Attached file token metadata is unavailable.",
     "attachments_unsupported": "The selected model does not support file attachments.",

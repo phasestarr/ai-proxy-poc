@@ -7,43 +7,30 @@ Responsibilities:
 - Validate input payloads through schemas
 - Delegate processing to the chat service layer
 - Return server-sent event streams to the client
-
-Flow:
-- router -> schema validation -> service -> response
-
-Notes:
-- This file is intentionally thin.
-- Provider-specific implementation must live outside the router layer.
 """
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from __future__ import annotations
+
+import asyncio
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.api.v1.dependencies.session import require_authenticated_session, require_capability
 from app.api.v1.dependencies.db import get_db
-from app.config.settings import settings
+from app.api.v1.dependencies.session import require_authenticated_session, require_capability
 from app.api.v1.presenters.chat import (
     build_attachment_limits_view,
     build_chat_history_file_view,
     build_chat_history_message_view,
     build_chat_history_summary,
 )
-from app.db.redis.chat_coordination import (
-    ChatCoordinationUnavailableError,
-    ChatRequestInProgressError,
-    acquire_chat_execution_lease,
-    release_chat_execution_lease,
-)
-from app.db.redis.chat_drafts import ChatDraftUnavailableError, create_chat_draft, load_chat_draft, set_chat_draft_state
 from app.schemas.chat import (
     ChatCompletionRequest,
-    ChatDraftEnvelope,
-    ChatDraftView,
-    ChatHistoryFilesEnvelope,
     ChatHistoryEnvelope,
-    ChatHistoryListEnvelope,
+    ChatHistoryFilesEnvelope,
     ChatHistoryFileUpdateRequest,
+    ChatHistoryListEnvelope,
     ChatHistorySummary,
     ChatHistoryTitleUpdateRequest,
 )
@@ -53,6 +40,7 @@ from app.services.chat.attachments import (
     attach_file_to_history,
     delete_file_from_history,
     delete_history_with_files,
+    discard_draft_with_files,
     get_history_file,
     list_history_files,
     update_history_file_activation,
@@ -66,19 +54,22 @@ from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError
 from app.services.chat.histories.service import (
     get_chat_history,
     list_chat_histories,
-    load_user_history,
     pin_chat_history,
     unpin_chat_history,
     update_chat_history_title,
 )
-from app.services.chat.histories.state import (
-    BUSY_REASON_ATTACH_FILE,
-    BUSY_REASON_DELETE_FILE,
-    BUSY_REASON_DELETE_HISTORY,
-    INTERACTION_STATE_READY,
-    INTERACTION_STATE_VALIDATING,
-    apply_history_interaction_state,
+from app.services.chat.operations import (
+    ChatOperationConflictError,
+    ChatOperationExpiredError,
+    OperationHandle,
+    begin_draft_operation,
+    begin_history_operation,
+    complete_operation,
+    promote_draft_to_history,
+    reassign_operation_to_history,
+    validating_timeout_seconds,
 )
+from app.services.chat.attachments.validation import build_history_title_from_filename
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -93,56 +84,6 @@ def list_histories(
             build_chat_history_summary(history, message_count, attachment_count)
             for history, message_count, attachment_count in list_chat_histories(db, user_id=session.user_id)
         ],
-        attachment_limits=build_attachment_limits_view(),
-    )
-
-
-@router.post("/drafts", response_model=ChatDraftEnvelope, status_code=status.HTTP_201_CREATED)
-def create_draft(
-    session=Depends(require_authenticated_session),
-) -> ChatDraftEnvelope:
-    try:
-        draft = create_chat_draft(user_id=session.user_id)
-    except ChatDraftUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="chat draft backend is unavailable",
-        ) from exc
-
-    return ChatDraftEnvelope(
-        draft=ChatDraftView(
-            draft_chat_id=draft.draft_chat_id,
-            expires_at=draft.expires_at,
-            interaction_state=draft.interaction_state,
-            busy_reason=draft.busy_reason,
-        ),
-        attachment_limits=build_attachment_limits_view(),
-    )
-
-
-@router.get("/drafts/{draft_chat_id}", response_model=ChatDraftEnvelope)
-def get_draft(
-    draft_chat_id: str,
-    session=Depends(require_authenticated_session),
-) -> ChatDraftEnvelope:
-    try:
-        draft = load_chat_draft(draft_chat_id=draft_chat_id)
-    except ChatDraftUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="chat draft backend is unavailable",
-        ) from exc
-
-    if draft is None or draft.user_id != session.user_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat draft not found")
-
-    return ChatDraftEnvelope(
-        draft=ChatDraftView(
-            draft_chat_id=draft.draft_chat_id,
-            expires_at=draft.expires_at,
-            interaction_state=draft.interaction_state,
-            busy_reason=draft.busy_reason,
-        ),
         attachment_limits=build_attachment_limits_view(),
     )
 
@@ -217,89 +158,92 @@ def unpin_history(
 
 @router.post("/files", response_model=ChatHistoryFilesEnvelope, status_code=status.HTTP_201_CREATED)
 async def upload_history_file(
+    request: Request,
     chat_history_id: str | None = Form(default=None),
-    draft_chat_id: str | None = Form(default=None),
     file: UploadFile = File(...),
     session=Depends(require_authenticated_session),
     db: Session = Depends(get_db),
 ) -> ChatHistoryFilesEnvelope:
     normalized_history_id = (chat_history_id or "").strip() or None
-    normalized_draft_id = (draft_chat_id or "").strip() or None
-    if bool(normalized_history_id) == bool(normalized_draft_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="exactly one of chat_history_id or draft_chat_id is required")
-
-    lease = None
-    try:
-        lease = acquire_chat_execution_lease(
-            chat_history_id=normalized_history_id or normalized_draft_id or "",
-            ttl_seconds=_attachment_operation_timeout_seconds(),
-        )
-        _mark_upload_target_validating(
-            db=db,
-            user_id=session.user_id,
-            history_id=normalized_history_id,
-            draft_chat_id=normalized_draft_id,
-        )
-        history, files = await attach_file_to_history(
-            db,
-            user_id=session.user_id,
-            history_id=normalized_history_id,
-            draft_chat_id=normalized_draft_id,
-            upload=file,
-        )
-    except ChatRequestInProgressError as exc:
+    form_keys = set((await request.form()).keys())
+    unsupported_form_keys = form_keys - {"chat_history_id", "file"}
+    if unsupported_form_keys:
+        unsupported = sorted(unsupported_form_keys)[0]
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"chat operation already in progress; retry after {exc.retry_after_seconds} seconds",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
-    except ChatCoordinationUnavailableError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="chat coordination backend is unavailable") from exc
-    except ChatHistoryNotFoundError as exc:
-        _reset_upload_target_ready(
-            db=db,
-            user_id=session.user_id,
-            history_id=normalized_history_id,
-            draft_chat_id=normalized_draft_id,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"unsupported form field: {unsupported}",
         )
+
+    operation: OperationHandle | None = None
+    staging_draft_id: str | None = None
+    try:
+        if normalized_history_id:
+            operation = begin_history_operation(
+                db,
+                session=session,
+                history_id=normalized_history_id,
+                operation_type="attach_file",
+                timeout_seconds=validating_timeout_seconds(),
+            )
+        else:
+            draft, operation = begin_draft_operation(
+                db,
+                session=session,
+                operation_type="attach_file",
+                timeout_seconds=validating_timeout_seconds(),
+            )
+            staging_draft_id = draft.id
+        history, draft, files = await asyncio.wait_for(
+            attach_file_to_history(
+                db,
+                user_id=session.user_id,
+                history_id=normalized_history_id,
+                staging_draft_id=staging_draft_id,
+                upload=file,
+                operation=operation,
+            ),
+            timeout=validating_timeout_seconds(),
+        )
+        if draft is not None:
+            title = build_history_title_from_filename(files[0].display_name if files else "")
+            history = promote_draft_to_history(
+                db,
+                draft=draft,
+                title=title,
+            )
+            operation = reassign_operation_to_history(db, operation, history=history, draft=draft)
+            staging_draft_id = None
+            files = list_history_files(db, user_id=session.user_id, history_id=history.id)
+        complete_operation(db, operation, state="succeeded", allow_expired=True)
+    except asyncio.TimeoutError as exc:
+        _rollback_and_timeout(db, operation)
+        await _cleanup_staging_draft(db, user_id=session.user_id, draft_id=staging_draft_id)
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="chat validation took too long") from exc
+    except ChatOperationConflictError as exc:
+        raise _operation_conflict(exc) from exc
+    except ChatOperationExpiredError as exc:
+        db.rollback()
+        await _cleanup_staging_draft(db, user_id=session.user_id, draft_id=staging_draft_id)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="chat operation expired") from exc
+    except ChatHistoryNotFoundError as exc:
+        _rollback_and_fail(db, operation, result_code="chat_history_not_found", detail=str(exc))
+        await _cleanup_staging_draft(db, user_id=session.user_id, draft_id=staging_draft_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
     except ChatHistoryDuplicateFileError as exc:
-        _reset_upload_target_ready(
-            db=db,
-            user_id=session.user_id,
-            history_id=normalized_history_id,
-            draft_chat_id=normalized_draft_id,
-        )
+        _rollback_and_fail(db, operation, result_code="duplicate_attachment", detail=str(exc))
+        await _cleanup_staging_draft(db, user_id=session.user_id, draft_id=staging_draft_id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
-        _reset_upload_target_ready(
-            db=db,
-            user_id=session.user_id,
-            history_id=normalized_history_id,
-            draft_chat_id=normalized_draft_id,
-        )
+        _rollback_and_fail(db, operation, result_code="invalid_attachment", detail=str(exc))
+        await _cleanup_staging_draft(db, user_id=session.user_id, draft_id=staging_draft_id)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
-        _reset_upload_target_ready(
-            db=db,
-            user_id=session.user_id,
-            history_id=normalized_history_id,
-            draft_chat_id=normalized_draft_id,
-        )
+        _rollback_and_fail(db, operation, result_code="attachment_backend_unavailable", detail=str(exc))
+        await _cleanup_staging_draft(db, user_id=session.user_id, draft_id=staging_draft_id)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except Exception:
-        _reset_upload_target_ready(
-            db=db,
-            user_id=session.user_id,
-            history_id=normalized_history_id,
-            draft_chat_id=normalized_draft_id,
-        )
-        raise
-    finally:
-        release_chat_execution_lease(lease)
 
     return ChatHistoryFilesEnvelope(
-        history=build_chat_history_summary(history, len(history.messages), len(files)),
+        history=build_chat_history_summary(history, len(history.messages), len(files)) if history is not None else None,
         files=[build_chat_history_file_view(history_file) for history_file in files],
         deleted_history_id=None,
         attachment_limits=build_attachment_limits_view(),
@@ -313,62 +257,40 @@ async def delete_history_file(
     session=Depends(require_authenticated_session),
     db: Session = Depends(get_db),
 ) -> ChatHistoryFilesEnvelope:
-    lease = None
+    operation: OperationHandle | None = None
     try:
-        lease = acquire_chat_execution_lease(
-            chat_history_id=history_id,
-            ttl_seconds=_attachment_operation_timeout_seconds(),
-        )
-        _set_history_busy_state(
-            db=db,
-            user_id=session.user_id,
-            history_id=history_id,
-            interaction_state=INTERACTION_STATE_VALIDATING,
-            busy_reason=BUSY_REASON_DELETE_FILE,
-        )
-        history, files, deleted_history_id = await delete_file_from_history(
+        operation = begin_history_operation(
             db,
-            user_id=session.user_id,
+            session=session,
             history_id=history_id,
-            file_id=file_id,
+            operation_type="delete_file",
+            timeout_seconds=validating_timeout_seconds(),
         )
-    except ChatRequestInProgressError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"chat operation already in progress; retry after {exc.retry_after_seconds} seconds",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
-    except ChatCoordinationUnavailableError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="chat coordination backend is unavailable") from exc
+        history, files, deleted_history_id = await asyncio.wait_for(
+            delete_file_from_history(
+                db,
+                user_id=session.user_id,
+                history_id=history_id,
+                file_id=file_id,
+                operation=operation,
+            ),
+            timeout=validating_timeout_seconds(),
+        )
+        complete_operation(db, operation, state="succeeded", allow_expired=True)
+    except asyncio.TimeoutError as exc:
+        _rollback_and_timeout(db, operation)
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="chat validation took too long") from exc
+    except ChatOperationConflictError as exc:
+        raise _operation_conflict(exc) from exc
+    except ChatOperationExpiredError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="chat operation expired") from exc
     except ChatHistoryNotFoundError as exc:
-        _set_history_busy_state(
-            db=db,
-            user_id=session.user_id,
-            history_id=history_id,
-            interaction_state=INTERACTION_STATE_READY,
-            busy_reason=None,
-        )
+        _rollback_and_fail(db, operation, result_code="chat_history_not_found", detail=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
     except ChatHistoryFileNotFoundError as exc:
-        _set_history_busy_state(
-            db=db,
-            user_id=session.user_id,
-            history_id=history_id,
-            interaction_state=INTERACTION_STATE_READY,
-            busy_reason=None,
-        )
+        _rollback_and_fail(db, operation, result_code="chat_file_not_found", detail=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat file not found") from exc
-    except Exception:
-        _set_history_busy_state(
-            db=db,
-            user_id=session.user_id,
-            history_id=history_id,
-            interaction_state=INTERACTION_STATE_READY,
-            busy_reason=None,
-        )
-        raise
-    finally:
-        release_chat_execution_lease(lease)
 
     return ChatHistoryFilesEnvelope(
         history=build_chat_history_summary(history, len(history.messages), len(files)) if history is not None else None,
@@ -386,11 +308,14 @@ async def update_history_file(
     session=Depends(require_authenticated_session),
     db: Session = Depends(get_db),
 ) -> ChatHistoryFilesEnvelope:
-    lease = None
+    operation: OperationHandle | None = None
     try:
-        lease = acquire_chat_execution_lease(
-            chat_history_id=history_id,
-            ttl_seconds=_attachment_operation_timeout_seconds(),
+        operation = begin_history_operation(
+            db,
+            session=session,
+            history_id=history_id,
+            operation_type="toggle_file",
+            timeout_seconds=validating_timeout_seconds(),
         )
         history, files = update_history_file_activation(
             db,
@@ -398,21 +323,20 @@ async def update_history_file(
             history_id=history_id,
             file_id=file_id,
             is_active=payload.is_active,
+            operation=operation,
         )
-    except ChatRequestInProgressError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"chat operation already in progress; retry after {exc.retry_after_seconds} seconds",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
-    except ChatCoordinationUnavailableError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="chat coordination backend is unavailable") from exc
+        complete_operation(db, operation, state="succeeded", allow_expired=True)
+    except ChatOperationConflictError as exc:
+        raise _operation_conflict(exc) from exc
+    except ChatOperationExpiredError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="chat operation expired") from exc
     except ChatHistoryNotFoundError as exc:
+        _rollback_and_fail(db, operation, result_code="chat_history_not_found", detail=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
     except ChatHistoryFileNotFoundError as exc:
+        _rollback_and_fail(db, operation, result_code="chat_file_not_found", detail=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat file not found") from exc
-    finally:
-        release_chat_execution_lease(lease)
 
     return ChatHistoryFilesEnvelope(
         history=build_chat_history_summary(history, len(history.messages), len(files)),
@@ -456,48 +380,35 @@ async def delete_history(
     session=Depends(require_authenticated_session),
     db: Session = Depends(get_db),
 ) -> Response:
-    lease = None
+    operation: OperationHandle | None = None
     try:
-        lease = acquire_chat_execution_lease(
-            chat_history_id=history_id,
-            ttl_seconds=_attachment_operation_timeout_seconds(),
-        )
-        _set_history_busy_state(
-            db=db,
-            user_id=session.user_id,
+        operation = begin_history_operation(
+            db,
+            session=session,
             history_id=history_id,
-            interaction_state=INTERACTION_STATE_VALIDATING,
-            busy_reason=BUSY_REASON_DELETE_HISTORY,
+            operation_type="delete_history",
+            timeout_seconds=validating_timeout_seconds(),
         )
-        await delete_history_with_files(db, user_id=session.user_id, history_id=history_id)
-    except ChatRequestInProgressError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"chat operation already in progress; retry after {exc.retry_after_seconds} seconds",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
-    except ChatCoordinationUnavailableError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="chat coordination backend is unavailable") from exc
+        await asyncio.wait_for(
+            delete_history_with_files(
+                db,
+                user_id=session.user_id,
+                history_id=history_id,
+                operation=operation,
+            ),
+            timeout=validating_timeout_seconds(),
+        )
+    except asyncio.TimeoutError as exc:
+        _rollback_and_timeout(db, operation)
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="chat validation took too long") from exc
+    except ChatOperationConflictError as exc:
+        raise _operation_conflict(exc) from exc
+    except ChatOperationExpiredError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="chat operation expired") from exc
     except ChatHistoryNotFoundError as exc:
-        _set_history_busy_state(
-            db=db,
-            user_id=session.user_id,
-            history_id=history_id,
-            interaction_state=INTERACTION_STATE_READY,
-            busy_reason=None,
-        )
+        _rollback_and_fail(db, operation, result_code="chat_history_not_found", detail=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
-    except Exception:
-        _set_history_busy_state(
-            db=db,
-            user_id=session.user_id,
-            history_id=history_id,
-            interaction_state=INTERACTION_STATE_READY,
-            busy_reason=None,
-        )
-        raise
-    finally:
-        release_chat_execution_lease(lease)
 
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
@@ -559,100 +470,48 @@ async def chat_completions(
     )
 
 
-def _mark_upload_target_validating(
-    *,
-    db: Session,
-    user_id: str,
-    history_id: str | None,
-    draft_chat_id: str | None,
-) -> None:
-    if draft_chat_id:
-        promoted_history = load_user_history(
+def _operation_conflict(_: ChatOperationConflictError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="chat operation already in progress",
+    )
+
+
+def _rollback_and_timeout(db: Session, operation: OperationHandle | None) -> None:
+    db.rollback()
+    if operation is not None:
+        complete_operation(
             db,
-            user_id=user_id,
-            history_id=draft_chat_id,
+            operation,
+            state="timed_out",
+            result_code="chat_validation_timeout",
+            error_detail="chat validation took too long",
+            allow_expired=True,
         )
-        if promoted_history is not None:
-            apply_history_interaction_state(
-                promoted_history,
-                interaction_state=INTERACTION_STATE_VALIDATING,
-                busy_reason=BUSY_REASON_ATTACH_FILE,
-            )
-            db.commit()
-            return
-        set_chat_draft_state(
-            draft_chat_id=draft_chat_id,
-            interaction_state=INTERACTION_STATE_VALIDATING,
-            busy_reason=BUSY_REASON_ATTACH_FILE,
-        )
-        return
-    _set_history_busy_state(
-        db=db,
-        user_id=user_id,
-        history_id=history_id,
-        interaction_state=INTERACTION_STATE_VALIDATING,
-        busy_reason=BUSY_REASON_ATTACH_FILE,
-    )
 
 
-def _reset_upload_target_ready(
-    *,
+def _rollback_and_fail(
     db: Session,
-    user_id: str,
-    history_id: str | None,
-    draft_chat_id: str | None,
+    operation: OperationHandle | None,
+    *,
+    result_code: str,
+    detail: str,
 ) -> None:
-    if draft_chat_id:
-        promoted_history = load_user_history(
+    db.rollback()
+    if operation is not None:
+        complete_operation(
             db,
-            user_id=user_id,
-            history_id=draft_chat_id,
+            operation,
+            state="failed",
+            result_code=result_code,
+            error_detail=detail,
         )
-        if promoted_history is not None:
-            apply_history_interaction_state(
-                promoted_history,
-                interaction_state=INTERACTION_STATE_READY,
-                busy_reason=None,
-            )
-            db.commit()
-            return
-        set_chat_draft_state(
-            draft_chat_id=draft_chat_id,
-            interaction_state=INTERACTION_STATE_READY,
-            busy_reason=None,
-        )
+
+
+async def _cleanup_staging_draft(db: Session, *, user_id: str, draft_id: str | None) -> None:
+    if draft_id is None:
         return
-    _set_history_busy_state(
-        db=db,
-        user_id=user_id,
-        history_id=history_id,
-        interaction_state=INTERACTION_STATE_READY,
-        busy_reason=None,
-    )
-
-
-def _set_history_busy_state(
-    *,
-    db: Session,
-    user_id: str,
-    history_id: str | None,
-    interaction_state: str,
-    busy_reason: str | None,
-) -> None:
-    history = load_user_history(
-        db,
-        user_id=user_id,
-        history_id=history_id,
-    )
-    if history is None:
-        return
-    apply_history_interaction_state(
-        history,
-        interaction_state=interaction_state,
-        busy_reason=busy_reason,
-    )
-    db.commit()
-
-
-def _attachment_operation_timeout_seconds() -> int:
-    return max(1, settings.chat_attachment_operation_timeout_seconds)
+    try:
+        await discard_draft_with_files(db, user_id=user_id, draft_id=draft_id)
+    except Exception:
+        db.rollback()

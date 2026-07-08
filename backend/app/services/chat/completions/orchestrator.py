@@ -3,9 +3,8 @@ Purpose:
 - Implement chat streaming orchestration for the backend service layer.
 
 Responsibilities:
-- Run provider-neutral request validation before background execution starts
-- Build the real provider context from DB-backed chat state
-- Trigger context compaction before the main provider call when needed
+- Start a DB-token-backed chat operation
+- Run validation, context preparation, compaction, and attachment preparation under the validating timeout
 - Persist a backend-owned chat turn only after the final request is ready
 - Convert live provider output into SSE events when the client is still connected
 """
@@ -14,24 +13,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta
 import logging
 
 from sqlalchemy.orm import Session
 
 from app.auth.types import SessionContext
-from app.config.settings import settings
-from app.config.time import utc_now
-from app.db.postgres.session import SessionLocal
-from app.db.redis.chat_drafts import set_chat_draft_state
-from app.db.redis.chat_coordination import (
-    ChatCoordinationUnavailableError,
-    ChatRequestInProgressError,
-    acquire_chat_execution_lease,
-    extend_chat_execution_lease,
-    release_chat_execution_lease,
-)
-from app.providers.types import PreparedProviderChatRequest
+from app.providers.types import PreparedProviderChatRequest, ProviderRoute
 from app.schemas.chat import ChatCompletionRequest, ChatStreamStatusEvent
 from app.services.chat.attachments import prepare_history_attachments_for_provider
 from app.services.chat.completions.context.budget import needs_context_compaction
@@ -45,15 +32,24 @@ from app.services.chat.completions.sse import (
     build_start_event,
     stream_live_chat_completion,
 )
-from app.services.chat.completions.turn_persistence import persist_chat_turn_start
+from app.services.chat.completions.turn_persistence import PersistedChatTurn, persist_chat_turn_start
 from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError
-from app.services.chat.histories.service import load_user_history
-from app.services.chat.histories.state import (
-    BUSY_REASON_SEND,
-    INTERACTION_STATE_READY,
-    INTERACTION_STATE_VALIDATING,
-    apply_history_interaction_state,
+from app.services.chat.histories.titles import build_title_from_prompt
+from app.services.chat.operations import (
+    OPERATION_PROVIDER_STREAMING,
+    ChatOperationConflictError,
+    ChatOperationExpiredError,
+    OperationHandle,
+    begin_history_operation,
+    begin_new_history_send_operation,
+    complete_operation,
+    delete_empty_history_for_operation,
+    provider_event_idle_timeout_seconds,
+    provider_max_runtime_seconds,
+    transition_operation,
+    validating_timeout_seconds,
 )
+from app.db.postgres.session import SessionLocal
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -73,9 +69,21 @@ def create_chat_completion_stream(
     session: SessionContext,
     db: Session,
 ) -> AsyncIterator[bytes]:
+    operation: OperationHandle | None = None
+    created_empty_history = False
+    history_id: str | None = None
     try:
-        lease = acquire_chat_execution_lease(chat_history_id=payload.conversation_id)
-    except ChatRequestInProgressError as exc:
+        history_id, operation, created_empty_history = _begin_send_operation(
+            db,
+            payload=payload,
+            session=session,
+        )
+        validation = run_chat_validation(
+            payload=payload,
+            session=session,
+            db=db,
+        )
+    except ChatOperationConflictError as exc:
         raise ChatProxyError(
             code="request_in_progress",
             origin="proxy",
@@ -83,30 +91,32 @@ def create_chat_completion_stream(
             http_status=409,
             retry_after_seconds=exc.retry_after_seconds,
         ) from exc
-    except ChatCoordinationUnavailableError as exc:
-        raise ChatProxyError(
-            code="coordination_unavailable",
-            origin="proxy",
-            detail=build_safe_error_detail("coordination_unavailable"),
-            http_status=503,
-        ) from exc
-
-    try:
-        validation = run_chat_validation(
-            payload=payload,
-            session=session,
-            db=db,
-        )
-        _mark_validation_target_validating(
-            db=db,
-            session=session,
-            validation=validation,
-        )
     except ChatHistoryNotFoundError as exc:
-        release_chat_execution_lease(lease)
+        _close_prestart_operation(
+            db,
+            operation=operation,
+            created_empty_history=created_empty_history,
+            error_code="chat_history_not_found",
+            error_detail=str(exc),
+        )
         raise ChatHistoryUnavailableError(str(exc)) from exc
+    except ChatProxyError as exc:
+        _close_prestart_operation(
+            db,
+            operation=operation,
+            created_empty_history=created_empty_history,
+            error_code=exc.code,
+            error_detail=exc.detail,
+        )
+        raise
     except Exception:
-        release_chat_execution_lease(lease)
+        _close_prestart_operation(
+            db,
+            operation=operation,
+            created_empty_history=created_empty_history,
+            error_code="chat_failed",
+            error_detail=build_safe_error_detail("chat_failed"),
+        )
         raise
 
     sink = LiveChatStreamSink()
@@ -115,7 +125,9 @@ def create_chat_completion_stream(
             payload=payload,
             session=session,
             validation=validation,
-            lease=lease,
+            history_id=history_id,
+            operation=operation,
+            created_empty_history=created_empty_history,
             sink=sink,
         )
     )
@@ -127,109 +139,76 @@ async def _run_chat_request_pipeline(
     payload: ChatCompletionRequest,
     session: SessionContext,
     validation: ChatValidationResult,
-    lease,
+    history_id: str | None,
+    operation: OperationHandle,
+    created_empty_history: bool,
     sink: LiveChatStreamSink,
 ) -> None:
-    turn_started = False
+    turn: PersistedChatTurn | None = None
     try:
-        attachment_snapshots: list[dict[str, object]] = []
-        built_context, prepared_request = await build_prepared_request(
-            payload=payload,
-            session=session,
-            route=validation.route,
-            history_id=validation.history_id,
-            draft_chat_id=validation.draft_chat_id,
-        )
-        emit_input_token_statuses(sink=sink, prepared_request=prepared_request)
-
-        if needs_context_compaction(prepared_request):
-            if built_context.history is None:
-                raise ChatProxyError(
-                    code="context_still_too_large",
-                    origin="proxy",
-                    detail=build_safe_error_detail("context_still_too_large"),
-                    http_status=400,
-                )
-
-            sink.emit(
-                "status",
-                ChatStreamStatusEvent(
-                    provider=None,
-                    status_code=CONTEXT_COMPACTION_STARTED_STATUS,
-                    status_message=build_compaction_started_message(prepared_request),
-                ),
-            )
-            await run_context_compaction(
-                history=built_context.history,
-                user_id=session.user_id,
-            )
-            _, prepared_request = await build_prepared_request(
+        turn, prepared_request = await asyncio.wait_for(
+            _prepare_turn_for_provider(
                 payload=payload,
                 session=session,
-                route=validation.route,
-                history_id=validation.history_id,
-                draft_chat_id=validation.draft_chat_id,
-            )
-            emit_input_token_statuses(sink=sink, prepared_request=prepared_request)
-            if needs_context_compaction(prepared_request):
-                raise ChatProxyError(
-                    code="context_still_too_large",
-                    origin="proxy",
-                    detail=build_safe_error_detail("context_still_too_large"),
-                    http_status=400,
-                )
-
-        prepared_request, attachment_snapshots = await prepare_history_attachments_for_provider(
-            user_id=session.user_id,
-            history_id=validation.history_id,
-            route=validation.route,
-            prepared_request=prepared_request,
+                validation=validation,
+                history_id=history_id,
+                operation=operation,
+                sink=sink,
+            ),
+            timeout=validating_timeout_seconds(),
         )
-
-        first_response_timeout_seconds = _first_response_timeout_seconds()
-        first_response_deadline, first_response_deadline_at = _start_provider_response_window(
-            lease=lease,
-            timeout_seconds=first_response_timeout_seconds,
-        )
-
-        with SessionLocal() as turn_db:
-            turn = persist_chat_turn_start(
-                turn_db,
-                payload=payload,
-                session=session,
-                history_id=validation.history_id,
-                draft_chat_id=validation.draft_chat_id,
-                route=validation.route,
-                attachment_snapshots=attachment_snapshots,
-                first_response_deadline_at=first_response_deadline_at,
-            )
-            turn_started = True
-
         sink.emit("start", build_start_event(turn))
         await run_chat_completion_turn(
             turn=turn,
             prepared_request=prepared_request,
             route=validation.route,
             sink=sink,
-            lease=lease,
-            first_response_deadline=first_response_deadline,
-            first_response_timeout_seconds=first_response_timeout_seconds,
         )
-    except ChatProxyError as exc:
-        if not turn_started and _should_reset_validation_target(exc):
-            _best_effort_reset_validation_target_ready(
+    except TimeoutError:
+        error = ChatProxyError(
+            code="chat_validation_timeout",
+            origin="proxy",
+            detail=build_safe_error_detail("chat_validation_timeout"),
+            http_status=504,
+        )
+        _best_effort_finish_prestart_failure(
+            session=session,
+            payload=payload,
+            validation=validation,
+            operation=operation,
+            created_empty_history=created_empty_history,
+            error=error,
+            timed_out=True,
+        )
+        sink.emit("error", build_error_event(error))
+    except ChatOperationExpiredError:
+        error = ChatProxyError(
+            code="chat_validation_timeout",
+            origin="proxy",
+            detail=build_safe_error_detail("chat_validation_timeout"),
+            http_status=504,
+        )
+        if turn is None:
+            _best_effort_finish_prestart_failure(
                 session=session,
+                payload=payload,
                 validation=validation,
+                operation=operation,
+                created_empty_history=created_empty_history,
+                error=error,
+                timed_out=True,
             )
-        if not turn_started:
-            with SessionLocal() as rejection_db:
-                persist_chat_proxy_rejection(
-                    rejection_db,
-                    session=session,
-                    payload=payload,
-                    error=exc,
-                    route=validation.route,
-                )
+        sink.emit("error", build_error_event(error))
+    except ChatProxyError as exc:
+        if turn is None:
+            _best_effort_finish_prestart_failure(
+                session=session,
+                payload=payload,
+                validation=validation,
+                operation=operation,
+                created_empty_history=created_empty_history,
+                error=exc,
+            )
         sink.emit("error", build_error_event(exc))
     except Exception:
         logger.exception("Chat request pipeline failed.")
@@ -239,22 +218,99 @@ async def _run_chat_request_pipeline(
             detail=build_safe_error_detail("chat_failed"),
             http_status=500,
         )
-        if not turn_started:
-            _best_effort_reset_validation_target_ready(
+        if turn is None:
+            _best_effort_finish_prestart_failure(
                 session=session,
+                payload=payload,
                 validation=validation,
+                operation=operation,
+                created_empty_history=created_empty_history,
+                error=error,
             )
-            with SessionLocal() as rejection_db:
-                persist_chat_proxy_rejection(
-                    rejection_db,
-                    session=session,
-                    payload=payload,
-                    error=error,
-                    route=validation.route,
-                )
         sink.emit("error", build_error_event(error))
-    finally:
-        release_chat_execution_lease(lease)
+
+
+async def _prepare_turn_for_provider(
+    *,
+    payload: ChatCompletionRequest,
+    session: SessionContext,
+    validation: ChatValidationResult,
+    history_id: str | None,
+    operation: OperationHandle,
+    sink: LiveChatStreamSink,
+) -> tuple[PersistedChatTurn, PreparedProviderChatRequest]:
+    attachment_snapshots: list[dict[str, object]] = []
+    built_context, prepared_request = await build_prepared_request(
+        payload=payload,
+        session=session,
+        route=validation.route,
+        history_id=history_id,
+    )
+    emit_input_token_statuses(sink=sink, prepared_request=prepared_request)
+
+    if needs_context_compaction(prepared_request):
+        if built_context.history is None:
+            raise ChatProxyError(
+                code="context_still_too_large",
+                origin="proxy",
+                detail=build_safe_error_detail("context_still_too_large"),
+                http_status=400,
+            )
+
+        sink.emit(
+            "status",
+            ChatStreamStatusEvent(
+                provider=None,
+                status_code=CONTEXT_COMPACTION_STARTED_STATUS,
+                status_message=build_compaction_started_message(prepared_request),
+            ),
+        )
+        await run_context_compaction(
+            history=built_context.history,
+            user_id=session.user_id,
+            operation=operation,
+        )
+        _, prepared_request = await build_prepared_request(
+            payload=payload,
+            session=session,
+            route=validation.route,
+            history_id=history_id,
+        )
+        emit_input_token_statuses(sink=sink, prepared_request=prepared_request)
+        if needs_context_compaction(prepared_request):
+            raise ChatProxyError(
+                code="context_still_too_large",
+                origin="proxy",
+                detail=build_safe_error_detail("context_still_too_large"),
+                http_status=400,
+            )
+
+    prepared_request, attachment_snapshots = await prepare_history_attachments_for_provider(
+        user_id=session.user_id,
+        history_id=history_id,
+        operation=operation,
+        route=validation.route,
+        prepared_request=prepared_request,
+    )
+
+    with SessionLocal() as turn_db:
+        transition_operation(
+            turn_db,
+            operation,
+            state=OPERATION_PROVIDER_STREAMING,
+            timeout_seconds=provider_event_idle_timeout_seconds(),
+            provider_max_seconds=provider_max_runtime_seconds(),
+        )
+        turn = persist_chat_turn_start(
+            turn_db,
+            payload=payload,
+            session=session,
+            history_id=history_id,
+            operation=operation,
+            route=validation.route,
+            attachment_snapshots=attachment_snapshots,
+        )
+    return turn, prepared_request
 
 
 __all__ = [
@@ -305,112 +361,82 @@ def build_input_token_status_message(*, prefix: str, token_count: int) -> str:
     return f"{prefix}: {token_count:,}"
 
 
-def _first_response_timeout_seconds() -> int:
-    return max(1, settings.chat_provider_first_response_timeout_seconds)
-
-
-def _start_provider_response_window(
-    *,
-    lease,
-    timeout_seconds: int,
-) -> tuple[float, datetime]:
-    try:
-        lease_extended = extend_chat_execution_lease(lease, ttl_seconds=timeout_seconds)
-    except ChatCoordinationUnavailableError as exc:
-        raise ChatProxyError(
-            code="coordination_unavailable",
-            origin="proxy",
-            detail=build_safe_error_detail("coordination_unavailable"),
-            http_status=503,
-        ) from exc
-
-    if not lease_extended:
-        raise ChatProxyError(
-            code="request_in_progress",
-            origin="proxy",
-            detail=build_safe_error_detail("request_in_progress"),
-            http_status=409,
-        )
-
-    return (
-        asyncio.get_running_loop().time() + timeout_seconds,
-        utc_now() + timedelta(seconds=timeout_seconds),
-    )
-
-
-def _should_reset_validation_target(error: ChatProxyError) -> bool:
-    return error.code != "request_in_progress"
-
-
-def _mark_validation_target_validating(
-    *,
+def _begin_send_operation(
     db: Session,
-    session: SessionContext,
-    validation: ChatValidationResult,
-) -> None:
-    if validation.draft_chat_id:
-        set_chat_draft_state(
-            draft_chat_id=validation.draft_chat_id,
-            interaction_state=INTERACTION_STATE_VALIDATING,
-            busy_reason=BUSY_REASON_SEND,
-        )
-        return
-
-    history = load_user_history(
-        db,
-        user_id=session.user_id,
-        history_id=validation.history_id,
-    )
-    if history is None:
-        raise ChatHistoryUnavailableError("chat history not found")
-    apply_history_interaction_state(
-        history,
-        interaction_state=INTERACTION_STATE_VALIDATING,
-        busy_reason=BUSY_REASON_SEND,
-    )
-    db.commit()
-
-
-def _reset_validation_target_ready(
     *,
+    payload: ChatCompletionRequest,
+    session: SessionContext,
+) -> tuple[str | None, OperationHandle, bool]:
+    if payload.chat_history_id:
+        operation = begin_history_operation(
+            db,
+            session=session,
+            history_id=payload.chat_history_id,
+            operation_type="send",
+            timeout_seconds=validating_timeout_seconds(),
+        )
+        return payload.chat_history_id, operation, False
+
+    latest_user_message = payload.messages[-1]
+    history, operation = begin_new_history_send_operation(
+        db,
+        session=session,
+        title=build_title_from_prompt(latest_user_message.content),
+        timeout_seconds=validating_timeout_seconds(),
+    )
+    return history.id, operation, True
+
+
+def _close_prestart_operation(
     db: Session,
-    session: SessionContext,
-    validation: ChatValidationResult,
+    *,
+    operation: OperationHandle | None,
+    created_empty_history: bool,
+    error_code: str,
+    error_detail: str,
 ) -> None:
-    if validation.draft_chat_id:
-        set_chat_draft_state(
-            draft_chat_id=validation.draft_chat_id,
-            interaction_state=INTERACTION_STATE_READY,
-            busy_reason=None,
-        )
+    if operation is None:
         return
-
-    history = load_user_history(
+    complete_operation(
         db,
-        user_id=session.user_id,
-        history_id=validation.history_id,
+        operation,
+        state="failed",
+        result_code=error_code,
+        error_detail=error_detail,
     )
-    if history is None:
-        return
-    apply_history_interaction_state(
-        history,
-        interaction_state=INTERACTION_STATE_READY,
-        busy_reason=None,
-    )
-    db.commit()
+    if created_empty_history:
+        delete_empty_history_for_operation(db, operation)
 
 
-def _best_effort_reset_validation_target_ready(
+def _best_effort_finish_prestart_failure(
     *,
     session: SessionContext,
+    payload: ChatCompletionRequest,
     validation: ChatValidationResult,
+    operation: OperationHandle,
+    created_empty_history: bool,
+    error: ChatProxyError,
+    timed_out: bool = False,
 ) -> None:
     try:
-        with SessionLocal() as state_db:
-            _reset_validation_target_ready(
-                db=state_db,
+        with SessionLocal() as failure_db:
+            complete_operation(
+                failure_db,
+                operation,
+                state="timed_out" if timed_out else "failed",
+                result_code=error.code,
+                error_detail=error.detail,
+                allow_expired=timed_out,
+            )
+            if created_empty_history:
+                delete_empty_history_for_operation(failure_db, operation)
+        with SessionLocal() as rejection_db:
+            persist_chat_proxy_rejection(
+                rejection_db,
                 session=session,
-                validation=validation,
+                payload=payload,
+                error=error,
+                route=validation.route,
             )
     except Exception:
-        logger.exception("Failed to restore conversation state after chat pipeline failure.")
+        logger.exception("Failed to close chat operation after pre-provider failure.")

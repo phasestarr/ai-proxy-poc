@@ -1,7 +1,6 @@
 import { getApiErrorMessage, readJson } from "../../api/http";
 import { AuthenticationRequiredError, SessionConflictError } from "../../auth/authErrors";
 import { readSseStream } from "../../services/sse";
-import { ChatDraftExpiredError } from "./errors";
 import type {
   ChatCompletionApiError,
   ChatStreamDeltaApiEvent,
@@ -14,10 +13,6 @@ import { mapDoneEvent, mapStartEvent, mapStatusEvent } from "./mappers";
 import type { ChatStreamDone, StreamChatReplyOptions } from "./types";
 
 export async function streamChatReply(options: StreamChatReplyOptions): Promise<ChatStreamDone> {
-  if (Boolean(options.chatHistoryId) === Boolean(options.draftChatId)) {
-    throw new Error("exactly one of chatHistoryId or draftChatId is required");
-  }
-
   const response = await fetch("/api/v1/chat/completions", {
     method: "POST",
     credentials: "same-origin",
@@ -27,7 +22,6 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
     },
     body: JSON.stringify({
       chat_history_id: options.chatHistoryId ?? null,
-      draft_chat_id: options.draftChatId ?? null,
       model_id: options.selection?.modelId ?? null,
       tool_ids: options.selection?.toolIds ?? [],
       messages: options.messages,
@@ -57,9 +51,6 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
 
   if (!response.ok) {
     const payload = (await readJson(response)) as ChatCompletionApiError | null;
-    if (response.status === 404 && options.draftChatId && !options.chatHistoryId) {
-      throw new ChatDraftExpiredError(getApiErrorMessage(response, payload, "chat draft expired"));
-    }
     throw new Error(getApiErrorMessage(response, payload, "request failed"));
   }
 

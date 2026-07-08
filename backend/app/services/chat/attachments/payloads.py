@@ -7,31 +7,39 @@ from app.providers.anthropic.attachments import inject_anthropic_history_files
 from app.providers.openai.attachments import inject_openai_history_files
 from app.providers.types import PreparedProviderChatRequest, ProviderRoute
 from app.providers.vertex.attachments import inject_vertex_history_files
-from app.services.chat.attachments.remote_files import upload_provider_files
+from app.services.chat.attachments.remote_files import best_effort_delete_remote_provider_file, upload_provider_files
 from app.services.chat.attachments.service import list_history_files
 from app.services.chat.attachments.storage import get_provider_state
 from app.services.chat.errors import ChatProxyError
+from app.services.chat.operations import OperationHandle, assert_operation_current
 
 
 async def prepare_history_attachments_for_provider(
     *,
     user_id: str,
-    history_id: str,
+    history_id: str | None,
+    operation: OperationHandle,
     route: ProviderRoute,
     prepared_request: PreparedProviderChatRequest,
 ) -> tuple[PreparedProviderChatRequest, list[dict[str, object]]]:
     with SessionLocal() as db:
-        history_files = list_history_files(db, user_id=user_id, history_id=history_id)
-        active_history_files = [history_file for history_file in history_files if history_file.is_active]
-        if not active_history_files:
+        assert_operation_current(db, operation)
+        if history_id:
+            conversation_id = history_id
+            conversation_files = list_history_files(db, user_id=user_id, history_id=history_id)
+        else:
+            return prepared_request, []
+
+        active_conversation_files = [conversation_file for conversation_file in conversation_files if conversation_file.is_active]
+        if not active_conversation_files:
             return prepared_request, []
 
         provider_token_total = 0
         upload_targets: dict[str, tuple[str, object, object]] = {}
         attachments: list[dict[str, object]] = []
 
-        for history_file in active_history_files:
-            stored_file = history_file.stored_file
+        for conversation_file in active_conversation_files:
+            stored_file = conversation_file.stored_file
             provider_state = get_provider_state(stored_file=stored_file, provider=route.model.provider)
             if provider_state is None or provider_state.token_count_status != "ready" or provider_state.token_count is None:
                 raise ChatProxyError(
@@ -45,17 +53,17 @@ async def prepare_history_attachments_for_provider(
             provider_token_total += int(provider_state.token_count)
             attachments.append(
                 {
-                    "history_file_id": history_file.id,
+                    "conversation_file_id": conversation_file.id,
                     "stored_file_id": stored_file.id,
-                    "display_name": history_file.display_name,
-                    "mime_type": history_file.mime_type,
-                    "byte_size": history_file.byte_size,
+                    "display_name": conversation_file.display_name,
+                    "mime_type": conversation_file.mime_type,
+                    "byte_size": conversation_file.byte_size,
                     "provider": route.model.provider,
                     "provider_file_id": provider_state.provider_file_id,
                     "token_count": int(provider_state.token_count),
                 }
             )
-            upload_targets[stored_file.id] = (history_file.display_name, stored_file, provider_state)
+            upload_targets[stored_file.id] = (conversation_file.display_name, stored_file, provider_state)
 
         if provider_token_total > settings.chat_attachment_max_total_tokens_per_provider:
             raise ChatProxyError(
@@ -66,29 +74,48 @@ async def prepare_history_attachments_for_provider(
                 provider=route.model.provider,
             )
 
+        previous_provider_ids = {
+            stored_file_id: provider_state.provider_file_id
+            for stored_file_id, (_, _, provider_state) in upload_targets.items()
+        }
         uploaded_provider_ids = await upload_provider_files(
             provider=route.model.provider,
             upload_targets=upload_targets,
         )
+        newly_uploaded_provider_ids = [
+            provider_file_id
+            for stored_file_id, provider_file_id in uploaded_provider_ids.items()
+            if provider_file_id and provider_file_id != previous_provider_ids.get(stored_file_id)
+        ]
         now = utc_now()
         for stored_file_id, provider_file_id in uploaded_provider_ids.items():
             _, _, provider_state = upload_targets[stored_file_id]
             provider_state.provider_file_id = provider_file_id
             provider_state.last_used_at = now
 
-        for history_file in active_history_files:
-            provider_state = get_provider_state(stored_file=history_file.stored_file, provider=route.model.provider)
+        for conversation_file in active_conversation_files:
+            provider_state = get_provider_state(stored_file=conversation_file.stored_file, provider=route.model.provider)
             if provider_state is not None:
                 provider_state.last_used_at = now
 
-        db.commit()
+        try:
+            assert_operation_current(db, operation)
+            db.commit()
+        except Exception:
+            db.rollback()
+            for provider_file_id in newly_uploaded_provider_ids:
+                await best_effort_delete_remote_provider_file(
+                    provider=route.model.provider,
+                    provider_file_id=provider_file_id,
+                )
+            raise
 
-        attachment_by_history_file_id = {
-            attachment["history_file_id"]: attachment
+        attachment_by_conversation_file_id = {
+            attachment["conversation_file_id"]: attachment
             for attachment in attachments
         }
-        for history_file in active_history_files:
-            provider_state = get_provider_state(stored_file=history_file.stored_file, provider=route.model.provider)
+        for conversation_file in active_conversation_files:
+            provider_state = get_provider_state(stored_file=conversation_file.stored_file, provider=route.model.provider)
             if provider_state is None or not provider_state.provider_file_id:
                 raise ChatProxyError(
                     code="attachments_upload_failed",
@@ -97,12 +124,12 @@ async def prepare_history_attachments_for_provider(
                     http_status=502,
                     provider=route.model.provider,
                 )
-            attachment = attachment_by_history_file_id[history_file.id]
+            attachment = attachment_by_conversation_file_id[conversation_file.id]
             attachment["provider_file_id"] = provider_state.provider_file_id
 
         snapshots = [
             {
-                "chat_history_file_id": attachment["history_file_id"],
+                "chat_history_file_id": attachment["conversation_file_id"],
                 "stored_file_id": attachment["stored_file_id"],
                 "display_name": attachment["display_name"],
                 "mime_type": attachment["mime_type"],
@@ -117,7 +144,7 @@ async def prepare_history_attachments_for_provider(
     next_payload = build_provider_attachment_payload(
         provider=route.model.provider,
         payload=prepared_request.payload,
-        history_id=history_id,
+        history_id=conversation_id,
         attachments=attachments,
     )
     return PreparedProviderChatRequest(

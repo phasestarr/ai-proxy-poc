@@ -6,8 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config.settings import settings
-from app.db.postgres.models.chat_attachment import ChatHistoryFile
-from app.services.chat.attachments.storage import count_history_files, count_user_attachment_files
+from app.db.postgres.models.chat_attachment import ChatDraftFile, ChatHistoryFile
+from app.services.chat.attachments.storage import count_draft_files, count_history_files, count_user_attachment_files
 from app.services.chat.histories.titles import normalize_history_title
 
 SUPPORTED_ATTACHMENT_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
@@ -64,6 +64,29 @@ def enforce_history_attachment_limits(
         ).scalar_one()
     if int(current_total_bytes or 0) + next_byte_size > settings.chat_attachment_max_total_bytes_per_history:
         raise ValueError("chat history attachment bytes exceed the total size limit")
+
+
+def enforce_draft_attachment_limits(
+    db: Session,
+    *,
+    user_id: str,
+    draft_id: str,
+    next_byte_size: int,
+) -> None:
+    current_user_file_count = count_user_attachment_files(db, user_id=user_id)
+    if current_user_file_count >= settings.chat_attachment_max_files_per_user:
+        raise ValueError("user attachment limit reached")
+
+    current_file_count = count_draft_files(db, draft_id=draft_id)
+    if current_file_count >= settings.chat_attachment_max_files_per_history:
+        raise ValueError("chat draft attachment limit reached")
+
+    current_total_bytes = db.execute(
+        select(func.coalesce(func.sum(ChatDraftFile.byte_size), 0))
+        .where(ChatDraftFile.draft_id == draft_id)
+    ).scalar_one()
+    if int(current_total_bytes or 0) + next_byte_size > settings.chat_attachment_max_total_bytes_per_history:
+        raise ValueError("chat draft attachment bytes exceed the total size limit")
 
 
 def build_attachment_display_name(filename: str | None, *, mime_type: str) -> str:

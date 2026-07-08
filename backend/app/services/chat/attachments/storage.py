@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -8,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config.time import utc_now
-from app.db.postgres.models.chat_attachment import ChatHistoryFile, StoredFile, StoredFileProviderState
+from app.db.postgres.models.chat_attachment import ChatDraftFile, ChatHistoryFile, StoredFile, StoredFileProviderState
 from app.db.postgres.models.chat_history import ChatMessage
 from app.services.chat.attachments.provider_state import build_provider_token_states, ensure_provider_token_states
 from app.services.chat.attachments.remote_files import best_effort_delete_provider_files, delete_provider_files_for_stored_file
@@ -21,6 +22,12 @@ DELETE_RETRY_BASE_SECONDS = 60
 DELETE_RETRY_MAX_SECONDS = 86_400
 
 
+@dataclass(frozen=True)
+class StoredFileMutation:
+    stored_file: StoredFile
+    remote_provider_files_to_cleanup_on_rollback: list[tuple[str, str]]
+
+
 async def get_or_create_stored_file(
     db: Session,
     *,
@@ -30,8 +37,9 @@ async def get_or_create_stored_file(
     mime_type: str,
     file_bytes: bytes,
     existing_stored_file: StoredFile | None,
-) -> StoredFile:
+) -> StoredFileMutation:
     stored_file = existing_stored_file
+    rollback_remote_files: list[tuple[str, str]] = []
     if stored_file is None:
         stored_file_id = str(uuid4())
         provider_states = await build_provider_token_states(
@@ -39,6 +47,11 @@ async def get_or_create_stored_file(
             display_name=display_name,
             mime_type=mime_type,
             file_bytes=file_bytes,
+        )
+        rollback_remote_files.extend(
+            (provider_state.provider, provider_state.provider_file_id)
+            for provider_state in provider_states
+            if provider_state.provider_file_id
         )
         now = utc_now()
         candidate = StoredFile(
@@ -62,6 +75,7 @@ async def get_or_create_stored_file(
         except IntegrityError:
             savepoint.rollback()
             await best_effort_delete_provider_files(stored_file=candidate)
+            rollback_remote_files = []
             stored_file = load_stored_file_by_hash(
                 db,
                 user_id=user_id,
@@ -70,14 +84,27 @@ async def get_or_create_stored_file(
             if stored_file is None:
                 raise
 
+    previous_provider_file_ids = {
+        provider_state.provider: provider_state.provider_file_id
+        for provider_state in stored_file.provider_states
+    }
     await ensure_provider_token_states(
         stored_file=stored_file,
         display_name=display_name,
         mime_type=mime_type,
         file_bytes=file_bytes,
     )
+    rollback_remote_files.extend(
+        (provider_state.provider, provider_state.provider_file_id)
+        for provider_state in stored_file.provider_states
+        if provider_state.provider_file_id
+        and provider_state.provider_file_id != previous_provider_file_ids.get(provider_state.provider)
+    )
     mark_stored_file_active(stored_file)
-    return stored_file
+    return StoredFileMutation(
+        stored_file=stored_file,
+        remote_provider_files_to_cleanup_on_rollback=rollback_remote_files,
+    )
 
 
 def load_stored_file_by_hash(
@@ -228,10 +255,17 @@ def count_stored_file_references(
     stored_file_id: str,
     excluded_history_file_ids: set[str] | None = None,
 ) -> int:
-    query = select(func.count(ChatHistoryFile.id)).where(ChatHistoryFile.stored_file_id == stored_file_id)
+    history_query = select(func.count(ChatHistoryFile.id)).where(ChatHistoryFile.stored_file_id == stored_file_id)
     if excluded_history_file_ids:
-        query = query.where(ChatHistoryFile.id.notin_(excluded_history_file_ids))
-    return int(db.execute(query).scalar_one() or 0)
+        history_query = history_query.where(ChatHistoryFile.id.notin_(excluded_history_file_ids))
+    history_count = int(db.execute(history_query).scalar_one() or 0)
+    draft_count = int(
+        db.execute(
+            select(func.count(ChatDraftFile.id)).where(ChatDraftFile.stored_file_id == stored_file_id)
+        ).scalar_one()
+        or 0
+    )
+    return history_count + draft_count
 
 
 def history_has_stored_file_reference(
@@ -251,6 +285,23 @@ def history_has_stored_file_reference(
     return row is not None
 
 
+def draft_has_stored_file_reference(
+    db: Session,
+    *,
+    draft_id: str,
+    stored_file_id: str,
+) -> bool:
+    row = db.execute(
+        select(ChatDraftFile.id)
+        .where(
+            ChatDraftFile.draft_id == draft_id,
+            ChatDraftFile.stored_file_id == stored_file_id,
+        )
+        .limit(1)
+    ).first()
+    return row is not None
+
+
 def count_history_files(
     db: Session,
     *,
@@ -259,6 +310,19 @@ def count_history_files(
     return int(
         db.execute(
             select(func.count(ChatHistoryFile.id)).where(ChatHistoryFile.chat_history_id == history_id)
+        ).scalar_one()
+        or 0
+    )
+
+
+def count_draft_files(
+    db: Session,
+    *,
+    draft_id: str,
+) -> int:
+    return int(
+        db.execute(
+            select(func.count(ChatDraftFile.id)).where(ChatDraftFile.draft_id == draft_id)
         ).scalar_one()
         or 0
     )
@@ -282,9 +346,16 @@ def count_user_attachment_files(
     *,
     user_id: str,
 ) -> int:
-    return int(
+    history_count = int(
         db.execute(
             select(func.count(ChatHistoryFile.id)).where(ChatHistoryFile.user_id == user_id)
         ).scalar_one()
         or 0
     )
+    draft_count = int(
+        db.execute(
+            select(func.count(ChatDraftFile.id)).where(ChatDraftFile.user_id == user_id)
+        ).scalar_one()
+        or 0
+    )
+    return history_count + draft_count

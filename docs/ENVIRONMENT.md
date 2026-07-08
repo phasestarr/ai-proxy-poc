@@ -87,19 +87,18 @@ client ID and secret blank only when Microsoft login is intentionally disabled.
 ### Chat Coordination
 
 - `CHAT_DRAFT_TTL_SECONDS`
-  - Redis first-send chat drafts use this TTL before they are promoted into persisted histories
-- `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`
-  - attachment upload/delete/toggle and history-delete Redis leases use this TTL
-  - housekeeping resets persisted histories stuck in attachment mutation states after this timeout
-- `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS`
-  - Redis chat send leases start with this TTL
-  - after send validation and local request preparation finish, the provider first chunk must arrive before this timeout
-  - housekeeping marks streaming turns with no first response as `provider_first_response_timeout`
-- `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS`
-  - after the first provider chunk, the Redis conversation lease is extended to this TTL
-  - provider streaming must emit its terminal done/error path before this fixed timeout
-  - this is not refreshed per chunk; it is the total allowed stream time after first response
-  - housekeeping marks streaming turns that started but did not finish as `provider_response_timeout`
+  - internal blank-page upload staging drafts are eligible for deletion after this TTL if an interrupted operation leaves them behind
+- `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`
+  - bounds local validation, request preparation, context compaction, attachment upload/delete/toggle, and history delete operations
+  - operation owners must still hold their DB token immediately before committing
+- `CHAT_PROVIDER_EVENT_IDLE_TIMEOUT_SECONDS`
+  - after provider dispatch, another provider event must arrive before this idle timeout
+  - mapped provider chunks check the operation token, but DB heartbeat writes are throttled to the first event, provider-state transitions, and a derived heartbeat interval capped at 30 seconds
+  - there is no background DB heartbeat loop while the service is idle
+  - housekeeping marks streaming turns with no first event as `provider_first_response_timeout`
+  - housekeeping marks streaming turns that started but stopped emitting events as `provider_response_timeout`
+- `CHAT_PROVIDER_MAX_RUNTIME_SECONDS`
+  - hard cap for one provider stream regardless of event activity
 - `CHAT_RATE_LIMIT_PER_MINUTE`
 - `CHAT_RATE_LIMIT_PER_HOUR`
 

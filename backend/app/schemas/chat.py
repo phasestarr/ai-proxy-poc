@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_CHAT_MESSAGE_CHARS = 65535
 MAX_CHAT_LATEST_PROMPT_CHARS = 32768
@@ -36,8 +36,9 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     chat_history_id: str | None = Field(default=None, min_length=1, max_length=36)
-    draft_chat_id: str | None = Field(default=None, min_length=1, max_length=36)
     model_id: str | None = Field(default=None, min_length=1)
     tool_ids: list[str] = Field(default_factory=list, max_length=16)
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=100)
@@ -55,8 +56,6 @@ class ChatCompletionRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_messages(self) -> "ChatCompletionRequest":
-        if bool(self.chat_history_id) == bool(self.draft_chat_id):
-            raise ValueError("exactly one of chat_history_id or draft_chat_id is required")
         if not any(message.role == "user" for message in self.messages):
             raise ValueError("at least one user message is required")
         if self.messages[-1].role != "user":
@@ -67,7 +66,7 @@ class ChatCompletionRequest(BaseModel):
 
     @property
     def conversation_id(self) -> str:
-        return self.chat_history_id or self.draft_chat_id or ""
+        return self.chat_history_id or ""
 
 
 class ChatUsageSummary(BaseModel):
@@ -126,8 +125,9 @@ class ChatHistorySummary(BaseModel):
     id: str
     title: str
     pin_order: int | None = None
-    interaction_state: Literal["ready", "validating", "waiting"] = "ready"
-    busy_reason: str | None = None
+    lifecycle_state: Literal["active", "deleting"] = "active"
+    operation_state: Literal["ready", "validating", "provider_streaming", "finalizing"] = "ready"
+    operation_type: str | None = None
     created_at: datetime
     updated_at: datetime
     last_message_at: datetime | None = None
@@ -203,16 +203,4 @@ class ChatHistoryFilesEnvelope(BaseModel):
     history: ChatHistorySummary | None = None
     files: list[ChatHistoryFileView]
     deleted_history_id: str | None = None
-    attachment_limits: ChatAttachmentLimitsView
-
-
-class ChatDraftView(BaseModel):
-    draft_chat_id: str
-    expires_at: datetime
-    interaction_state: Literal["ready", "validating", "waiting"] = "ready"
-    busy_reason: str | None = None
-
-
-class ChatDraftEnvelope(BaseModel):
-    draft: ChatDraftView
     attachment_limits: ChatAttachmentLimitsView

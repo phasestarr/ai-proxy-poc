@@ -80,16 +80,19 @@ Application and mixed tables you will usually touch from this file:
 13. `chat_message_attachments`
 14. `chat_history_memories`
 15. `chat_context_checkpoints`
+16. `chat_operations`
+17. `chat_drafts`
+18. `chat_draft_files`
 
 Mostly-audit table:
 
-16. `operator_events`
-17. `usage_ledger_events`
-18. `user_usage_caps`
+19. `operator_events`
+20. `usage_ledger_events`
+21. `user_usage_caps`
 
 Migration metadata:
 
-19. `alembic_version`
+22. `alembic_version`
 
 ## Whole-Database Inspect
 
@@ -102,7 +105,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT table_name
 Row counts:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'stored_files', COUNT(*) FROM stored_files UNION ALL SELECT 'stored_file_provider_states', COUNT(*) FROM stored_file_provider_states UNION ALL SELECT 'chat_history_files', COUNT(*) FROM chat_history_files UNION ALL SELECT 'chat_message_attachments', COUNT(*) FROM chat_message_attachments UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories UNION ALL SELECT 'chat_context_checkpoints', COUNT(*) FROM chat_context_checkpoints UNION ALL SELECT 'operator_events', COUNT(*) FROM operator_events UNION ALL SELECT 'usage_ledger_events', COUNT(*) FROM usage_ledger_events UNION ALL SELECT 'user_usage_caps', COUNT(*) FROM user_usage_caps ORDER BY table_name;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'stored_files', COUNT(*) FROM stored_files UNION ALL SELECT 'stored_file_provider_states', COUNT(*) FROM stored_file_provider_states UNION ALL SELECT 'chat_history_files', COUNT(*) FROM chat_history_files UNION ALL SELECT 'chat_message_attachments', COUNT(*) FROM chat_message_attachments UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories UNION ALL SELECT 'chat_context_checkpoints', COUNT(*) FROM chat_context_checkpoints UNION ALL SELECT 'chat_operations', COUNT(*) FROM chat_operations UNION ALL SELECT 'chat_drafts', COUNT(*) FROM chat_drafts UNION ALL SELECT 'chat_draft_files', COUNT(*) FROM chat_draft_files UNION ALL SELECT 'operator_events', COUNT(*) FROM operator_events UNION ALL SELECT 'usage_ledger_events', COUNT(*) FROM usage_ledger_events UNION ALL SELECT 'user_usage_caps', COUNT(*) FROM user_usage_caps ORDER BY table_name;"
 ```
 
 Foreign-key cascade rules:
@@ -130,7 +133,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, accoun
 2. Use the copied `users.id` in the next query:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, interaction_state, busy_reason, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, ch.title, ch.pin_order, ch.lifecycle_state, co.state AS operation_state, co.operation_type, ch.created_at, ch.updated_at, ch.last_message_at, ch.usage_summary FROM chat_histories ch LEFT JOIN chat_operations co ON co.id = ch.active_operation_id WHERE ch.user_id = 'PUT_USER_ID_HERE' ORDER BY ch.pin_order NULLS LAST, COALESCE(ch.last_message_at, ch.created_at) DESC;"
 ```
 
 3. Use the copied `chat_histories.id` in the next query:
@@ -156,7 +159,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT gi.id, gi.
 2. Copy `guest_identities.user_id` and use it in the user-history query:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, interaction_state, busy_reason, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, ch.title, ch.pin_order, ch.lifecycle_state, co.state AS operation_state, co.operation_type, ch.created_at, ch.updated_at, ch.last_message_at, ch.usage_summary FROM chat_histories ch LEFT JOIN chat_operations co ON co.id = ch.active_operation_id WHERE ch.user_id = 'PUT_USER_ID_HERE' ORDER BY ch.pin_order NULLS LAST, COALESCE(ch.last_message_at, ch.created_at) DESC;"
 ```
 
 ### Workflow C: delete one chat history safely
@@ -164,7 +167,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_i
 1. Inspect the history first:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, interaction_state, busy_reason, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE id = 'PUT_CHAT_HISTORY_ID_HERE';"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, ch.title, ch.pin_order, ch.lifecycle_state, co.state AS operation_state, co.operation_type, ch.created_at, ch.updated_at, ch.last_message_at, ch.usage_summary FROM chat_histories ch LEFT JOIN chat_operations co ON co.id = ch.active_operation_id WHERE ch.id = 'PUT_CHAT_HISTORY_ID_HERE';"
 ```
 
 2. Optional: inspect child rows before delete:
@@ -343,13 +346,13 @@ Role:
 All histories with owner info:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, COALESCE(gi.ip_address, u.email, u.display_name) AS owner, ch.title, ch.pin_order, ch.interaction_state, ch.busy_reason, ch.created_at, ch.updated_at, ch.last_message_at, ch.usage_summary, COUNT(cm.id) AS message_count FROM chat_histories ch JOIN users u ON u.id = ch.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_messages cm ON cm.chat_history_id = ch.id GROUP BY ch.id, gi.ip_address, u.email, u.display_name ORDER BY ch.pin_order NULLS LAST, COALESCE(ch.last_message_at, ch.created_at) DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, COALESCE(gi.ip_address, u.email, u.display_name) AS owner, ch.title, ch.pin_order, ch.lifecycle_state, co.state AS operation_state, co.operation_type, ch.created_at, ch.updated_at, ch.last_message_at, ch.usage_summary, COUNT(cm.id) AS message_count FROM chat_histories ch JOIN users u ON u.id = ch.user_id LEFT JOIN guest_identities gi ON gi.user_id = u.id LEFT JOIN chat_operations co ON co.id = ch.active_operation_id LEFT JOIN chat_messages cm ON cm.chat_history_id = ch.id GROUP BY ch.id, gi.ip_address, u.email, u.display_name, co.state, co.operation_type ORDER BY ch.pin_order NULLS LAST, COALESCE(ch.last_message_at, ch.created_at) DESC;"
 ```
 
 Histories for one user:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, title, pin_order, interaction_state, busy_reason, created_at, updated_at, last_message_at, usage_summary FROM chat_histories WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY pin_order NULLS LAST, COALESCE(last_message_at, created_at) DESC;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT ch.id, ch.user_id, ch.title, ch.pin_order, ch.lifecycle_state, co.state AS operation_state, co.operation_type, ch.created_at, ch.updated_at, ch.last_message_at, ch.usage_summary FROM chat_histories ch LEFT JOIN chat_operations co ON co.id = ch.active_operation_id WHERE ch.user_id = 'PUT_USER_ID_HERE' ORDER BY ch.pin_order NULLS LAST, COALESCE(ch.last_message_at, ch.created_at) DESC;"
 ```
 
 Delete one chat history:

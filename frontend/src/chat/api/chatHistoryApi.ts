@@ -1,66 +1,13 @@
 import { getApiErrorMessage, readJson } from "../../api/http";
 import { AuthenticationRequiredError, SessionConflictError } from "../../auth/authErrors";
-import { ChatDraftExpiredError } from "./errors";
 import type {
   ChatCompletionApiError,
-  ChatDraftApiEnvelope,
   ChatHistoryApiEnvelope,
   ChatHistoryFilesApiEnvelope,
   ChatHistoryListApiEnvelope,
 } from "./contracts";
-import { mapAttachmentLimits, mapDraft, mapHistoryFile, mapHistoryMessage, mapHistorySummary } from "./mappers";
-import type { ChatDraft, ChatHistory, ChatHistoryFilesMutation, ChatHistoryIndex, ChatHistorySummary } from "./types";
-
-export async function createChatDraft(): Promise<ChatDraft> {
-  const response = await fetch("/api/v1/chat/drafts", {
-    method: "POST",
-    credentials: "same-origin",
-  });
-
-  if (response.status === 401) {
-    throw new AuthenticationRequiredError("login required");
-  }
-
-  if (response.status === 409) {
-    throw await readChatApiConflict(response, "failed to create chat draft");
-  }
-
-  const payload = (await readJson(response)) as ChatDraftApiEnvelope | ChatCompletionApiError | null;
-  if (!response.ok) {
-    throw new Error(getApiErrorMessage(response, payload, "failed to create chat draft"));
-  }
-
-  if (!payload || !("draft" in payload)) {
-    throw new Error("invalid chat draft payload");
-  }
-
-  return mapDraft(payload.draft);
-}
-
-export async function fetchChatDraft(draftChatId: string): Promise<ChatDraft> {
-  const response = await fetch(`/api/v1/chat/drafts/${encodeURIComponent(draftChatId)}`, {
-    credentials: "same-origin",
-  });
-
-  if (response.status === 401) {
-    throw new AuthenticationRequiredError("login required");
-  }
-
-  if (response.status === 409) {
-    throw await readChatApiConflict(response, "failed to load chat draft");
-  }
-
-  const payload = (await readJson(response)) as ChatDraftApiEnvelope | ChatCompletionApiError | null;
-  if (!response.ok) {
-    throw new Error(getApiErrorMessage(response, payload, "failed to load chat draft"));
-  }
-
-  if (!payload || !("draft" in payload)) {
-    throw new Error("invalid chat draft payload");
-  }
-
-  return mapDraft(payload.draft);
-}
+import { mapAttachmentLimits, mapHistoryFile, mapHistoryMessage, mapHistorySummary } from "./mappers";
+import type { ChatHistory, ChatHistoryFilesMutation, ChatHistoryIndex, ChatHistorySummary } from "./types";
 
 export async function fetchChatHistories(): Promise<ChatHistoryIndex> {
   const response = await fetch("/api/v1/chat/histories", {
@@ -207,15 +154,11 @@ async function updatePinnedChatHistory(url: string, method: "PUT" | "DELETE"): P
 export async function uploadChatFile(
   file: File,
   chatHistoryId?: string | null,
-  draftChatId?: string | null,
 ): Promise<ChatHistoryFilesMutation> {
   const formData = new FormData();
   formData.append("file", file);
   if (chatHistoryId) {
     formData.append("chat_history_id", chatHistoryId);
-  }
-  if (draftChatId) {
-    formData.append("draft_chat_id", draftChatId);
   }
 
   const response = await fetch("/api/v1/chat/files", {
@@ -233,9 +176,6 @@ export async function uploadChatFile(
   }
 
   const payload = (await readJson(response)) as ChatHistoryFilesApiEnvelope | ChatCompletionApiError | null;
-  if (response.status === 404 && draftChatId && !chatHistoryId) {
-    throw new ChatDraftExpiredError(getApiErrorMessage(response, payload, "chat draft expired"));
-  }
   if (!response.ok) {
     throw new Error(getApiErrorMessage(response, payload, "failed to upload chat file"));
   }

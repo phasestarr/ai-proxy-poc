@@ -9,7 +9,7 @@ Internal AI proxy stack behind sibling `root-proxy`.
 - Edge upstream: `ai-proxy:8080` on external Docker network `edge-net`
 - Frontend: NGINX serving the SPA and proxying `/api/*` and `/health`
 - Backend: Compose service `backend` with default container name `ai-proxy-api`
-- State: PostgreSQL for auth, session, OAuth, conflict ticket, chat history, and attachment metadata; Redis for chat coordination and rate limits
+- State: PostgreSQL for auth, session, OAuth, conflict ticket, chat history, attachment metadata, and chat operation tokens; Redis for chat rate limits
 - Model execution: Vertex AI, OpenAI, and Anthropic
 
 ## Active Scope
@@ -19,7 +19,7 @@ Internal AI proxy stack behind sibling `root-proxy`.
 - `HttpOnly` `session_id` cookie auth
 - protected streaming chat endpoint
 - backend-owned chat history with persisted user/assistant messages
-- Redis-backed single in-flight chat per conversation id, including first-send drafts
+- Postgres-token-fenced single in-flight operation per chat history, with internal draft staging only during blank-page file upload validation
 - Redis-backed minute and hourly chat rate limits
 - public model catalog at `/api/v1/models`
 - Vertex-backed public Gemini model variants
@@ -121,8 +121,8 @@ commands as validation gates. Use Docker Compose from `deploy/`.
 - Optional blank env values must still be present in env files as blank assignments.
 - Microsoft login remains optional until the Microsoft env vars are configured with real values.
 - The frontend does not auto-select a model; clients must choose one from the backend catalog before sending chat.
-- The frontend `New chat` action is local-only; the first real send creates a Redis-backed draft and promotes it to a persisted chat history only after backend send validation succeeds.
-- Redis-backed drafts use `CHAT_DRAFT_TTL_SECONDS`; attachment mutations use `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`; chat sends use `CHAT_PROVIDER_FIRST_RESPONSE_TIMEOUT_SECONDS` until the first provider chunk, then `CHAT_PROVIDER_STREAM_TIMEOUT_SECONDS`.
+- The frontend `New chat` action is local-only. A text-only first send creates the chat history at send time; a blank-page file upload uses an internal Postgres draft while validation/counting/storage runs, then promotes it to a visible chat history before returning success.
+- Internal upload drafts use `CHAT_DRAFT_TTL_SECONDS` as a cleanup safety net; local validation, compaction, and attachment mutations use `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`; provider streaming uses `CHAT_PROVIDER_EVENT_IDLE_TIMEOUT_SECONDS` for next-event liveness and `CHAT_PROVIDER_MAX_RUNTIME_SECONDS` as the hard cap.
 - Database schema is managed by Alembic migrations at backend startup.
 - Guest users are keyed by raw IP address in `guest_identities`; local Docker usually reports the Docker bridge IP such as `172.18.0.1`.
 - Backend-local chat rejects are audit-logged in PostgreSQL without polluting persisted chat transcripts.

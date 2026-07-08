@@ -20,7 +20,6 @@ REQUEST_VALIDATION_ERROR_CODE = "request_validation_failed"
 @dataclass(slots=True, frozen=True)
 class RejectionPayload:
     chat_history_id: str | None = None
-    draft_chat_id: str | None = None
     model_id: str | None = None
 
 
@@ -43,7 +42,6 @@ def persist_chat_request_rejection(
         severity="error" if http_status is not None and http_status >= 500 else "warning",
         session=session,
         chat_history_id=normalized_payload.chat_history_id,
-        draft_chat_id=normalized_payload.draft_chat_id,
         model_id=route.model.public_id if route else normalized_payload.model_id,
         provider=route.model.provider if route else None,
         operation="chat_completion",
@@ -66,7 +64,6 @@ def persist_operator_event(
     chat_history_id: str | None = None,
     chat_message_id: str | None = None,
     stored_file_id: str | None = None,
-    draft_chat_id: str | None = None,
     model_id: str | None = None,
     provider: str | None = None,
     operation: str | None = None,
@@ -87,7 +84,6 @@ def persist_operator_event(
         chat_history_id=chat_history_id,
         chat_message_id=chat_message_id,
         stored_file_id=stored_file_id,
-        draft_chat_id=draft_chat_id,
         model_id=model_id,
         provider=provider,
         operation=operation,
@@ -131,18 +127,15 @@ def normalize_rejection_payload(
     if isinstance(payload, ChatCompletionRequest):
         return RejectionPayload(
             chat_history_id=payload.chat_history_id,
-            draft_chat_id=payload.draft_chat_id,
             model_id=payload.model_id,
         )
     if isinstance(payload, RejectionPayload):
         return payload
     if isinstance(payload, dict):
         chat_history_id = payload.get("chat_history_id")
-        draft_chat_id = payload.get("draft_chat_id")
         model_id = payload.get("model_id")
         return RejectionPayload(
             chat_history_id=chat_history_id.strip() if isinstance(chat_history_id, str) and chat_history_id.strip() else None,
-            draft_chat_id=draft_chat_id.strip() if isinstance(draft_chat_id, str) and draft_chat_id.strip() else None,
             model_id=model_id.strip() if isinstance(model_id, str) and model_id.strip() else None,
         )
     return RejectionPayload()

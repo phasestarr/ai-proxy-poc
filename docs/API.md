@@ -62,15 +62,12 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
   - authenticated
   - requires capability `chat:send`
   - returns `text/event-stream`
-- `POST /api/v1/chat/drafts`
-  - authenticated
-  - creates a Redis-backed draft id for the first send of a new local conversation
-  - draft TTL uses `CHAT_DRAFT_TTL_SECONDS`
-  - attachment mutation locks use `CHAT_ATTACHMENT_OPERATION_TIMEOUT_SECONDS`
 - `POST /api/v1/chat/files`
   - authenticated
-  - uploads one file to either an owned `chat_history_id` or an owned `draft_chat_id`
-  - may promote a draft into a persisted chat history when the first uploaded file succeeds
+  - uploads one file to an owned `chat_history_id`, or no id for the blank-page attachment flow
+  - when no id is sent, the backend uses an internal Postgres draft while validation/counting/storage runs, promotes it to a persisted chat history on success, and returns that history with the uploaded file list
+  - failed blank-page validation/counting/storage removes the internal draft and any staged file rows before returning the error
+  - mutation timeout uses `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`
 - `PATCH /api/v1/chat/histories/{history_id}/files/{file_id}`
   - authenticated
   - updates one owned history attachment activation state
@@ -89,10 +86,7 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 - `chat_history_id`
   - optional
   - must reference an existing owned chat history when present
-- `draft_chat_id`
-  - optional
-  - must reference an existing owned Redis-backed draft when present
-  - exactly one of `chat_history_id` or `draft_chat_id` is required
+  - if omitted, backend creates a new chat history for the send
 - `model_id`
   - required
   - must match an available model from `GET /api/v1/models`
@@ -109,11 +103,9 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 Important:
 - those validation limits are request-schema limits, not provider token-window limits
 - when `chat_history_id` is present, backend rebuilds provider context from persisted non-error messages and treats the request's last user message as the new turn
-- when `draft_chat_id` is present, backend treats the request as the first turn of a new persisted history if send validation succeeds
 - backend may run an internal context-compaction step before the main provider request when estimated provider input is above the soft threshold
 - local validation or coordination rejects do not create a persisted turn
-- on the first real send from a brand-new local conversation, the frontend calls `POST /api/v1/chat/drafts` first, then calls `POST /api/v1/chat/completions`
-- successful draft-backed starts promote `draft_chat_id` into the final `chat_history_id`
+- on the first text-only send from a brand-new local conversation, the frontend calls `POST /api/v1/chat/completions` with neither id
 - once a chat turn is created, provider execution continues in the backend even if the browser SSE connection closes
 
 ## Chat History Metadata
@@ -191,7 +183,9 @@ Current internal pre-provider status semantics:
 - `404`
   - missing or unowned `chat_history_id`
 - `409`
-  - auth session conflict
+  - auth session conflict or chat operation already in progress
+- `504`
+  - validation, attachment mutation, or provider liveness timeout
 - `422`
   - schema validation failure
 

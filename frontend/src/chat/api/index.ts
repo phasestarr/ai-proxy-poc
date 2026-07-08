@@ -1,6 +1,4 @@
 export {
-  createChatDraft,
-  fetchChatDraft,
   deleteChatFile,
   deleteChatHistory,
   fetchChatHistories,
@@ -11,11 +9,9 @@ export {
   uploadChatFile,
   unpinChatHistory,
 } from "./chatHistoryApi";
-export { ChatDraftExpiredError } from "./errors";
 export { streamChatReply } from "./streamChatApi";
 export type {
   ChatAttachmentLimits,
-  ChatDraft,
   ChatHistory,
   ChatHistoryFile,
   ChatHistoryFilesMutation,

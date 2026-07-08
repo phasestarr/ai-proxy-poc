@@ -1,30 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth.types import SessionContext
-from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import ChatMessageAttachment
 from app.db.postgres.models.chat_history import ChatHistory, ChatMessage
-from app.db.redis.chat_drafts import delete_chat_draft
 from app.providers.types import ProviderRoute, ProviderUsageMetadata
 from app.schemas.chat import ChatCompletionRequest
+from app.services.chat.errors import ChatHistoryNotFoundError
 from app.services.chat.histories.service import load_user_history
-from app.services.chat.histories.state import (
-    BUSY_REASON_SEND,
-    INTERACTION_STATE_READY,
-    INTERACTION_STATE_WAITING,
-    apply_history_interaction_state,
-)
 from app.services.chat.histories.titles import build_title_from_prompt
 from app.services.chat.histories.usage_summary import serialize_provider_usage, update_history_usage_summary
-from app.services.chat.errors import ChatHistoryNotFoundError
+from app.services.chat.operations import (
+    OperationHandle,
+    assert_operation_current,
+    record_provider_event_heartbeat,
+)
 from app.services.usage_ledger import append_chat_usage_ledger_event
 
 
@@ -38,6 +34,7 @@ class PersistedChatTurn:
     model_id: str | None
     provider: str | None
     tool_ids: list[str]
+    operation: OperationHandle
 
 
 def persist_chat_turn_start(
@@ -45,47 +42,30 @@ def persist_chat_turn_start(
     *,
     payload: ChatCompletionRequest,
     session: SessionContext,
-    history_id: str,
-    draft_chat_id: str | None = None,
+    history_id: str | None,
+    operation: OperationHandle,
     route: ProviderRoute | None = None,
     attachment_snapshots: list[dict[str, object]] | None = None,
-    first_response_deadline_at: datetime | None = None,
 ) -> PersistedChatTurn:
     latest_user_message = payload.messages[-1]
     if latest_user_message.role != "user":
         raise ValueError("last message must have role 'user'")
 
-    history = load_user_history(db, user_id=session.user_id, history_id=history_id)
-    created_from_draft = False
-    if history is None and draft_chat_id and draft_chat_id == history_id:
-        created_from_draft = True
-        history = ChatHistory(
-            id=history_id,
-            user_id=session.user_id,
-            title=build_title_from_prompt(latest_user_message.content),
-            interaction_state=INTERACTION_STATE_WAITING,
-            busy_reason=BUSY_REASON_SEND,
-            created_at=utc_now(),
-            updated_at=utc_now(),
-            state_updated_at=utc_now(),
-        )
-        db.add(history)
-        db.flush()
-    elif history is None:
+    operation_row = assert_operation_current(db, operation)
+    history: ChatHistory | None = None
+
+    if history_id:
+        history = load_user_history(db, user_id=session.user_id, history_id=history_id)
+        if history is None:
+            raise ChatHistoryNotFoundError("chat history not found")
+    else:
         raise ChatHistoryNotFoundError("chat history not found")
 
     next_sequence = _get_next_message_sequence(db, history_id=history.id)
     now = utc_now()
-    initial_deadline_at = first_response_deadline_at or now + timedelta(
-        seconds=max(1, settings.chat_provider_first_response_timeout_seconds)
-    )
     if next_sequence == 1 and history.title == "New chat":
         history.title = build_title_from_prompt(latest_user_message.content)
-    apply_history_interaction_state(
-        history,
-        interaction_state=INTERACTION_STATE_WAITING,
-        busy_reason=BUSY_REASON_SEND,
-    )
+
     user_message = ChatMessage(
         id=str(uuid4()),
         chat_history_id=history.id,
@@ -111,7 +91,7 @@ def persist_chat_turn_start(
         model_id=route.model.public_id if route else payload.model_id,
         provider=route.model.provider if route else None,
         tool_ids=list(route.tool_ids if route else payload.tool_ids),
-        deadline_at=initial_deadline_at,
+        deadline_at=operation_row.deadline_at,
         created_at=now,
         updated_at=now,
     )
@@ -138,9 +118,8 @@ def persist_chat_turn_start(
                 updated_at=now,
             )
         )
+    assert_operation_current(db, operation)
     db.commit()
-    if created_from_draft and draft_chat_id:
-        delete_chat_draft(draft_chat_id=draft_chat_id)
 
     return PersistedChatTurn(
         history_id=history.id,
@@ -151,12 +130,14 @@ def persist_chat_turn_start(
         model_id=route.model.public_id if route else payload.model_id,
         provider=route.model.provider if route else None,
         tool_ids=list(route.tool_ids if route else payload.tool_ids),
+        operation=operation,
     )
 
 
 def persist_chat_turn_success(
     db: Session,
     *,
+    operation: OperationHandle,
     history_id: str,
     user_id: str,
     auth_session_id: str | None,
@@ -168,10 +149,9 @@ def persist_chat_turn_success(
     result_message: str,
 ) -> bool:
     now = utc_now()
+    assert_operation_current(db, operation)
     assistant_message = db.get(ChatMessage, assistant_message_id)
-    if assistant_message is None:
-        return False
-    if assistant_message.status != "streaming":
+    if assistant_message is None or assistant_message.status != "streaming":
         return False
 
     assistant_message.content = content
@@ -185,7 +165,6 @@ def persist_chat_turn_success(
     assistant_message.deadline_at = None
     assistant_message.updated_at = now
     _touch_history(db, history_id=history_id, now=now)
-    _set_history_ready(db, history_id=history_id)
     update_history_usage_summary(
         db,
         history_id=history_id,
@@ -204,32 +183,39 @@ def persist_chat_turn_success(
         result_code=result_code,
         usage_payload=usage_payload,
     )
+    assert_operation_current(db, operation)
     db.commit()
     return True
 
 
-def persist_chat_turn_first_response(
+def persist_chat_turn_provider_event(
     db: Session,
     *,
+    operation: OperationHandle,
     assistant_message_id: str,
-    stream_timeout_seconds: int,
-) -> None:
+) -> bool:
+    heartbeat = record_provider_event_heartbeat(db, operation)
+    if not heartbeat.persisted:
+        return True
     now = utc_now()
     assistant_message = db.get(ChatMessage, assistant_message_id)
     if assistant_message is None or assistant_message.status != "streaming":
-        return
-    assistant_message.first_response_at = now
-    assistant_message.deadline_at = now + timedelta(seconds=max(1, stream_timeout_seconds))
+        db.commit()
+        return True
+    assistant_message.first_response_at = assistant_message.first_response_at or now
+    assistant_message.deadline_at = heartbeat.operation.deadline_at
     if assistant_message.result_code is None:
-        assistant_message.result_code = "provider_first_response_received"
+        assistant_message.result_code = "provider_first_event_received"
         assistant_message.result_message = "Provider response started."
     assistant_message.updated_at = now
     db.commit()
+    return True
 
 
 def persist_chat_turn_failure(
     db: Session,
     *,
+    operation: OperationHandle,
     history_id: str,
     user_message_id: str,
     assistant_message_id: str,
@@ -237,8 +223,13 @@ def persist_chat_turn_failure(
     result_code: str,
     result_message: str,
     detail: str,
+    allow_expired_operation: bool = False,
 ) -> bool:
     now = utc_now()
+    try:
+        assert_operation_current(db, operation, allow_expired=allow_expired_operation)
+    except Exception:
+        return False
     assistant_message = db.get(ChatMessage, assistant_message_id)
     if assistant_message is not None and assistant_message.status != "streaming":
         return False
@@ -260,7 +251,6 @@ def persist_chat_turn_failure(
         assistant_message.updated_at = now
 
     _touch_history(db, history_id=history_id, now=now)
-    _set_history_ready(db, history_id=history_id)
     db.commit()
     return assistant_message is not None
 
@@ -287,21 +277,6 @@ def _touch_history(
         return
     history.updated_at = now
     history.last_message_at = now
-
-
-def _set_history_ready(
-    db: Session,
-    *,
-    history_id: str,
-) -> None:
-    history = db.get(ChatHistory, history_id)
-    if history is None:
-        return
-    apply_history_interaction_state(
-        history,
-        interaction_state=INTERACTION_STATE_READY,
-        busy_reason=None,
-    )
 
 
 def _optional_int(value: object) -> int | None:
