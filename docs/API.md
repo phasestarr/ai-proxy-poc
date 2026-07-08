@@ -160,7 +160,8 @@ Notes:
   - `context_input_tokens_exact`
   - `context_compaction_started`
 - `result_code` values are provider-specific terminal outcome codes
-- `detail` is a user-safe provider-aware detail string, not a raw SDK exception dump
+- `detail` is currently part of the product error contract and can include provider-aware diagnostic text
+- user/operator formatting for provider details is tracked separately in `docs/TO-DO.md`
 
 Current internal pre-provider status semantics:
 - `context_input_tokens_estimated`
@@ -198,7 +199,9 @@ Persisted assistant failures keep:
 - `error_detail`
 - `provider`
 - `model_id`
-- `usage`
+
+Usage and pricing are not stored on `chat_messages`; use `usage_ledger_events`
+for spend and token audit.
 
 ## Public Model Surface
 

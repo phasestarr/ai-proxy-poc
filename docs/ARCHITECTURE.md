@@ -10,6 +10,18 @@ Current runtime and code ownership for AI Proxy.
 - runtime is Docker Compose first; backend should not depend on host-local services
 - optional deployment smoke gating keeps `backend` unhealthy until smoke passes, so `frontend` does not start
 
+## Public Edge Trust Boundary
+- server deployment assumes sibling `root-proxy` is the only public HTTP entrypoint
+- `root-proxy/nginx/conf.d/snippets/proxy-common.conf` overwrites client-supplied forwarding headers:
+  - `X-Real-IP` from `$remote_addr`
+  - `X-Forwarded-For` from `$remote_addr`
+  - `X-Forwarded-Host` from `$host`
+  - `X-Forwarded-Port` from `$server_port`
+  - `X-Forwarded-Proto` from `$scheme`
+- `frontend/nginx/default.conf` forwards those sanitized headers to the backend
+- backend IP-based guest identity and Microsoft redirect URI construction rely on that edge sanitization
+- do not publish `frontend` or `backend` directly on the public Internet unless forwarded headers are overwritten by the new public edge
+
 ## Top-Level Components
 - `frontend/`
   - React + Vite SPA packaged behind NGINX
@@ -122,7 +134,7 @@ Session expiry semantics:
   - active chat context checkpoints
   - internal blank-page upload staging drafts in `chat_drafts` while upload validation/counting/storage is in progress
   - token-fenced chat operations in `chat_operations`
-  - remembered-chat summary placeholders
+  - legacy remembered-chat summary rows in `chat_history_memories`; current runtime uses `chat_context_checkpoints`
   - unified operator events in `operator_events`
   - append-only usage ledger rows in `usage_ledger_events`
   - user usage cap overrides and reset baselines in `user_usage_caps`
@@ -141,8 +153,7 @@ Session expiry semantics:
   - assistant placeholder
   - resolved route metadata
   - final success or error outcome
-  - assistant usage JSON with normalized usage, provider raw usage, and price snapshot
-  - history-level `usage_summary` rollup cache
+  - append-only usage ledger events with normalized usage, provider raw usage, and price snapshot
 - backend-local rejects such as validation failures, active operation conflicts, usage caps, rate limits, and provider-readiness failures are not persisted as chat turns
 - those backend-local rejects are audit-logged in `operator_events`
 - local validation, request preparation, compaction, and attachment preparation must complete before `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`
@@ -156,6 +167,22 @@ Session expiry semantics:
   - a checkpoint summary when one exists
   - persisted non-error messages after the checkpoint coverage boundary
   - the latest request user message
+
+Current operation states:
+- live states: `running`, `provider_streaming`
+- terminal states: `succeeded`, `failed`, `timed_out`
+- each operation has exactly one scope: `chat_history_id` or `draft_id`
+- draft-scoped operations are only used for blank-page `attach_file`
+- PostgreSQL partial unique indexes enforce one live operation per history, one live operation per draft, and one live draft-attach operation per auth session
+
+Crash and housekeeping semantics:
+- normal mutation flow commits the product mutation, then marks the operation terminal
+- a process crash after a file attach/delete/toggle commit but before terminal operation update can leave the visible mutation applied while the operation still looks live
+- startup/hourly housekeeping closes expired live operations as `timed_out`, clears owner active-operation fields, and writes an operator event when the operation row still exists
+- housekeeping does not roll back already-committed product mutations; recovery is best-effort plus operator visibility
+- deleting a whole history, or deleting the last file from an empty file-only history, deletes the history row and cascades the operation row; after that there may be no operation row left for housekeeping to close
+- chat send transitions the operation to `provider_streaming` before persisting the user/assistant rows; a crash in that small gap leaves an operation without message rows, and housekeeping can time out the operation and clear the active token
+- stale empty history cleanup assumes `HOUSEKEEPING_INTERVAL_MINUTES` remains greater than `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`; if that invariant changes, add an active-operation guard before deleting empty histories
 
 ## Attachment Persistence Model
 - persisted attachments belong to a `chat_history`; blank-page uploads use a `chat_draft` only as internal staging before the upload response is returned
@@ -218,7 +245,8 @@ Session expiry semantics:
   - successful assistant turns append a `billable` row with user, session, provider, model, token, raw-usage, and price snapshots
   - ledger rows intentionally snapshot chat ids instead of depending on deletable chat-history rows
 - default cap is `USAGE_DEFAULT_CAP_USD` when a user has no row in `user_usage_caps`
-- enforcement uses `usage_ledger_events.total_cost_usd`, not deletable `chat_messages` or `chat_histories.usage_summary`
+- enforcement uses `usage_ledger_events.total_cost_usd`, not deletable chat transcript rows
+- usage caps are intentionally post-paid: the backend checks current ledger spend before dispatch and records actual estimated spend after successful provider/compression work
 
 ## Deployment Smoke Readiness
 - `/health` is the Docker startup gate
@@ -228,6 +256,7 @@ Session expiry semantics:
 - it bypasses public auth/session/chat routes and does not create product users, sessions, histories, messages, stored files, or operator-event rows
 - `python -m app.deployment_smoke` manually exercises one direct text request per exposed provider plus direct provider/GCS attachment upload-delete checks
 - current deployment expects Vertex AI, OpenAI, and Anthropic to be configured and ready
+- attach-time file preparation also expects all three providers to be usable; one provider outage can block file upload by design
 
 ## Frontend Refresh Semantics
 - the frontend does not persist the active conversation in `localStorage` or `sessionStorage`
@@ -377,7 +406,8 @@ Anthropic:
   - `backend/app/services/chat/completions/request_builder.py`
   - `backend/app/services/chat/completions/provider_execution.py`
   - `backend/app/services/chat/completions/turn_persistence.py`
-  - `backend/app/services/chat/histories/usage_summary.py`
+  - `backend/app/services/chat/operations.py`
+  - `backend/app/workers/chat_execution_cleanup.py`
 
 ## Active vs Inactive Areas
 - active:
@@ -388,3 +418,7 @@ Anthropic:
   - streaming chat with backend-owned execution
   - backend-owned model catalog
   - provider-native hosted tools
+  - context checkpoints in `chat_context_checkpoints`
+  - usage ledger in `usage_ledger_events`
+- inactive or legacy:
+  - `chat_history_memories` model/table remains present, but current runtime compaction uses `chat_context_checkpoints`

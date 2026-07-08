@@ -30,6 +30,7 @@ docker exec ai-proxy-api python -m app.maintenance.attachment_provider_files --h
 
 - Browser upload stores file bytes in PostgreSQL `stored_files`.
 - Attach-time uploads a remote copy for each supported provider and stores per-provider token metadata in `stored_file_provider_states`.
+- Upload is intentionally all-provider: OpenAI, Anthropic, and Vertex must all be usable for a new file to attach successfully.
 - OpenAI and Anthropic store provider file ids.
 - Vertex stores private `gs://bucket/object` URIs.
 - Send-time reuses the remote copy for the selected provider when available.
@@ -138,7 +139,7 @@ The consistency report checks:
 - DB provider refs missing from remote storage
 - remote files missing any DB ref
 - duplicate DB provider file ids
-- invalid DB states such as `remote_file_status = ready` with no `provider_file_id`
+- provider-state rows with missing required token counts or duplicated `(stored_file_id, provider)` metadata
 - provider-by-provider counts and bytes
 - cross-provider count mismatch warnings
 

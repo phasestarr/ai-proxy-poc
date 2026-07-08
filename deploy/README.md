@@ -8,7 +8,8 @@ override.
 - Commands are run from `ai-proxy/deploy`
 - Docker Engine and the Docker Compose plugin are installed
 - Repo-root `.env.example` exists
-- Server deployment uses sibling `root-proxy`
+- Server deployment uses sibling `root-proxy`, which must overwrite `X-Real-IP`
+  and all `X-Forwarded-*` headers before traffic reaches this stack
 - Local deployment runs directly on `localhost`
 
 ## First-Time Setup
@@ -44,3 +45,6 @@ README-LOCAL.md
 - `docker-compose.yml` is shared by server and local runtime
 - `docker-compose.server.yml` attaches only the public frontend container to `edge-net`
 - `docker-compose.local.yml` publishes the frontend on localhost
+- Deployment smoke exercises direct text generation plus direct provider
+  attachment upload-delete paths for Vertex AI, OpenAI, and Anthropic when
+  `DEPLOYMENT_SMOKE_REQUIRED=true`

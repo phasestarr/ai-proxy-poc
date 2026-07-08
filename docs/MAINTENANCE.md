@@ -179,10 +179,10 @@ Anthropic:
    - provider events must keep arriving before `CHAT_PROVIDER_EVENT_IDLE_TIMEOUT_SECONDS`
    - DB heartbeat writes are throttled; incoming chunks still check the operation token
    - total provider runtime is bounded by `CHAT_PROVIDER_MAX_RUNTIME_SECONDS`
-13. usage normalization and history rollup
+13. usage normalization and ledger writes
    - `backend/app/providers/<provider>/usage.py`
-   - `backend/app/services/chat/histories/usage_summary.py`
    - append-only usage ledger writes live in `backend/app/services/usage_ledger.py`
+   - chat transcript rows do not store usage JSON; use `usage_ledger_events` for spend/token audit
 
 ## Attachment Change Points
 
@@ -262,6 +262,22 @@ Main files:
   - if a current operation is active, delete is blocked
   - if the operation deadline has expired, the next operation start or housekeeping can clear it
 
+Crash and recovery behavior:
+- attach/delete/toggle operations commit the product mutation before the endpoint marks the operation terminal
+- if the backend process crashes in that gap, the mutation may be visible while the operation later times out
+- housekeeping clears expired live operation tokens and writes `chat_operation_timed_out` when an operation row remains
+- destructive deletes that remove the parent history cascade child operation rows, so there may be no stale operation for housekeeping to close
+- chat send moves to `provider_streaming` before user/assistant rows are committed; a crash in that narrow gap leaves no turn rows, only an operation that housekeeping can time out
+- this is an expected crash-only path, not a normal request failure path; product recovery is best-effort plus operator visibility
+- `delete_stale_empty_histories` assumes `HOUSEKEEPING_INTERVAL_MINUTES` remains greater than `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`
+- if that timing invariant changes, add an active-operation guard before deleting empty histories
+
+Attachment limit semantics:
+- per-history duplicate-content protection is enforced by database uniqueness
+- per-user attachment count is currently count-based before insert
+- concurrent uploads to different histories can exceed the per-user count by a small amount
+- use `docs/TO-DO.md` before treating `CHAT_ATTACHMENT_MAX_FILES_PER_USER` as a hard quota
+
 ## Attachment Provider Cleanup
 
 Attachment provider lifecycle and cleanup commands live in docs/ATTACHMENT_PROVIDER_FILES.md.
@@ -292,6 +308,12 @@ Manual smoke run from the backend container:
 ```powershell
 docker exec ai-proxy-api python -m app.deployment_smoke
 ```
+
+Smoke coverage:
+- one direct text stream per exposed provider
+- one direct attachment upload-delete path per provider
+- no product sessions or chat rows are created
+- file upload in the product also prepares all three providers at attach time by design
 
 ## Context Compaction Conditions
 - soft threshold: `50000` input tokens

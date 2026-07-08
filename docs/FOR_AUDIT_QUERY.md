@@ -19,15 +19,15 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT NOW();"
 3. `usage_ledger_events`
    - append-only successful-turn spend and token snapshots
 4. `chat_messages`
-   - product transcript rows with assistant usage and price snapshots
+   - product transcript rows with provider/result metadata
 5. `chat_histories`
-   - usage summary cache and owner lookup
+   - owner and active-operation lookup
 6. `alembic_version`
 
 ## Whole-Audit Counts
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'operator_events' AS bucket, COUNT(*) FROM operator_events UNION ALL SELECT 'usage_caps', COUNT(*) FROM user_usage_caps UNION ALL SELECT 'usage_ledger_events', COUNT(*) FROM usage_ledger_events UNION ALL SELECT 'assistant_messages_with_usage', COUNT(*) FROM chat_messages WHERE role = 'assistant' AND usage IS NOT NULL UNION ALL SELECT 'histories_with_usage_summary', COUNT(*) FROM chat_histories WHERE usage_summary IS NOT NULL ORDER BY bucket;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'operator_events' AS bucket, COUNT(*) FROM operator_events UNION ALL SELECT 'usage_caps', COUNT(*) FROM user_usage_caps UNION ALL SELECT 'usage_ledger_events', COUNT(*) FROM usage_ledger_events UNION ALL SELECT 'assistant_error_messages', COUNT(*) FROM chat_messages WHERE role = 'assistant' AND status = 'error' UNION ALL SELECT 'live_operations', COUNT(*) FROM chat_operations WHERE state IN ('running', 'provider_streaming') ORDER BY bucket;"
 ```
 
 ## Operator Events
@@ -65,7 +65,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_i
 Stale execution cleanup:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, user_id, chat_history_id, chat_message_id, model_id, provider, result_code, detail, created_at FROM operator_events WHERE event_type IN ('chat_execution_stale_closed', 'chat_execution_state_recovered') ORDER BY created_at DESC LIMIT 100;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, event_type, user_id, chat_history_id, chat_message_id, model_id, provider, result_code, detail, created_at FROM operator_events WHERE event_type IN ('chat_operation_timed_out', 'chat_execution_stale_closed') ORDER BY created_at DESC LIMIT 100;"
 ```
 
 Attachment cleanup failures:
@@ -106,10 +106,10 @@ One user's cap row:
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT * FROM user_usage_caps WHERE user_id = 'PUT_USER_ID_HERE';"
 ```
 
-Recent assistant pricing snapshots:
+Recent ledger pricing snapshots:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT cm.id, cm.chat_history_id, cm.sequence, cm.provider, cm.model_id, cm.usage->'normalized' AS usage_normalized, cm.usage->'price_estimate' AS price_estimate, cm.completed_at FROM chat_messages cm JOIN chat_histories ch ON ch.id = cm.chat_history_id WHERE ch.user_id = 'PUT_USER_ID_HERE' AND cm.role = 'assistant' AND cm.usage IS NOT NULL ORDER BY cm.completed_at DESC NULLS LAST, cm.created_at DESC LIMIT 100;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, provider, model_id, result_code, total_tokens_reported, total_cost_usd, price_estimate, chat_history_id_snapshot, chat_message_id_snapshot, created_at FROM usage_ledger_events WHERE user_id = 'PUT_USER_ID_HERE' ORDER BY created_at DESC LIMIT 100;"
 ```
 
 ## Quick Checks

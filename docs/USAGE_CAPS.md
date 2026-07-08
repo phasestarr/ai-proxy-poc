@@ -11,6 +11,9 @@ Operators can cap estimated user spend without cron or time windows.
 - Enforcement happens before a provider request is sent.
 - Usage is based on append-only `usage_ledger_events.total_cost_usd` rows.
 - Product chat rows can be deleted without reducing audit spend; use `reset-cap` to move the cap baseline intentionally.
+- Caps are post-paid and advisory, not a hard reservation system.
+- Concurrent requests can all pass the pre-dispatch check when the user is still below cap; the resulting ledger rows may push effective spend over the cap.
+- A single expensive request can also exceed the cap because exact final price is only known after provider/compression usage is returned.
 
 ## Commands
 

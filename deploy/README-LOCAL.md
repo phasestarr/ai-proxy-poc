@@ -9,6 +9,7 @@ Run the stack directly on `localhost` without sibling `root-proxy`.
 - Frontend is published on `http://localhost:8080`
 - Local runtime uses local provider credentials and local Microsoft app registration when those features are enabled
 - Deployment smoke requires Vertex AI, OpenAI, and Anthropic when `DEPLOYMENT_SMOKE_REQUIRED=true`
+- Deployment smoke exercises direct text generation plus direct provider attachment upload-delete paths
 - Local env keeps `AUTH_COOKIE_SECURE=false`
 - Local env keeps `DEPLOYMENT_SMOKE_REQUIRED=false`
 
@@ -56,6 +57,7 @@ docker compose --env-file ../.env.local -f docker-compose.yml -f docker-compose.
 
 - `docker-compose.local.yml` is the only place that should expose port `8080` to the host
 - Local runtime does not require sibling `root-proxy`
+- Local runtime may report Docker bridge addresses for guest IP identity because there is no public edge proxy
 - `backend`, PostgreSQL, and Redis remain internal to this stack
 - Missing required env values fail during Docker Compose interpolation before startup
 - Optional blank env values must still be present in `.env.local` as blank lines such as `AUTH_COOKIE_DOMAIN=`

@@ -32,6 +32,12 @@ Current env surface for the Docker Compose runtime.
 - `NGINX_VERSION`
 - `REDIS_VERSION`
 
+Server deployment trust boundary:
+- sibling `root-proxy` is expected to be the only public HTTP entrypoint
+- `root-proxy` must overwrite `X-Real-IP` and all `X-Forwarded-*` headers before traffic reaches this stack
+- backend guest identity and Microsoft redirect URI construction rely on that sanitized edge header set
+- local deployment can run without `root-proxy`, but local guest IPs may be Docker bridge addresses
+
 ### Database
 
 - `POSTGRES_DB`
@@ -70,6 +76,7 @@ Compose derives:
 - `AUTH_CONFLICT_TICKET_MINUTES`
 - `HOUSEKEEPING_INTERVAL_MINUTES`
   - runs auth cleanup, stale send cleanup, attachment remote reconciliation, attachment remote TTL cleanup, and attachment blob delete retry
+  - keep this greater than `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS / 60` unless `delete_stale_empty_histories` is changed to skip active operations
 
 ### Microsoft Auth
 
@@ -107,6 +114,7 @@ client ID and secret blank only when Microsoft login is intentionally disabled.
 - `USAGE_DEFAULT_CAP_USD`
   - default per-user effective usage cap when no `user_usage_caps` override exists
   - template default: `100`
+  - cap enforcement is intentionally post-paid: it checks existing ledger spend before dispatch and records actual estimated spend after success
 
 ### Deployment Readiness
 
@@ -116,6 +124,8 @@ client ID and secret blank only when Microsoft login is intentionally disabled.
   - use `true` for server deployments and `false` for local runs that should not call provider APIs during startup
   - Compose only reads the file passed by `--env-file`; `docker-compose.local.yml` does not automatically load `.env.local`
   - current smoke requires all exposed providers: Vertex AI, OpenAI, and Anthropic
+  - smoke exercises direct text generation and direct provider attachment upload-delete paths
+  - product file uploads also prepare all three providers at attach time by design
 
 ### Chat Attachments
 

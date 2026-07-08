@@ -33,6 +33,7 @@
   - `docs/ENVIRONMENT.md`
   - `docs/API.md`
   - `docs/MAINTENANCE.md`
+- Keep unresolved intentional gaps and future policy work in `docs/TO-DO.md`.
 - `docs/FOR_QUERY_NOOBS.md` is query help; keep it practical and DB-focused.
 
 ## Verification

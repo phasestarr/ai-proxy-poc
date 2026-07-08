@@ -117,6 +117,7 @@ commands as validation gates. Use Docker Compose from `deploy/`.
 
 - This repo does not terminate TLS.
 - Server deployment assumes sibling `root-proxy` is the only public entrypoint.
+- Server deployment assumes `root-proxy` overwrites `X-Real-IP` and `X-Forwarded-*` headers before requests reach this stack.
 - Compose uses required env interpolation, so missing env values fail before container startup.
 - Optional blank env values must still be present in env files as blank assignments.
 - Microsoft login remains optional until the Microsoft env vars are configured with real values.
@@ -125,6 +126,7 @@ commands as validation gates. Use Docker Compose from `deploy/`.
 - Internal upload drafts use `CHAT_DRAFT_TTL_SECONDS` as a cleanup safety net; local validation, compaction, and attachment mutations use `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`; provider streaming uses `CHAT_PROVIDER_EVENT_IDLE_TIMEOUT_SECONDS` for next-event liveness and `CHAT_PROVIDER_MAX_RUNTIME_SECONDS` as the hard cap.
 - Database schema is managed by Alembic migrations at backend startup.
 - Guest users are keyed by raw IP address in `guest_identities`; local Docker usually reports the Docker bridge IP such as `172.18.0.1`.
+- In server mode that raw IP is expected to be the sanitized remote address supplied by `root-proxy`.
 - Backend-local chat rejects are audit-logged in PostgreSQL without polluting persisted chat transcripts.
 
 ## Docs
@@ -136,5 +138,6 @@ commands as validation gates. Use Docker Compose from `deploy/`.
 - [docs/API.md](docs/API.md)
 - [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
 - [docs/MAINTENANCE.md](docs/MAINTENANCE.md)
+- [docs/TO-DO.md](docs/TO-DO.md)
 - [docs/WORKING_GUIDELINES.md](docs/WORKING_GUIDELINES.md)
 - [docs/FOR_QUERY_NOOBS.md](docs/FOR_QUERY_NOOBS.md)
