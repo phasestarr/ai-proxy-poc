@@ -15,7 +15,9 @@ from copy import deepcopy
 from app.config.providers.anthropic import anthropic_settings
 from app.providers.types import ProviderToolDefinition
 
-ANTHROPIC_CODE_EXECUTION_BETA = "code-execution-2025-08-25"
+ANTHROPIC_WEB_SEARCH_TOOL_VERSION = "web_search_20260318"
+ANTHROPIC_CODE_EXECUTION_TOOL_VERSION = "code_execution_20260521"
+_ANTHROPIC_DIRECT_WEB_SEARCH_MODELS = {"claude-haiku-4-5"}
 
 # `models.py` decides what model to use what tool.
 ANTHROPIC_TOOL_DEFINITIONS_BY_ID: dict[str, ProviderToolDefinition] = {
@@ -34,7 +36,7 @@ ANTHROPIC_TOOL_DEFINITIONS_BY_ID: dict[str, ProviderToolDefinition] = {
 _ANTHROPIC_TOOL_OPTION_DEFAULTS: dict[str, object] = {
     "web_search": {
         "enabled": False,
-        "version": "web_search_20250305",
+        "version": ANTHROPIC_WEB_SEARCH_TOOL_VERSION,
         "allowed_domains": {"enabled": False, "value": []},
         "blocked_domains": {"enabled": False, "value": []},
         "max_uses": {"enabled": False, "value": 5},
@@ -49,6 +51,7 @@ class AnthropicToolConfigurationError(RuntimeError):
 def build_anthropic_hosted_tools(
     *,
     selected_tool_ids: Iterable[str],
+    model: str | None = None,
 ) -> list[dict[str, object]]:
     configured_tools: list[dict[str, object]] = []
     tool_builders: dict[str, object] = {
@@ -61,17 +64,14 @@ def build_anthropic_hosted_tools(
         builder = tool_builders.get(tool_id)
         if builder is None:
             continue
-        configured_tools.append(builder(normalized_tool_options))
+        configured_tools.append(builder(normalized_tool_options, model=model))
 
     return configured_tools
 
 
 def build_anthropic_beta_headers(*, selected_tool_ids: Iterable[str]) -> list[str]:
-    normalized_tool_ids = set(_normalize_selected_tool_ids(selected_tool_ids))
-    betas: list[str] = []
-    if "code_execution" in normalized_tool_ids:
-        betas.append(ANTHROPIC_CODE_EXECUTION_BETA)
-    return betas
+    del selected_tool_ids
+    return []
 
 
 def get_anthropic_tool_definitions(*tool_ids: str) -> tuple[ProviderToolDefinition, ...]:
@@ -82,16 +82,18 @@ def get_anthropic_tool_definitions(*tool_ids: str) -> tuple[ProviderToolDefiniti
     )
 
 
-def _build_anthropic_web_search_tool(tool_options: dict[str, object]) -> dict[str, object]:
+def _build_anthropic_web_search_tool(tool_options: dict[str, object], *, model: str | None = None) -> dict[str, object]:
     web_search_options = tool_options.get("web_search", {})
     tool_payload: dict[str, object] = {
-        "type": "web_search_20250305",
+        "type": ANTHROPIC_WEB_SEARCH_TOOL_VERSION,
         "name": "web_search",
         "max_uses": _get_enabled_scalar_value(
             web_search_options.get("max_uses"),
             fallback=anthropic_settings.web_search_max_uses,
         ),
     }
+    if model in _ANTHROPIC_DIRECT_WEB_SEARCH_MODELS:
+        tool_payload["allowed_callers"] = ["direct"]
 
     allowed_domains = _get_enabled_scalar_value(
         web_search_options.get("allowed_domains"),
@@ -113,10 +115,11 @@ def _build_anthropic_web_search_tool(tool_options: dict[str, object]) -> dict[st
     return tool_payload
 
 
-def _build_anthropic_code_execution_tool(tool_options: dict[str, object]) -> dict[str, object]:
+def _build_anthropic_code_execution_tool(tool_options: dict[str, object], *, model: str | None = None) -> dict[str, object]:
     del tool_options
+    del model
     return {
-        "type": "code_execution_20250825",
+        "type": ANTHROPIC_CODE_EXECUTION_TOOL_VERSION,
         "name": "code_execution",
     }
 

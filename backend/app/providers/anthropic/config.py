@@ -115,7 +115,10 @@ def build_anthropic_messages_request(
         model=model,
     )
 
-    configured_tools = build_anthropic_hosted_tools(selected_tool_ids=selected_tool_ids)
+    configured_tools = build_anthropic_hosted_tools(
+        selected_tool_ids=selected_tool_ids,
+        model=model,
+    )
     if configured_tools:
         request_kwargs["tools"] = configured_tools
 
