@@ -15,13 +15,13 @@ from app.schemas.chat import ChatCompletionRequest
 from app.services.chat.errors import ChatHistoryNotFoundError
 from app.services.chat.histories.service import load_user_history
 from app.services.chat.histories.titles import build_title_from_prompt
-from app.services.chat.histories.usage_summary import serialize_provider_usage, update_history_usage_summary
 from app.services.chat.operations import (
     OperationHandle,
     assert_operation_current,
+    complete_operation,
     record_provider_event_heartbeat,
 )
-from app.services.usage_ledger import append_chat_usage_ledger_event
+from app.services.usage_ledger import append_chat_usage_ledger_event, serialize_provider_usage
 
 
 @dataclass(slots=True)
@@ -160,17 +160,10 @@ def persist_chat_turn_success(
     assistant_message.result_code = result_code
     assistant_message.result_message = result_message
     usage_payload = serialize_provider_usage(usage)
-    assistant_message.usage = usage_payload
     assistant_message.completed_at = now
     assistant_message.deadline_at = None
     assistant_message.updated_at = now
     _touch_history(db, history_id=history_id, now=now)
-    update_history_usage_summary(
-        db,
-        history_id=history_id,
-        message_usage=assistant_message.usage,
-        aggregated_at=now,
-    )
     append_chat_usage_ledger_event(
         db,
         user_id=user_id,
@@ -183,7 +176,16 @@ def persist_chat_turn_success(
         result_code=result_code,
         usage_payload=usage_payload,
     )
-    assert_operation_current(db, operation)
+    if not complete_operation(
+        db,
+        operation,
+        state="succeeded",
+        result_code=result_code,
+        commit=False,
+        allow_expired=True,
+    ):
+        db.rollback()
+        return False
     db.commit()
     return True
 
@@ -224,6 +226,7 @@ def persist_chat_turn_failure(
     result_message: str,
     detail: str,
     allow_expired_operation: bool = False,
+    operation_state: str = "failed",
 ) -> bool:
     now = utc_now()
     try:
@@ -251,8 +254,22 @@ def persist_chat_turn_failure(
         assistant_message.updated_at = now
 
     _touch_history(db, history_id=history_id, now=now)
+    if assistant_message is None:
+        db.rollback()
+        return False
+    if not complete_operation(
+        db,
+        operation,
+        state=operation_state,
+        result_code=result_code,
+        error_detail=detail,
+        commit=False,
+        allow_expired=allow_expired_operation,
+    ):
+        db.rollback()
+        return False
     db.commit()
-    return assistant_message is not None
+    return True
 
 
 def _get_next_message_sequence(

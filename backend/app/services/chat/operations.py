@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.types import SessionContext
@@ -16,10 +17,10 @@ from app.db.postgres.models.chat_history import ChatDraft, ChatHistory, ChatOper
 from app.db.postgres.models.chat_history import ChatMessage
 from app.services.chat.errors import ChatHistoryNotFoundError, ChatProxyError
 
-TERMINAL_OPERATION_STATES = {"succeeded", "failed", "timed_out", "cancelled"}
-OPERATION_VALIDATING = "validating"
+TERMINAL_OPERATION_STATES = {"succeeded", "failed", "timed_out"}
+LIVE_OPERATION_STATES = {"running", "provider_streaming"}
+OPERATION_RUNNING = "running"
 OPERATION_PROVIDER_STREAMING = "provider_streaming"
-OPERATION_FINALIZING = "finalizing"
 
 
 class ChatOperationConflictError(RuntimeError):
@@ -36,8 +37,6 @@ class ChatOperationExpiredError(RuntimeError):
 class OperationHandle:
     id: str
     owner_token: str
-    scope_type: str
-    scope_id: str
     operation_type: str
     chat_history_id: str | None = None
     draft_id: str | None = None
@@ -68,8 +67,6 @@ def begin_history_operation(
     operation = _create_operation(
         db,
         session=session,
-        scope_type="history",
-        scope_id=history.id,
         chat_history_id=history.id,
         draft_id=None,
         operation_type=operation_type,
@@ -105,8 +102,6 @@ def begin_new_history_send_operation(
     operation = _create_operation(
         db,
         session=session,
-        scope_type="history",
-        scope_id=history.id,
         chat_history_id=history.id,
         draft_id=None,
         operation_type="send",
@@ -126,6 +121,13 @@ def begin_draft_operation(
     timeout_seconds: int | None = None,
 ) -> tuple[ChatDraft, OperationHandle]:
     now = utc_now()
+    _recover_expired_session_draft_operations(db, session=session)
+    active_draft_operation = _load_active_session_draft_operation(db, session=session)
+    if active_draft_operation is not None:
+        raise ChatOperationConflictError(
+            retry_after_seconds=_retry_after_for_active_operation(db, active_draft_operation.id)
+        )
+
     draft = ChatDraft(
         id=str(uuid4()),
         user_id=session.user_id,
@@ -144,8 +146,6 @@ def begin_draft_operation(
     operation = _create_operation(
         db,
         session=session,
-        scope_type="draft",
-        scope_id=draft.id,
         chat_history_id=None,
         draft_id=draft.id,
         operation_type=operation_type,
@@ -173,8 +173,8 @@ def assert_operation_current(
         or (operation.provider_max_deadline_at is not None and operation.provider_max_deadline_at <= now)
     ):
         raise ChatOperationExpiredError("chat operation deadline has expired")
-    if operation.scope_type == "history":
-        history = db.get(ChatHistory, operation.scope_id)
+    if operation.chat_history_id is not None:
+        history = db.get(ChatHistory, operation.chat_history_id)
         if (
             history is None
             or history.active_operation_id != operation.id
@@ -182,7 +182,7 @@ def assert_operation_current(
         ):
             raise ChatOperationExpiredError("chat operation no longer owns the history")
     else:
-        draft = db.get(ChatDraft, operation.scope_id)
+        draft = db.get(ChatDraft, operation.draft_id)
         if (
             draft is None
             or draft.active_operation_id != operation.id
@@ -207,8 +207,6 @@ def reassign_operation_to_history(
             draft.active_operation_token = None
         operation.draft_id = None
 
-    operation.scope_type = "history"
-    operation.scope_id = history.id
     operation.chat_history_id = history.id
     operation.updated_at = now
     history.active_operation_id = operation.id
@@ -324,6 +322,7 @@ def complete_operation(
     error_detail: str | None = None,
     clear_scope: bool = True,
     allow_expired: bool = False,
+    commit: bool = True,
 ) -> bool:
     try:
         operation = assert_operation_current(db, handle, allow_expired=allow_expired)
@@ -337,7 +336,8 @@ def complete_operation(
     operation.updated_at = now
     if clear_scope:
         _clear_scope_owner(db, operation)
-    db.commit()
+    if commit:
+        db.commit()
     return True
 
 
@@ -397,8 +397,6 @@ def _create_operation(
     db: Session,
     *,
     session: SessionContext,
-    scope_type: str,
-    scope_id: str,
     chat_history_id: str | None,
     draft_id: str | None,
     operation_type: str,
@@ -409,19 +407,21 @@ def _create_operation(
         id=str(uuid4()),
         user_id=session.user_id,
         auth_session_id=session.session_id,
-        scope_type=scope_type,
-        scope_id=scope_id,
         chat_history_id=chat_history_id,
         draft_id=draft_id,
         operation_type=operation_type,
-        state=OPERATION_VALIDATING,
+        state=OPERATION_RUNNING,
         owner_token=secrets.token_urlsafe(24),
         deadline_at=now + timedelta(seconds=max(1, timeout_seconds)),
         created_at=now,
         updated_at=now,
     )
     db.add(operation)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ChatOperationConflictError(retry_after_seconds=validating_timeout_seconds()) from exc
     return operation
 
 
@@ -429,8 +429,6 @@ def _handle(operation: ChatOperation) -> OperationHandle:
     return OperationHandle(
         id=operation.id,
         owner_token=operation.owner_token,
-        scope_type=operation.scope_type,
-        scope_id=operation.scope_id,
         operation_type=operation.operation_type,
         chat_history_id=operation.chat_history_id,
         draft_id=operation.draft_id,
@@ -467,6 +465,48 @@ def _recover_expired_active_operation(
         owner.updated_at = now
 
 
+def _recover_expired_session_draft_operations(db: Session, *, session: SessionContext) -> None:
+    if not session.session_id:
+        return
+    operations = db.execute(
+        select(ChatOperation)
+        .where(
+            ChatOperation.user_id == session.user_id,
+            ChatOperation.auth_session_id == session.session_id,
+            ChatOperation.operation_type == "attach_file",
+            ChatOperation.draft_id.is_not(None),
+            ChatOperation.state.in_(tuple(LIVE_OPERATION_STATES)),
+        )
+        .order_by(ChatOperation.created_at.asc(), ChatOperation.id.asc())
+    ).scalars().all()
+    for operation in operations:
+        draft = db.get(ChatDraft, operation.draft_id, with_for_update=True)
+        if draft is not None:
+            _recover_expired_active_operation(db, draft=draft)
+
+
+def _load_active_session_draft_operation(db: Session, *, session: SessionContext) -> ChatOperation | None:
+    if not session.session_id:
+        return None
+    now = utc_now()
+    return db.execute(
+        select(ChatOperation)
+        .where(
+            ChatOperation.user_id == session.user_id,
+            ChatOperation.auth_session_id == session.session_id,
+            ChatOperation.operation_type == "attach_file",
+            ChatOperation.draft_id.is_not(None),
+            ChatOperation.state.in_(tuple(LIVE_OPERATION_STATES)),
+            ChatOperation.deadline_at > now,
+            or_(
+                ChatOperation.provider_max_deadline_at.is_(None),
+                ChatOperation.provider_max_deadline_at > now,
+            ),
+        )
+        .order_by(ChatOperation.created_at.asc(), ChatOperation.id.asc())
+    ).scalars().first()
+
+
 def _retry_after_for_active_operation(db: Session, operation_id: str) -> int:
     operation = db.get(ChatOperation, operation_id)
     if operation is None:
@@ -478,8 +518,8 @@ def _retry_after_for_active_operation(db: Session, operation_id: str) -> int:
 
 
 def _clear_scope_owner(db: Session, operation: ChatOperation) -> None:
-    if operation.scope_type == "history":
-        history = db.get(ChatHistory, operation.scope_id)
+    if operation.chat_history_id is not None:
+        history = db.get(ChatHistory, operation.chat_history_id)
         if history is not None and history.active_operation_id == operation.id and history.active_operation_token == operation.owner_token:
             history.active_operation_id = None
             history.active_operation_token = None
@@ -487,7 +527,7 @@ def _clear_scope_owner(db: Session, operation: ChatOperation) -> None:
                 history.lifecycle_state = "active"
             history.updated_at = utc_now()
     else:
-        draft = db.get(ChatDraft, operation.scope_id)
+        draft = db.get(ChatDraft, operation.draft_id)
         if draft is not None and draft.active_operation_id == operation.id and draft.active_operation_token == operation.owner_token:
             draft.active_operation_id = None
             draft.active_operation_token = None

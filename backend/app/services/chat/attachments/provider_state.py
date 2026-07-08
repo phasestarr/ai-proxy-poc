@@ -32,18 +32,15 @@ async def ensure_provider_token_states(
             state = StoredFileProviderState(
                 id=str(uuid4()),
                 provider=provider,
+                token_count=int(payload["token_count"]),
                 created_at=utc_now(),
                 updated_at=utc_now(),
             )
             stored_file.provider_states.append(state)
 
-        state.token_count = payload.get("token_count")
-        state.token_count_status = str(payload["token_count_status"])
-        state.token_count_error = payload.get("token_count_error")
+        state.token_count = int(payload["token_count"])
         state.count_model_id = payload.get("count_model_id")
         state.provider_file_id = payload.get("provider_file_id")
-        state.remote_file_status = str(payload["remote_file_status"])
-        state.remote_file_error = payload.get("remote_file_error")
         state.uploaded_at = payload.get("uploaded_at")
         state.last_used_at = payload.get("last_used_at")
 
@@ -68,12 +65,8 @@ async def build_provider_token_states(
             StoredFileProviderState(
                 id=str(uuid4()),
                 provider=provider,
-                token_count=payload.get("token_count"),
-                token_count_status=str(payload["token_count_status"]),
-                token_count_error=payload.get("token_count_error"),
+                token_count=int(payload["token_count"]),
                 provider_file_id=payload.get("provider_file_id"),
-                remote_file_status=str(payload["remote_file_status"]),
-                remote_file_error=payload.get("remote_file_error"),
                 count_model_id=payload.get("count_model_id"),
                 uploaded_at=payload.get("uploaded_at"),
                 last_used_at=payload.get("last_used_at"),
@@ -97,18 +90,10 @@ async def resolve_provider_token_counts(
 
     for provider in ("openai", "anthropic", "vertex_ai"):
         state = existing_states.get(provider)
-        if (
-            state is not None
-            and state.token_count_status == "ready"
-            and state.token_count is not None
-        ):
+        if state is not None and state.token_count is not None:
             results[provider] = {
                 "token_count": state.token_count,
-                "token_count_status": state.token_count_status,
-                "token_count_error": state.token_count_error,
                 "provider_file_id": state.provider_file_id,
-                "remote_file_status": state.remote_file_status,
-                "remote_file_error": state.remote_file_error,
                 "count_model_id": state.count_model_id,
                 "uploaded_at": state.uploaded_at,
                 "last_used_at": state.last_used_at,
@@ -144,11 +129,7 @@ async def resolve_provider_token_counts(
             now = utc_now()
             results[provider] = {
                 "token_count": int(token_count),
-                "token_count_status": "ready",
-                "token_count_error": None,
                 "provider_file_id": provider_file_id,
-                "remote_file_status": "ready",
-                "remote_file_error": None,
                 "count_model_id": count_model_id,
                 "uploaded_at": now,
                 "last_used_at": now,

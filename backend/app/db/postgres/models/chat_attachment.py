@@ -83,16 +83,8 @@ class StoredFileProviderState(Base):
             "provider IN ('openai', 'anthropic', 'vertex_ai')",
             name="ck_stored_file_provider_states_provider",
         ),
-        CheckConstraint(
-            "token_count_status IN ('ready', 'failed', 'unsupported')",
-            name="ck_stored_file_provider_states_token_count_status",
-        ),
-        CheckConstraint(
-            "remote_file_status IN ('not_uploaded', 'ready', 'failed', 'unsupported')",
-            name="ck_stored_file_provider_states_remote_file_status",
-        ),
         UniqueConstraint("stored_file_id", "provider", name="uq_stored_file_provider_states_file_provider"),
-        Index("ix_stored_file_provider_states_provider_status", "provider", "remote_file_status"),
+        Index("ix_stored_file_provider_states_provider_file", "provider", "provider_file_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -102,12 +94,8 @@ class StoredFileProviderState(Base):
         index=True,
     )
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    token_count: Mapped[int | None] = mapped_column(nullable=True)
-    token_count_status: Mapped[str] = mapped_column(String(16), nullable=False)
-    token_count_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_count: Mapped[int] = mapped_column(nullable=False)
     provider_file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    remote_file_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_uploaded")
-    remote_file_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     count_model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

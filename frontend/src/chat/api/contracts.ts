@@ -53,7 +53,7 @@ export type ChatHistorySummaryApiPayload = {
   title: string;
   pin_order?: number | null;
   lifecycle_state?: "active" | "deleting";
-  operation_state?: "ready" | "validating" | "provider_streaming" | "finalizing";
+  operation_state?: "ready" | "running" | "provider_streaming";
   operation_type?: string | null;
   created_at: string;
   updated_at: string;

@@ -7,20 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.config.time import utc_now
 from app.db.postgres.models.chat_history import ChatContextCheckpoint
-from app.providers.types import ProviderUsageMetadata
-from app.services.chat.histories.usage_summary import serialize_provider_usage
 
 
-def load_ready_chat_context_checkpoint(
+def load_chat_context_checkpoint(
     db: Session,
     *,
     history_id: str,
 ) -> ChatContextCheckpoint | None:
     return db.execute(
-        select(ChatContextCheckpoint).where(
-            ChatContextCheckpoint.chat_history_id == history_id,
-            ChatContextCheckpoint.status == "ready",
-        )
+        select(ChatContextCheckpoint).where(ChatContextCheckpoint.chat_history_id == history_id)
     ).scalar_one_or_none()
 
 
@@ -33,7 +28,7 @@ def persist_chat_context_checkpoint_ready(
     covered_through_sequence: int | None,
     model_id: str,
     provider: str,
-    usage: ProviderUsageMetadata | None,
+    commit: bool = True,
 ) -> ChatContextCheckpoint:
     checkpoint = _load_checkpoint(db, history_id=history_id)
     now = utc_now()
@@ -46,17 +41,15 @@ def persist_chat_context_checkpoint_ready(
         )
         db.add(checkpoint)
 
-    checkpoint.status = "ready"
     checkpoint.summary_text = summary_text
     checkpoint.covered_through_sequence = covered_through_sequence
     checkpoint.model_id = model_id
     checkpoint.provider = provider
-    checkpoint.usage = serialize_provider_usage(usage)
-    checkpoint.error_detail = None
     checkpoint.completed_at = now
     checkpoint.updated_at = now
-    db.commit()
-    db.refresh(checkpoint)
+    if commit:
+        db.commit()
+        db.refresh(checkpoint)
     return checkpoint
 
 

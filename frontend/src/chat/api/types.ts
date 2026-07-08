@@ -10,7 +10,7 @@ export type ChatSelection = {
   toolIds?: string[];
 };
 
-export type ChatOperationState = "ready" | "validating" | "provider_streaming" | "finalizing";
+export type ChatOperationState = "ready" | "running" | "provider_streaming";
 
 export type ChatAttachmentLimits = {
   maxFilesPerHistory: number;

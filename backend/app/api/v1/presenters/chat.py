@@ -7,9 +7,7 @@ from app.schemas.chat import (
     ChatHistoryFileView,
     ChatHistoryMessageView,
     ChatHistorySummary,
-    ChatHistoryUsageSummary,
 )
-from app.services.chat.histories.usage_summary import extract_token_summary
 
 
 def build_chat_history_summary(history, message_count: int, attachment_count: int) -> ChatHistorySummary:
@@ -37,15 +35,6 @@ def build_attachment_limits_view() -> ChatAttachmentLimitsView:
 
 
 def build_chat_history_message_view(message) -> ChatHistoryMessageView:
-    usage = None
-    if isinstance(message.usage, dict):
-        token_summary = extract_token_summary(message.usage)
-        usage = ChatHistoryUsageSummary(
-            input_tokens=token_summary.get("input_tokens"),
-            output_tokens=token_summary.get("output_tokens"),
-            total_tokens=token_summary.get("total_tokens"),
-        )
-
     return ChatHistoryMessageView(
         id=message.id,
         role=message.role,
@@ -60,7 +49,6 @@ def build_chat_history_message_view(message) -> ChatHistoryMessageView:
         result_code=message.result_code,
         result_message=message.result_message,
         error_detail=message.error_detail,
-        usage=usage,
         completed_at=message.completed_at,
         created_at=message.created_at,
         updated_at=message.updated_at,
@@ -105,7 +93,7 @@ def _active_operation(owner):
 def _operation_state(operation) -> str:
     if operation is None:
         return "ready"
-    state = getattr(operation, "state", "validating")
-    if state in {"validating", "provider_streaming", "finalizing"}:
+    state = getattr(operation, "state", "running")
+    if state in {"running", "provider_streaming"}:
         return state
     return "ready"

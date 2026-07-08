@@ -115,14 +115,29 @@ def update_history_title(
     session=Depends(require_authenticated_session),
     db: Session = Depends(get_db),
 ) -> ChatHistorySummary:
+    operation: OperationHandle | None = None
     try:
+        operation = begin_history_operation(
+            db,
+            session=session,
+            history_id=history_id,
+            operation_type="update_metadata",
+            timeout_seconds=validating_timeout_seconds(),
+        )
         history = update_chat_history_title(
             db,
             user_id=session.user_id,
             history_id=history_id,
             title=payload.title,
+            operation=operation,
         )
+    except ChatOperationConflictError as exc:
+        raise _operation_conflict(exc) from exc
+    except ChatOperationExpiredError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="chat operation expired") from exc
     except ChatHistoryNotFoundError as exc:
+        _rollback_and_fail(db, operation, result_code="chat_history_not_found", detail=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
 
     return build_chat_history_summary(history, len(history.messages), len(history.files))
@@ -134,9 +149,23 @@ def pin_history(
     session=Depends(require_authenticated_session),
     db: Session = Depends(get_db),
 ) -> ChatHistorySummary:
+    operation: OperationHandle | None = None
     try:
-        history = pin_chat_history(db, user_id=session.user_id, history_id=history_id)
+        operation = begin_history_operation(
+            db,
+            session=session,
+            history_id=history_id,
+            operation_type="update_metadata",
+            timeout_seconds=validating_timeout_seconds(),
+        )
+        history = pin_chat_history(db, user_id=session.user_id, history_id=history_id, operation=operation)
+    except ChatOperationConflictError as exc:
+        raise _operation_conflict(exc) from exc
+    except ChatOperationExpiredError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="chat operation expired") from exc
     except ChatHistoryNotFoundError as exc:
+        _rollback_and_fail(db, operation, result_code="chat_history_not_found", detail=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
 
     return build_chat_history_summary(history, len(history.messages), len(history.files))
@@ -148,9 +177,23 @@ def unpin_history(
     session=Depends(require_authenticated_session),
     db: Session = Depends(get_db),
 ) -> ChatHistorySummary:
+    operation: OperationHandle | None = None
     try:
-        history = unpin_chat_history(db, user_id=session.user_id, history_id=history_id)
+        operation = begin_history_operation(
+            db,
+            session=session,
+            history_id=history_id,
+            operation_type="update_metadata",
+            timeout_seconds=validating_timeout_seconds(),
+        )
+        history = unpin_chat_history(db, user_id=session.user_id, history_id=history_id, operation=operation)
+    except ChatOperationConflictError as exc:
+        raise _operation_conflict(exc) from exc
+    except ChatOperationExpiredError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="chat operation expired") from exc
     except ChatHistoryNotFoundError as exc:
+        _rollback_and_fail(db, operation, result_code="chat_history_not_found", detail=str(exc))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat history not found") from exc
 
     return build_chat_history_summary(history, len(history.messages), len(history.files))

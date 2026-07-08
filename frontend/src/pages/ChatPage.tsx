@@ -137,9 +137,9 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
         : "Uploading file..."
       : uploadQueue.length > 0
       ? `${uploadQueue.length} files queued`
-      : serverOperationState === "validating" && serverOperationType === "attach_file"
+      : serverOperationState === "running" && serverOperationType === "attach_file"
       ? "Uploading file..."
-      : serverOperationState === "validating"
+      : serverOperationState === "running"
       ? "Validating..."
       : null;
   const sendButtonLabel = serverOperationState === "provider_streaming" && !isUploadingFile && uploadQueue.length === 0

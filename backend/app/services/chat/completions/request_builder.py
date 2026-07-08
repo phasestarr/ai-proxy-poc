@@ -29,6 +29,7 @@ from app.services.chat.completions.validation import build_safe_error_detail
 from app.services.chat.errors import ChatProxyError
 from app.services.chat.histories.service import load_user_history
 from app.services.chat.operations import OperationHandle, assert_operation_current
+from app.services.usage_ledger import append_chat_usage_ledger_event, serialize_provider_usage
 
 
 async def build_prepared_request(
@@ -82,6 +83,7 @@ async def run_context_compaction(
     *,
     history: ChatHistory,
     user_id: str,
+    auth_session_id: str | None,
     operation: OperationHandle,
 ) -> None:
     with SessionLocal() as compression_db:
@@ -118,8 +120,22 @@ async def run_context_compaction(
             covered_through_sequence=covered_through_sequence,
             model_id=COMPRESSION_MODEL_ID,
             provider=COMPRESSION_PROVIDER_ID,
-            usage=result.usage,
+            commit=False,
         )
+        append_chat_usage_ledger_event(
+            compression_db,
+            user_id=user_id,
+            auth_session_id=auth_session_id,
+            chat_history_id=history.id,
+            chat_message_id=None,
+            provider=COMPRESSION_PROVIDER_ID,
+            model_id=COMPRESSION_MODEL_ID,
+            tool_ids=[],
+            result_code="context_compaction_succeeded",
+            usage_payload=serialize_provider_usage(result.usage),
+            operation="context_compression",
+        )
+        compression_db.commit()
 
 
 def map_provider_request_validation_error(

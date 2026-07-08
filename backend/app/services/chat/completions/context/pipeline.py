@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.postgres.models.chat_history import ChatContextCheckpoint, ChatHistory, ChatMessage
 from app.schemas.chat import ChatMessage as RequestChatMessage
-from app.services.chat.completions.context.checkpoints import load_ready_chat_context_checkpoint
+from app.services.chat.completions.context.checkpoints import load_chat_context_checkpoint
 
 CHECKPOINT_SUMMARY_USER_PREFIX = (
     "Earlier conversation summary for continuity:\n"
@@ -47,7 +47,7 @@ def build_chat_context(
             latest_user_message=latest_user_message,
         )
 
-    checkpoint = load_ready_chat_context_checkpoint(db, history_id=history.id)
+    checkpoint = load_chat_context_checkpoint(db, history_id=history.id)
     persisted_suffix_messages = _load_persisted_suffix_messages(
         db,
         history_id=history.id,
@@ -76,7 +76,7 @@ def build_compaction_source_text(
     *,
     history_id: str,
 ) -> tuple[str, int | None]:
-    checkpoint = load_ready_chat_context_checkpoint(db, history_id=history_id)
+    checkpoint = load_chat_context_checkpoint(db, history_id=history_id)
     suffix_rows = _load_persisted_suffix_messages(
         db,
         history_id=history_id,

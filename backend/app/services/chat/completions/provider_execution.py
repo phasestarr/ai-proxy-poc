@@ -33,10 +33,8 @@ from app.services.chat.completions.turn_persistence import (
 )
 from app.services.chat.completions.request_audit import persist_operator_event
 from app.services.chat.errors import ChatProxyError
-from app.services.chat.histories.usage_summary import extract_token_summary
 from app.services.chat.operations import (
     ChatOperationExpiredError,
-    complete_operation,
     provider_event_idle_timeout_seconds,
     provider_max_runtime_seconds,
 )
@@ -150,14 +148,6 @@ async def run_chat_completion_turn(
                 result_code=result_code,
                 result_message=result_message,
             )
-            if persisted:
-                complete_operation(
-                    stream_db,
-                    turn.operation,
-                    state="succeeded",
-                    result_code=result_code,
-                    allow_expired=True,
-                )
     except ChatOperationExpiredError:
         persist_provider_timeout(
             turn=turn,
@@ -226,18 +216,10 @@ def mark_turn_provider_event(turn: PersistedChatTurn) -> bool:
 def map_usage_summary(chunk: ProviderStreamChunk | None) -> ChatUsageSummary | None:
     if chunk is None or chunk.usage is None:
         return None
-    serialized_usage = {
-        "normalized": {
-            "input_tokens_reported": chunk.usage.prompt_token_count,
-            "output_tokens_reported": chunk.usage.candidates_token_count,
-            "total_tokens_reported": chunk.usage.total_token_count,
-        }
-    }
-    token_summary = extract_token_summary(serialized_usage)
     return ChatUsageSummary(
-        input_tokens=token_summary.get("input_tokens"),
-        output_tokens=token_summary.get("output_tokens"),
-        total_tokens=token_summary.get("total_tokens"),
+        input_tokens=chunk.usage.prompt_token_count,
+        output_tokens=chunk.usage.candidates_token_count,
+        total_tokens=chunk.usage.total_token_count,
     )
 
 
@@ -257,16 +239,8 @@ def persist_turn_failure(
             result_code=error.code,
             result_message=error.result_message,
             detail=error.detail,
+            allow_expired_operation=True,
         )
-        if persisted:
-            complete_operation(
-                stream_db,
-                turn.operation,
-                state="failed",
-                result_code=error.code,
-                error_detail=error.detail,
-                allow_expired=True,
-            )
 
 
 def persist_turn_failure_event(
@@ -421,16 +395,8 @@ def persist_provider_timeout(
             result_message=error.result_message,
             detail=error.detail,
             allow_expired_operation=True,
+            operation_state="timed_out",
         )
-        if persisted:
-            complete_operation(
-                stream_db,
-                turn.operation,
-                state="timed_out",
-                result_code=error.code,
-                error_detail=error.detail,
-                allow_expired=True,
-            )
     with SessionLocal() as event_db:
         persist_operator_event(
             event_db,

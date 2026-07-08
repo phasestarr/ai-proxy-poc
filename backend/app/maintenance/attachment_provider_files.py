@@ -32,11 +32,7 @@ class DbProviderStateRow:
     provider: str
     stored_file_id: str
     token_count: int | None
-    token_count_status: str
-    token_count_error: str | None
     provider_file_id: str | None
-    remote_file_status: str
-    remote_file_error: str | None
     count_model_id: str | None
     uploaded_at: datetime | None
     last_used_at: datetime | None
@@ -341,11 +337,7 @@ def list_db_blobs(
                     StoredFileProviderState.provider,
                     StoredFileProviderState.stored_file_id,
                     StoredFileProviderState.token_count,
-                    StoredFileProviderState.token_count_status,
-                    StoredFileProviderState.token_count_error,
                     StoredFileProviderState.provider_file_id,
-                    StoredFileProviderState.remote_file_status,
-                    StoredFileProviderState.remote_file_error,
                     StoredFileProviderState.count_model_id,
                     StoredFileProviderState.uploaded_at,
                     StoredFileProviderState.last_used_at,
@@ -829,14 +821,11 @@ async def _collect_consistency_state(
     remote_file_ids: dict[str, set[str]] = defaultdict(set)
     duplicate_provider_file_ids: dict[str, dict[str, list[DbProviderStateRow]]] = defaultdict(lambda: defaultdict(list))
     db_refs_missing_remote: list[DbProviderStateRow] = []
-    invalid_ready_without_file_id: list[DbProviderStateRow] = []
-    invalid_file_id_with_nonready_status: list[DbProviderStateRow] = []
+    provider_states_missing_token_count: list[DbProviderStateRow] = []
 
     for row in db_provider_states:
-        if row.remote_file_status == "ready" and not row.provider_file_id:
-            invalid_ready_without_file_id.append(row)
-        if row.provider_file_id and row.remote_file_status != "ready":
-            invalid_file_id_with_nonready_status.append(row)
+        if row.token_count is None:
+            provider_states_missing_token_count.append(row)
         if row.provider_file_id:
             db_provider_file_ids[row.provider].add(row.provider_file_id)
             duplicate_provider_file_ids[row.provider][row.provider_file_id].append(row)
@@ -882,15 +871,6 @@ async def _collect_consistency_state(
         )
         for provider_name in providers
     }
-    ready_ref_counts = {
-        provider_name: sum(
-            1
-            for row in db_provider_states
-            if row.provider == provider_name and row.provider_file_id is not None and row.remote_file_status == "ready"
-        )
-        for provider_name in providers
-    }
-
     return {
         "providers": providers,
         "vertex_scope": {
@@ -905,10 +885,8 @@ async def _collect_consistency_state(
         "db_refs_missing_remote": db_refs_missing_remote,
         "remote_files_missing_db_ref": remote_files_missing_db_ref,
         "duplicate_db_provider_file_ids": duplicate_db_provider_file_ids,
-        "invalid_ready_without_file_id": invalid_ready_without_file_id,
-        "invalid_file_id_with_nonready_status": invalid_file_id_with_nonready_status,
+        "provider_states_missing_token_count": provider_states_missing_token_count,
         "tracked_ref_counts": tracked_ref_counts,
-        "ready_ref_counts": ready_ref_counts,
         "remote_counts": remote_counts,
         "remote_bytes": remote_bytes,
     }
@@ -981,7 +959,6 @@ def _build_consistency_payload(
     providers = state["providers"]
     remote_counts = state["remote_counts"]
     tracked_ref_counts = state["tracked_ref_counts"]
-    ready_ref_counts = state["ready_ref_counts"]
     remote_bytes = state["remote_bytes"]
 
     count_mismatch_warning = None
@@ -990,7 +967,6 @@ def _build_consistency_payload(
             "message": "Remote file counts differ across providers.",
             "remote_counts": remote_counts,
             "tracked_db_ref_counts": tracked_ref_counts,
-            "ready_db_ref_counts": ready_ref_counts,
         }
 
     remote_vs_local_warning = {
@@ -1021,14 +997,10 @@ def _build_consistency_payload(
                     1 for row in state["db_provider_states"] if row.provider == provider_name
                 ),
                 "tracked_remote_ref_count": tracked_ref_counts[provider_name],
-                "ready_remote_ref_count": ready_ref_counts[provider_name],
-                "remote_status_counts": _count_remote_statuses(
-                    state["db_provider_states"],
-                    provider=provider_name,
-                ),
-                "token_count_status_counts": _count_token_statuses(
-                    state["db_provider_states"],
-                    provider=provider_name,
+                "missing_token_count": sum(
+                    1
+                    for row in state["db_provider_states"]
+                    if row.provider == provider_name and row.token_count is None
                 ),
             }
             for provider_name in providers
@@ -1056,15 +1028,10 @@ def _build_consistency_payload(
             },
             "duplicate_db_provider_file_id_count": len(state["duplicate_db_provider_file_ids"]),
             "duplicate_db_provider_file_ids": state["duplicate_db_provider_file_ids"][:limit],
-            "invalid_ready_without_file_id_count": len(state["invalid_ready_without_file_id"]),
-            "invalid_ready_without_file_id": [
+            "provider_states_missing_token_count_count": len(state["provider_states_missing_token_count"]),
+            "provider_states_missing_token_count": [
                 asdict(item)
-                for item in state["invalid_ready_without_file_id"][:limit]
-            ],
-            "invalid_file_id_with_nonready_status_count": len(state["invalid_file_id_with_nonready_status"]),
-            "invalid_file_id_with_nonready_status": [
-                asdict(item)
-                for item in state["invalid_file_id_with_nonready_status"][:limit]
+                for item in state["provider_states_missing_token_count"][:limit]
             ],
             "provider_count_mismatch_warning": count_mismatch_warning,
             "remote_exceeds_local_blob_warning": remote_vs_local_warning,
@@ -1077,32 +1044,12 @@ def _build_consistency_payload(
     }
 
 
-def _count_remote_statuses(rows: list[DbProviderStateRow], *, provider: str) -> dict[str, int]:
-    counts: dict[str, int] = defaultdict(int)
-    for row in rows:
-        if row.provider == provider:
-            counts[row.remote_file_status] += 1
-    return dict(sorted(counts.items()))
-
-
-def _count_token_statuses(rows: list[DbProviderStateRow], *, provider: str) -> dict[str, int]:
-    counts: dict[str, int] = defaultdict(int)
-    for row in rows:
-        if row.provider == provider:
-            counts[row.token_count_status] += 1
-    return dict(sorted(counts.items()))
-
-
 def _state_to_row(state: StoredFileProviderState) -> DbProviderStateRow:
     return DbProviderStateRow(
         provider=state.provider,
         stored_file_id=state.stored_file_id,
         token_count=state.token_count,
-        token_count_status=state.token_count_status,
-        token_count_error=state.token_count_error,
         provider_file_id=state.provider_file_id,
-        remote_file_status=state.remote_file_status,
-        remote_file_error=state.remote_file_error,
         count_model_id=state.count_model_id,
         uploaded_at=state.uploaded_at,
         last_used_at=state.last_used_at,

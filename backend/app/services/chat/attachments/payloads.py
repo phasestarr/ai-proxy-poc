@@ -7,6 +7,7 @@ from app.providers.anthropic.attachments import inject_anthropic_history_files
 from app.providers.openai.attachments import inject_openai_history_files
 from app.providers.types import PreparedProviderChatRequest, ProviderRoute
 from app.providers.vertex.attachments import inject_vertex_history_files
+from app.services.chat.attachments.provider_state import ensure_provider_token_states
 from app.services.chat.attachments.remote_files import best_effort_delete_remote_provider_file, upload_provider_files
 from app.services.chat.attachments.service import list_history_files
 from app.services.chat.attachments.storage import get_provider_state
@@ -41,7 +42,25 @@ async def prepare_history_attachments_for_provider(
         for conversation_file in active_conversation_files:
             stored_file = conversation_file.stored_file
             provider_state = get_provider_state(stored_file=stored_file, provider=route.model.provider)
-            if provider_state is None or provider_state.token_count_status != "ready" or provider_state.token_count is None:
+            if provider_state is None or provider_state.token_count is None:
+                try:
+                    await ensure_provider_token_states(
+                        stored_file=stored_file,
+                        display_name=conversation_file.display_name,
+                        mime_type=conversation_file.mime_type,
+                        file_bytes=stored_file.content,
+                    )
+                except Exception as exc:
+                    raise ChatProxyError(
+                        code="attachments_token_count_failed",
+                        origin="proxy",
+                        detail="attachment token metadata is unavailable",
+                        http_status=503,
+                        provider=route.model.provider,
+                    ) from exc
+                provider_state = get_provider_state(stored_file=stored_file, provider=route.model.provider)
+
+            if provider_state is None or provider_state.token_count is None:
                 raise ChatProxyError(
                     code="attachments_token_count_failed",
                     origin="proxy",

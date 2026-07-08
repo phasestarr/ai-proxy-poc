@@ -121,7 +121,6 @@ async def ensure_remote_provider_file(
                 provider_file_id=existing_provider_file_id,
             )
         except Exception as exc:
-            provider_state.remote_file_error = str(exc)
             raise ChatProxyError(
                 code="attachments_upload_failed",
                 origin="proxy",
@@ -130,8 +129,6 @@ async def ensure_remote_provider_file(
                 provider=provider,
             ) from exc
         if remote_exists:
-            provider_state.remote_file_status = "ready"
-            provider_state.remote_file_error = None
             return existing_provider_file_id
         mark_provider_state_not_uploaded(provider_state)
 
@@ -144,8 +141,6 @@ async def ensure_remote_provider_file(
             file_bytes=stored_file.content,
         )
     except Exception as exc:
-        provider_state.remote_file_status = "failed"
-        provider_state.remote_file_error = str(exc)
         raise ChatProxyError(
             code="attachments_upload_failed",
             origin="proxy",
@@ -155,8 +150,6 @@ async def ensure_remote_provider_file(
         ) from exc
 
     provider_state.provider_file_id = provider_file_id
-    provider_state.remote_file_status = "ready"
-    provider_state.remote_file_error = None
     provider_state.uploaded_at = utc_now()
     return provider_file_id
 
@@ -303,8 +296,6 @@ async def remote_provider_file_exists(*, provider: str, provider_file_id: str) -
 
 def mark_provider_state_not_uploaded(state: StoredFileProviderState) -> None:
     state.provider_file_id = None
-    state.remote_file_status = "not_uploaded"
-    state.remote_file_error = None
     state.uploaded_at = None
     state.last_used_at = None
 

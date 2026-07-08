@@ -126,7 +126,7 @@ class ChatHistorySummary(BaseModel):
     title: str
     pin_order: int | None = None
     lifecycle_state: Literal["active", "deleting"] = "active"
-    operation_state: Literal["ready", "validating", "provider_streaming", "finalizing"] = "ready"
+    operation_state: Literal["ready", "running", "provider_streaming"] = "ready"
     operation_type: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -143,12 +143,6 @@ class ChatAttachmentLimitsView(BaseModel):
 class ChatHistoryListEnvelope(BaseModel):
     histories: list[ChatHistorySummary]
     attachment_limits: ChatAttachmentLimitsView
-
-
-class ChatHistoryUsageSummary(BaseModel):
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    total_tokens: int | None = None
 
 
 class ChatHistoryFileTokenSummary(BaseModel):
@@ -186,7 +180,6 @@ class ChatHistoryMessageView(BaseModel):
     result_code: str | None = None
     result_message: str | None = None
     error_detail: str | None = None
-    usage: ChatHistoryUsageSummary | None = None
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

@@ -268,6 +268,7 @@ async def _prepare_turn_for_provider(
         await run_context_compaction(
             history=built_context.history,
             user_id=session.user_id,
+            auth_session_id=session.session_id,
             operation=operation,
         )
         _, prepared_request = await build_prepared_request(

@@ -117,8 +117,8 @@ def _close_stale_operation(
             result_code=result_code,
         )
 
-    if operation.scope_type == "history":
-        history = db.get(ChatHistory, operation.scope_id)
+    if operation.chat_history_id is not None:
+        history = db.get(ChatHistory, operation.chat_history_id)
         if history is not None and history.active_operation_id == operation.id:
             history.active_operation_id = None
             history.active_operation_token = None
@@ -126,7 +126,7 @@ def _close_stale_operation(
                 history.lifecycle_state = "active"
             history.updated_at = now
     else:
-        draft = db.get(ChatDraft, operation.scope_id)
+        draft = db.get(ChatDraft, operation.draft_id)
         if draft is not None and draft.active_operation_id == operation.id:
             draft.active_operation_id = None
             draft.active_operation_token = None
@@ -260,7 +260,7 @@ def _close_stale_streaming_message(
 
 
 def _operation_timeout_code(operation: ChatOperation) -> str:
-    if operation.state == "validating":
+    if operation.state == "running":
         return STALE_VALIDATION_RESULT_CODE
     if operation.first_provider_event_at is None:
         return STALE_FIRST_RESPONSE_RESULT_CODE

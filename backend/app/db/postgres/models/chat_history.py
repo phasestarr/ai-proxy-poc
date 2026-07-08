@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config.time import utc_now
@@ -46,8 +46,6 @@ class ChatHistory(Base):
         nullable=False,
     )
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    usage_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-
     user: Mapped["User"] = relationship(back_populates="chat_histories")
     messages: Mapped[list["ChatMessage"]] = relationship(
         back_populates="history",
@@ -119,21 +117,45 @@ class ChatOperation(Base):
     __tablename__ = "chat_operations"
     __table_args__ = (
         CheckConstraint(
-            "scope_type IN ('history', 'draft')",
-            name="ck_chat_operations_scope_type",
-        ),
-        CheckConstraint(
-            "operation_type IN ('send', 'attach_file', 'delete_file', 'toggle_file', 'delete_history')",
+            "operation_type IN ('send', 'attach_file', 'delete_file', 'toggle_file', 'delete_history', 'update_metadata')",
             name="ck_chat_operations_operation_type",
         ),
         CheckConstraint(
-            "state IN ('validating', 'provider_streaming', 'finalizing', 'succeeded', 'failed', 'timed_out', 'cancelled')",
+            "state IN ('running', 'provider_streaming', 'succeeded', 'failed', 'timed_out')",
             name="ck_chat_operations_state",
         ),
-        Index("ix_chat_operations_scope_state", "scope_type", "scope_id", "state"),
+        CheckConstraint(
+            "((chat_history_id IS NOT NULL AND draft_id IS NULL) OR (chat_history_id IS NULL AND draft_id IS NOT NULL))",
+            name="ck_chat_operations_exactly_one_scope",
+        ),
+        CheckConstraint(
+            "draft_id IS NULL OR operation_type = 'attach_file'",
+            name="ck_chat_operations_draft_attach_only",
+        ),
         Index("ix_chat_operations_deadline", "state", "deadline_at"),
         Index("ix_chat_operations_history_created", "chat_history_id", "created_at"),
         Index("ix_chat_operations_draft_created", "draft_id", "created_at"),
+        Index(
+            "uq_chat_operations_live_history",
+            "chat_history_id",
+            unique=True,
+            postgresql_where=text("chat_history_id IS NOT NULL AND state IN ('running', 'provider_streaming')"),
+        ),
+        Index(
+            "uq_chat_operations_live_draft",
+            "draft_id",
+            unique=True,
+            postgresql_where=text("draft_id IS NOT NULL AND state IN ('running', 'provider_streaming')"),
+        ),
+        Index(
+            "uq_chat_operations_live_session_draft_attach",
+            "auth_session_id",
+            unique=True,
+            postgresql_where=text(
+                "auth_session_id IS NOT NULL AND draft_id IS NOT NULL "
+                "AND operation_type = 'attach_file' AND state IN ('running', 'provider_streaming')"
+            ),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -143,8 +165,6 @@ class ChatOperation(Base):
         nullable=True,
         index=True,
     )
-    scope_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    scope_id: Mapped[str] = mapped_column(String(36), nullable=False)
     chat_history_id: Mapped[str | None] = mapped_column(
         ForeignKey("chat_histories.id", ondelete="CASCADE"),
         nullable=True,
@@ -212,7 +232,6 @@ class ChatMessage(Base):
     result_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     result_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
-    usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     first_response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -255,7 +274,6 @@ class ChatHistoryMemory(Base):
     source_last_message_sequence: Mapped[int | None] = mapped_column(nullable=True)
     model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -274,12 +292,7 @@ class ChatHistoryMemory(Base):
 class ChatContextCheckpoint(Base):
     __tablename__ = "chat_context_checkpoints"
     __table_args__ = (
-        CheckConstraint(
-            "status IN ('building', 'ready', 'failed')",
-            name="ck_chat_context_checkpoints_status",
-        ),
         UniqueConstraint("chat_history_id", name="uq_chat_context_checkpoints_chat_history_id"),
-        Index("ix_chat_context_checkpoints_user_status", "user_id", "status"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -289,14 +302,10 @@ class ChatContextCheckpoint(Base):
         nullable=False,
         index=True,
     )
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="building")
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     covered_through_sequence: Mapped[int | None] = mapped_column(nullable=True)
     model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
-    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
