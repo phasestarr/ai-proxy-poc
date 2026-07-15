@@ -12,7 +12,7 @@ from app.providers.anthropic.outcomes import (
 )
 from app.providers.dispatcher import (
     ProviderExecutionError,
-    map_provider_raw_stream_events,
+    ProviderStreamMapper,
     stream_provider_raw_chat_completion,
 )
 from app.providers.openai.outcomes import (
@@ -25,6 +25,8 @@ from app.providers.types import (
     ProviderRawStreamChunk,
     ProviderRoute,
     ProviderStreamEvent,
+    ThinkingDeltaBlock,
+    ToolUsageBlock,
 )
 from app.providers.vertex.outcomes import (
     VERTEX_SUCCESS_RESULT_CODE,
@@ -34,7 +36,8 @@ from app.providers.vertex.outcomes import (
 from app.schemas.chat import (
     ChatStreamDeltaEvent,
     ChatStreamDoneEvent,
-    ChatStreamProviderEvent,
+    ChatStreamThinkingBlock,
+    ChatStreamToolUsageBlock,
     ChatStreamStatusEvent,
     ChatUsageSummary,
 )
@@ -65,6 +68,7 @@ async def run_chat_completion_turn(
     sink: LiveChatStreamSink,
 ) -> None:
     last_event: ProviderStreamEvent | None = None
+    completion_event: ProviderStreamEvent | None = None
     accumulated_text = ""
     last_status_code: str | None = None
     event_idle_timeout_seconds = provider_event_idle_timeout_seconds()
@@ -75,6 +79,7 @@ async def run_chat_completion_turn(
     stream = None
 
     try:
+        stream_mapper = ProviderStreamMapper(prepared_request)
         stream = stream_provider_raw_chat_completion(prepared_request=prepared_request).__aiter__()
         while True:
             try:
@@ -113,10 +118,7 @@ async def run_chat_completion_turn(
                     max_runtime_seconds=max_runtime_seconds,
                 )
                 return
-            stream_events = map_provider_raw_stream_events(
-                prepared_request=prepared_request,
-                raw_chunk=raw_chunk,
-            )
+            stream_events = stream_mapper.map(raw_chunk)
             for stream_event in stream_events:
                 last_event, accumulated_text, last_status_code = emit_provider_event(
                     stream_event=stream_event,
@@ -125,6 +127,8 @@ async def run_chat_completion_turn(
                     accumulated_text=accumulated_text,
                     last_status_code=last_status_code,
                 )
+                if stream_event.kind == "completion":
+                    completion_event = stream_event
                 final_answer_completed = final_answer_completed or is_strong_final_answer_event(
                     route.model.provider,
                     stream_event,
@@ -172,9 +176,10 @@ async def run_chat_completion_turn(
         if stream is not None:
             await _close_provider_stream(stream)
 
+    terminal_event = completion_event or last_event
     result_code, result_message = build_success_outcome(
         route=route,
-        finish_reason=last_event.finish_reason if last_event else None,
+        finish_reason=terminal_event.finish_reason if terminal_event else None,
     )
     try:
         with SessionLocal() as stream_db:
@@ -186,8 +191,8 @@ async def run_chat_completion_turn(
                 auth_session_id=turn.auth_session_id,
                 assistant_message_id=turn.assistant_message_id,
                 content=accumulated_text,
-                finish_reason=last_event.finish_reason if last_event else None,
-                usage=last_event.usage if last_event else None,
+                finish_reason=terminal_event.finish_reason if terminal_event else None,
+                usage=terminal_event.usage if terminal_event else None,
                 result_code=result_code,
                 result_message=result_message,
             )
@@ -212,8 +217,8 @@ async def run_chat_completion_turn(
             provider=route.model.provider,
             result_code=result_code,
             result_message=result_message,
-            finish_reason=last_event.finish_reason if last_event else None,
-            usage=map_usage_summary(last_event),
+            finish_reason=terminal_event.finish_reason if terminal_event else None,
+            usage=map_usage_summary(terminal_event),
         ),
     )
 
@@ -246,32 +251,27 @@ def emit_provider_event(
             "delta",
             ChatStreamDeltaEvent(delta_text=stream_event.text_delta),
         )
-    elif should_emit_provider_event(stream_event):
-        sink.emit(
-            "provider_event",
-            ChatStreamProviderEvent(
-                provider=route.model.provider,
-                event_kind=stream_event.kind,
-                raw_event_type=stream_event.raw_event_type,
-                text_delta=stream_event.text_delta or None,
-                tool_type=stream_event.tool_type,
-                item_id=stream_event.item_id,
-                output_index=stream_event.output_index,
-                content_index=stream_event.content_index,
-                status_code=stream_event.status_code,
-                status_message=stream_event.status_message,
-                metadata=stream_event.metadata,
-            ),
-        )
+    elif stream_event.stream_to_client and stream_event.block is not None:
+        block = stream_event.block
+        if isinstance(block, ThinkingDeltaBlock):
+            sink.emit(
+                "block",
+                ChatStreamThinkingBlock(
+                    operation=block.operation,
+                    block_id=block.block_id,
+                    text_delta=block.text_delta,
+                    metadata=block.metadata,
+                ),
+            )
+        elif isinstance(block, ToolUsageBlock):
+            sink.emit(
+                "block",
+                ChatStreamToolUsageBlock(
+                    metadata=block.metadata,
+                    raw=block.raw,
+                ),
+            )
     return stream_event, accumulated_text, last_status_code
-
-
-def should_emit_provider_event(stream_event: ProviderStreamEvent) -> bool:
-    if not stream_event.stream_to_client:
-        return False
-    if stream_event.kind in {"heartbeat", "completion", "status", "answer_delta"}:
-        return False
-    return bool(stream_event.text_delta or stream_event.metadata)
 
 
 def mark_turn_provider_event(turn: PersistedChatTurn) -> bool:

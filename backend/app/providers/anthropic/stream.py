@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from app.providers.anthropic.client import build_anthropic_client
 from app.providers.anthropic.config import build_anthropic_messages_request
 from app.providers.anthropic.mapper import (
+    AnthropicStreamState,
     map_anthropic_stream_event,
     map_chat_messages_to_anthropic_messages,
 )
@@ -31,7 +32,6 @@ from app.providers.anthropic.tools import AnthropicToolConfigurationError, build
 from app.providers.token_estimation import estimate_token_count_from_object
 from app.providers.types import (
     PreparedProviderChatRequest,
-    ProviderFunctionDeclaration,
     ProviderRawStreamChunk,
     ProviderStreamEvent,
 )
@@ -73,13 +73,11 @@ async def stream_anthropic_chat_completion(
     public_model_id: str,
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
-    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ) -> AsyncIterator[ProviderStreamEvent]:
     prepared_request = build_anthropic_prepared_chat_completion_request(
         public_model_id=public_model_id,
         messages=messages,
         selected_tool_ids=selected_tool_ids,
-        function_declarations=function_declarations,
     )
     async for chunk in stream_prepared_anthropic_chat_completion(prepared_request):
         yield chunk
@@ -88,8 +86,13 @@ async def stream_anthropic_chat_completion(
 async def stream_prepared_anthropic_chat_completion(
     prepared_request: PreparedProviderChatRequest,
 ) -> AsyncIterator[ProviderStreamEvent]:
+    state = AnthropicStreamState()
     async for raw_chunk in stream_prepared_anthropic_raw_chat_completion(prepared_request):
-        for stream_event in map_prepared_anthropic_raw_stream_event(prepared_request, raw_chunk):
+        for stream_event in map_prepared_anthropic_raw_stream_event(
+            prepared_request,
+            raw_chunk,
+            state=state,
+        ):
             yield stream_event
 
 
@@ -100,6 +103,7 @@ async def stream_prepared_anthropic_raw_chat_completion(
     saw_visible_text = False
     saw_terminal_stop_reason = False
     last_stop_reason: str | None = None
+    text_block_indexes: set[int] = set()
 
     try:
         stream = await client.beta.messages.create(
@@ -118,11 +122,22 @@ async def stream_prepared_anthropic_raw_chat_completion(
                     result_message=failure.result_message,
                 )
 
-            if event_type == "content_block_delta":
+            if event_type == "content_block_start":
+                index = getattr(event, "index", None)
+                content_block = getattr(event, "content_block", None)
+                if isinstance(index, int) and getattr(content_block, "type", None) == "text":
+                    text_block_indexes.add(index)
+                    saw_visible_text = saw_visible_text or bool(getattr(content_block, "text", None))
+            elif event_type == "content_block_delta":
                 delta = getattr(event, "delta", None)
-                if getattr(delta, "type", None) == "text_delta":
+                if (
+                    getattr(event, "index", None) in text_block_indexes
+                    and getattr(delta, "type", None) == "text_delta"
+                ):
                     saw_visible_text = saw_visible_text or bool(getattr(delta, "text", None))
-            if event_type == "message_delta":
+            elif event_type == "content_block_stop":
+                text_block_indexes.discard(getattr(event, "index", None))
+            elif event_type == "message_delta":
                 delta = getattr(event, "delta", None)
                 stop_reason = getattr(delta, "stop_reason", None)
                 if stop_reason is not None:
@@ -161,9 +176,12 @@ async def stream_prepared_anthropic_raw_chat_completion(
 def map_prepared_anthropic_raw_stream_event(
     prepared_request: PreparedProviderChatRequest,
     raw_chunk: ProviderRawStreamChunk,
+    *,
+    state: AnthropicStreamState,
 ) -> tuple[ProviderStreamEvent, ...]:
     return map_anthropic_stream_event(
         raw_chunk.raw_chunk,
+        state=state,
         public_model_id=prepared_request.public_model_id,
         selected_tool_ids=_extract_selected_tool_ids(prepared_request.payload),
     )
@@ -174,7 +192,6 @@ def prepare_anthropic_chat_completion_request(
     public_model_id: str,
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
-    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ) -> dict[str, object]:
     model_runtime = resolve_anthropic_model_runtime(public_model_id=public_model_id)
     request_system_instruction, anthropic_messages = map_chat_messages_to_anthropic_messages(messages)
@@ -183,7 +200,6 @@ def prepare_anthropic_chat_completion_request(
         request_system_instruction=request_system_instruction,
         messages=anthropic_messages,
         selected_tool_ids=selected_tool_ids,
-        function_declarations=function_declarations,
     )
     beta_headers = build_anthropic_beta_headers(selected_tool_ids=selected_tool_ids)
     existing_betas = [
@@ -202,13 +218,11 @@ def build_anthropic_prepared_chat_completion_request(
     public_model_id: str,
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
-    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ) -> PreparedProviderChatRequest:
     request_kwargs = prepare_anthropic_chat_completion_request(
         public_model_id=public_model_id,
         messages=messages,
         selected_tool_ids=selected_tool_ids,
-        function_declarations=function_declarations,
     )
     return PreparedProviderChatRequest(
         provider="anthropic",

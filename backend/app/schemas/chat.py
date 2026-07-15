@@ -93,18 +93,18 @@ class ChatStreamStatusEvent(BaseModel):
     status_message: str
 
 
-class ChatStreamProviderEvent(BaseModel):
-    provider: str | None = None
-    event_kind: str
-    raw_event_type: str | None = None
-    text_delta: str | None = None
-    tool_type: str | None = None
-    item_id: str | None = None
-    output_index: int | None = None
-    content_index: int | None = None
-    status_code: str | None = None
-    status_message: str | None = None
-    metadata: dict[str, object] | None = None
+class ChatStreamThinkingBlock(BaseModel):
+    type: Literal["thinking"] = "thinking"
+    operation: Literal["start", "delta", "end"]
+    block_id: str
+    text_delta: str = ""
+    metadata: dict[str, object]
+
+
+class ChatStreamToolUsageBlock(BaseModel):
+    type: Literal["tool"] = "tool"
+    metadata: dict[str, object]
+    raw: object
 
 
 class ChatStreamDoneEvent(BaseModel):

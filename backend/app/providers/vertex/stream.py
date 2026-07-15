@@ -17,7 +17,11 @@ from dataclasses import dataclass
 from app.providers.vertex.client import build_vertex_client
 from app.providers.vertex.config import build_vertex_generate_content_config
 from app.providers.vertex.models import resolve_vertex_model_runtime
-from app.providers.vertex.mapper import map_chat_messages_to_vertex_contents, map_vertex_stream_chunk
+from app.providers.vertex.mapper import (
+    VertexStreamState,
+    map_chat_messages_to_vertex_contents,
+    map_vertex_stream_chunk,
+)
 from app.providers.vertex.count_tokens import VertexCountTokensPayload
 from app.providers.vertex.outcomes import (
     build_vertex_empty_output_detail,
@@ -26,7 +30,6 @@ from app.providers.vertex.outcomes import (
     get_vertex_result_message,
 )
 from app.providers.types import (
-    ProviderFunctionDeclaration,
     ProviderRawStreamChunk,
     ProviderStreamEvent,
 )
@@ -71,13 +74,11 @@ async def stream_vertex_chat_completion(
     public_model_id: str,
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
-    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ) -> AsyncIterator[ProviderStreamEvent]:
     prepared_request = build_vertex_prepared_chat_completion_request(
         public_model_id=public_model_id,
         messages=messages,
         selected_tool_ids=selected_tool_ids,
-        function_declarations=function_declarations,
     )
     async for chunk in stream_prepared_vertex_chat_completion(prepared_request):
         yield chunk
@@ -86,8 +87,13 @@ async def stream_vertex_chat_completion(
 async def stream_prepared_vertex_chat_completion(
     prepared_request: PreparedProviderChatRequest,
 ) -> AsyncIterator[ProviderStreamEvent]:
+    state = VertexStreamState()
     async for raw_chunk in stream_prepared_vertex_raw_chat_completion(prepared_request):
-        for stream_event in map_prepared_vertex_raw_stream_event(prepared_request, raw_chunk):
+        for stream_event in map_prepared_vertex_raw_stream_event(
+            prepared_request,
+            raw_chunk,
+            state=state,
+        ):
             yield stream_event
 
 
@@ -124,7 +130,7 @@ async def stream_prepared_vertex_raw_chat_completion(
                         result_message=failure.result_message,
                     )
 
-                if getattr(chunk, "text", None):
+                if _vertex_chunk_has_visible_answer_text(chunk):
                     saw_visible_text = True
                 finish_reason = _extract_vertex_finish_reason(chunk)
                 if finish_reason is not None:
@@ -164,12 +170,15 @@ async def stream_prepared_vertex_raw_chat_completion(
 def map_prepared_vertex_raw_stream_event(
     prepared_request: PreparedProviderChatRequest,
     raw_chunk: ProviderRawStreamChunk,
+    *,
+    state: VertexStreamState,
 ) -> tuple[ProviderStreamEvent, ...]:
     payload = prepared_request.payload
     if not isinstance(payload, dict):
         raise VertexProviderError("vertex prepared payload must be a dict")
     return map_vertex_stream_chunk(
         raw_chunk.raw_chunk,
+        state=state,
         public_model_id=prepared_request.public_model_id,
         selected_tool_ids=_extract_selected_tool_ids(payload["config"]),
     )
@@ -180,7 +189,6 @@ def prepare_vertex_chat_completion_request(
     public_model_id: str,
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
-    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ):
     from google.genai import types
 
@@ -191,7 +199,6 @@ def prepare_vertex_chat_completion_request(
         model=model_runtime.public_id,
         request_system_instruction=request_system_instruction,
         selected_tool_ids=selected_tool_ids,
-        function_declarations=function_declarations,
     )
     count_config = types.CountTokensConfig(
         system_instruction=getattr(config, "system_instruction", None),
@@ -209,13 +216,11 @@ def build_vertex_prepared_chat_completion_request(
     public_model_id: str,
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
-    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ) -> PreparedProviderChatRequest:
     model_runtime, contents, config, count_config = prepare_vertex_chat_completion_request(
         public_model_id=public_model_id,
         messages=messages,
         selected_tool_ids=selected_tool_ids,
-        function_declarations=function_declarations,
     )
     estimate_source = {
         "model": model_runtime.provider_model,
@@ -306,12 +311,20 @@ def extract_vertex_stream_error(chunk) -> _VertexStreamFailure | None:
 
 def _extract_vertex_finish_reason(chunk) -> str | None:
     candidates = getattr(chunk, "candidates", None) or []
-    if not candidates:
-        return None
-    finish_reason_value = getattr(candidates[0], "finish_reason", None)
-    if finish_reason_value is None:
-        return None
-    return getattr(finish_reason_value, "name", None) or str(finish_reason_value)
+    for candidate in candidates:
+        finish_reason_value = getattr(candidate, "finish_reason", None)
+        if finish_reason_value is not None:
+            return getattr(finish_reason_value, "name", None) or str(finish_reason_value)
+    return None
+
+
+def _vertex_chunk_has_visible_answer_text(chunk) -> bool:
+    for candidate in getattr(chunk, "candidates", None) or []:
+        content = getattr(candidate, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            if getattr(part, "thought", None) is not True and bool(getattr(part, "text", None)):
+                return True
+    return False
 
 
 def _map_vertex_http_result_code(status_code: int | None) -> str:

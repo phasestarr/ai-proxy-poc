@@ -12,7 +12,6 @@ from collections.abc import Iterable
 from copy import deepcopy
 
 from app.config.chat_instructions import build_chat_system_instruction
-from app.providers.types import ProviderFunctionDeclaration
 from app.providers.vertex.tools import build_vertex_hosted_tools
 
 # Gemini 3 thinking shape:
@@ -72,10 +71,7 @@ def build_vertex_generate_content_config(
     model: str,
     request_system_instruction: str | None,
     selected_tool_ids: Iterable[str],
-    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ):
-    del function_declarations
-
     config_kwargs: dict[str, object] = {
         "systemInstruction": build_chat_system_instruction(
             request_system_instruction=request_system_instruction,

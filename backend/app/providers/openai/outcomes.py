@@ -35,7 +35,6 @@ OPENAI_STATUS_MESSAGES: dict[str, str] = {
     "openai_response_queued": "OpenAI queued the response.",
     "openai_response_in_progress": "OpenAI is generating a response.",
     "openai_reasoning": "OpenAI is thinking.",
-    "openai_function_calling": "OpenAI is preparing a tool call.",
     "openai_web_search": "OpenAI is searching the web.",
     "openai_file_search": "OpenAI is searching files.",
     "openai_code_execution": "OpenAI is running code.",

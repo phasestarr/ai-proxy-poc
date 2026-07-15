@@ -60,6 +60,14 @@
   color: #344054;
 }
 
+.chat-provider-event-title {
+  margin: 0 0 8px;
+  color: #1d2939;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .chat-provider-event-metadata {
   max-height: 260px;
   margin: 8px 0 0;

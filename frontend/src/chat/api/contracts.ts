@@ -18,19 +18,21 @@ export type ChatStreamStatusApiEvent = {
   status_message: string;
 };
 
-export type ChatStreamProviderApiEvent = {
-  provider?: string | null;
-  event_kind: string;
-  raw_event_type?: string | null;
-  text_delta?: string | null;
-  tool_type?: string | null;
-  item_id?: string | null;
-  output_index?: number | null;
-  content_index?: number | null;
-  status_code?: string | null;
-  status_message?: string | null;
-  metadata?: Record<string, unknown> | null;
+export type ChatStreamThinkingBlockApiEvent = {
+  type: "thinking";
+  operation: "start" | "delta" | "end";
+  block_id: string;
+  text_delta: string;
+  metadata: Record<string, unknown>;
 };
+
+export type ChatStreamToolUsageBlockApiEvent = {
+  type: "tool";
+  metadata: Record<string, unknown>;
+  raw: unknown;
+};
+
+export type ChatStreamBlockApiEvent = ChatStreamThinkingBlockApiEvent | ChatStreamToolUsageBlockApiEvent;
 
 export type ChatStreamDoneApiEvent = {
   model?: string | null;

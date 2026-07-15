@@ -50,7 +50,8 @@ Current runtime and code ownership for AI Proxy.
 13. File upload goes through `POST /api/v1/chat/files` with a real `chat_history_id`, or neither id for the blank-page attachment flow.
 14. A text-only first send goes directly to `POST /api/v1/chat/completions` with neither id.
 15. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions` with an optional `chat_history_id`.
-16. The frontend consumes SSE `start`, `delta`, `status`, `done`, and `error`.
+16. The frontend consumes SSE `start`, `block`, `delta`, `status`, `done`, and `error`.
+17. `block` is either a readable thinking block or one unchanged provider-native tool event; ordinary answer text remains `delta`.
 
 ## Backend Flow
 1. `backend/app/main.py`
@@ -318,7 +319,7 @@ Provider package shape:
   - SDK client creation and readiness checks
 - `mapper.py`
   - internal messages to provider-native payload shape
-  - provider chunks to shared stream chunks
+  - stateful provider chunks to shared answer, thinking-block, and raw tool-block events
 - `usage.py`
   - provider usage normalization
   - provider-side price estimation
@@ -331,6 +332,7 @@ Provider package shape:
 - `stream.py`
   - actual SDK streaming call
   - provider-specific error mapping
+  - stream-lifetime validation that a terminal response and visible final answer were received
 
 ## Current Provider Shape
 

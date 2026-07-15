@@ -13,7 +13,6 @@ from copy import deepcopy
 
 from app.config.chat_instructions import build_chat_system_instruction
 from app.providers.anthropic.tools import build_anthropic_hosted_tools
-from app.providers.types import ProviderFunctionDeclaration
 
 # Anthropic latest request shape:
 # - `thinking.type`: "adaptive"
@@ -99,10 +98,7 @@ def build_anthropic_messages_request(
     request_system_instruction: str | None,
     messages: list[dict[str, object]],
     selected_tool_ids: Iterable[str],
-    function_declarations: Iterable[ProviderFunctionDeclaration] = (),
 ) -> dict[str, object]:
-    del function_declarations
-
     request_kwargs: dict[str, object] = {
         "model": model,
         "system": build_chat_system_instruction(

@@ -1,4 +1,4 @@
-import type { ChatHistoryMessage, ChatProviderStreamEvent, ChatRequestMessage } from "../../../chat/api";
+import type { ChatHistoryMessage, ChatRequestMessage, ChatStreamBlock } from "../../../chat/api";
 import type { ChatModelOption } from "../../../chat/api/modelApi";
 
 export type MessageRole = "user" | "assistant";
@@ -23,7 +23,7 @@ export type TranscriptMessage = {
   completionNote?: string;
   detail?: string;
   resultCode?: string | null;
-  streamEvents?: ChatProviderStreamEvent[];
+  streamBlocks?: ChatStreamBlock[];
   excludedFromRequest?: boolean;
   renderOptions?: AssistantRenderOptions;
 };
@@ -79,40 +79,43 @@ export function appendAssistantDelta(
       ? {
           ...message,
           content: `${message.content}${deltaText}`,
-          streamEvents: undefined,
+          // Keep provider blocks visible while inspecting their exact streamed shape.
+          // streamBlocks: undefined,
         }
       : message,
   );
 }
 
-export function appendAssistantProviderEvent(
+export function appendAssistantStreamBlock(
   messages: TranscriptMessage[],
   assistantMessageId: number,
-  providerEvent: ChatProviderStreamEvent,
+  streamBlock: ChatStreamBlock,
 ): TranscriptMessage[] {
   return messages.map((message) => {
     if (message.id !== assistantMessageId) {
       return message;
     }
-    if (message.content.length > 0) {
-      return message;
-    }
+    // Keep accepting provider blocks after final-answer text has started.
+    // if (message.content.length > 0) {
+    //   return message;
+    // }
 
-    const streamEvents = [...(message.streamEvents ?? [])];
-    const previousEvent = streamEvents[streamEvents.length - 1];
-    if (canMergeProviderEvents(previousEvent, providerEvent)) {
-      streamEvents[streamEvents.length - 1] = {
-        ...previousEvent,
-        textDelta: `${previousEvent.textDelta ?? ""}${providerEvent.textDelta ?? ""}`,
-        metadata: providerEvent.metadata ?? previousEvent.metadata,
+    const streamBlocks = [...(message.streamBlocks ?? [])];
+    const previousBlock = streamBlocks[streamBlocks.length - 1];
+    if (streamBlock.type === "thinking" && canMergeThinkingBlocks(previousBlock, streamBlock)) {
+      streamBlocks[streamBlocks.length - 1] = {
+        ...previousBlock,
+        operation: streamBlock.operation,
+        text: `${previousBlock.text}${streamBlock.text}`,
+        metadata: streamBlock.text ? streamBlock.metadata : previousBlock.metadata,
       };
     } else {
-      streamEvents.push(providerEvent);
+      streamBlocks.push(streamBlock);
     }
 
     return {
       ...message,
-      streamEvents,
+      streamBlocks,
     };
   });
 }
@@ -134,20 +137,15 @@ export function updateAssistantStatus(
   );
 }
 
-function canMergeProviderEvents(
-  previousEvent: ChatProviderStreamEvent | undefined,
-  nextEvent: ChatProviderStreamEvent,
-): previousEvent is ChatProviderStreamEvent {
+function canMergeThinkingBlocks(
+  previousBlock: ChatStreamBlock | undefined,
+  nextBlock: Extract<ChatStreamBlock, { type: "thinking" }>,
+): previousBlock is Extract<ChatStreamBlock, { type: "thinking" }> {
   return Boolean(
-    previousEvent &&
-      previousEvent.eventKind === nextEvent.eventKind &&
-      previousEvent.rawEventType === nextEvent.rawEventType &&
-      previousEvent.toolType === nextEvent.toolType &&
-      previousEvent.itemId === nextEvent.itemId &&
-      previousEvent.outputIndex === nextEvent.outputIndex &&
-      previousEvent.contentIndex === nextEvent.contentIndex &&
-      previousEvent.textDelta !== null &&
-      nextEvent.textDelta !== null,
+    previousBlock &&
+      previousBlock.type === "thinking" &&
+      nextBlock.type === "thinking" &&
+      previousBlock.blockId === nextBlock.blockId,
   );
 }
 
@@ -168,7 +166,8 @@ export function completeAssistantMessage(
           completionNote: resultMessage,
           resultCode,
           detail: finishReason ? `finish reason: ${finishReason}` : undefined,
-          streamEvents: undefined,
+          // Keep provider blocks visible after the terminal SSE event for inspection.
+          // streamBlocks: undefined,
         }
       : message,
   );
@@ -197,7 +196,7 @@ export function failAssistantMessage(
           detail,
           status: "error",
           resultCode,
-          streamEvents: undefined,
+          streamBlocks: undefined,
           excludedFromRequest: true,
         }
       : message,

@@ -29,7 +29,7 @@ import { useChatModelSelection } from "./chat/hooks/useChatModelSelection";
 import { useConversationAutoScroll } from "./chat/hooks/useConversationAutoScroll";
 import {
   appendAssistantDelta,
-  appendAssistantProviderEvent,
+  appendAssistantStreamBlock,
   buildRequestMessages,
   completeAssistantMessage,
   createPendingUserMessage,
@@ -589,9 +589,9 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
             setMessages((current) => appendAssistantDelta(current, assistantMessageId, deltaText));
           });
         },
-        onProviderEvent: (providerEvent) => {
+        onBlock: (streamBlock) => {
           startTransition(() => {
-            setMessages((current) => appendAssistantProviderEvent(current, assistantMessageId, providerEvent));
+            setMessages((current) => appendAssistantStreamBlock(current, assistantMessageId, streamBlock));
           });
         },
         onDone: (completion) => {

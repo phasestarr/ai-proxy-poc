@@ -105,17 +105,6 @@ Possible fix:
   persisted message fields, and frontend rendering.
 - Keep provider raw detail available only through operator/audit surfaces.
 
-## Vertex Thinking Display
-
-Vertex high preset currently enables `thinking_config.include_thoughts`.
-
-Planned direction:
-
-- Show thinking-token content deliberately in a future UI/backend patch.
-- Before exposing it, verify the Vertex SDK stream shape and ensure normal
-  assistant `delta` text, thinking status, and any future thinking transcript are
-  separated intentionally.
-
 ## Migration Squash
 
 The current migration history includes several schema evolution steps that are

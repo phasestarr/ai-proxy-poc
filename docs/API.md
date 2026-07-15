@@ -132,6 +132,18 @@ Important:
 - `delta`
   - includes:
     - `delta_text`
+  - contains only ordinary final-answer text
+- `block`
+  - thinking block includes:
+    - `type: "thinking"`
+    - `operation: "start" | "delta" | "end"`
+    - stable `block_id` within the response stream
+    - readable provider-authored `text_delta`
+    - provider/event correlation `metadata`
+  - tool block includes:
+    - `type: "tool"`
+    - provider/event correlation `metadata`
+    - `raw`, the complete JSON-compatible provider event or chunk without tool-specific projection
 - `status`
   - includes:
     - `provider`
@@ -154,6 +166,9 @@ Important:
     - `detail`
 
 Notes:
+- thinking blocks never contain signatures, encrypted reasoning, tool arguments, or answer text
+- tool blocks are classified structurally and keep provider-native JSON instead of mapping each tool schema
+- block events are live-rendering only; the current persistence model stores the final assistant answer, not block history
 - `status_code` values are provider-specific progress codes
 - internal proxy status codes may also appear, including:
   - `context_input_tokens_estimated`

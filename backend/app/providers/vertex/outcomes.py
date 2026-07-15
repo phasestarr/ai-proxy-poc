@@ -46,7 +46,6 @@ VERTEX_RESULT_MESSAGES: dict[str, str] = {
 
 VERTEX_STATUS_MESSAGES: dict[str, str] = {
     "vertex_streaming": "Gemini is generating a response.",
-    "vertex_function_call": "Gemini is preparing a function call.",
     "vertex_thinking": "Gemini is thinking.",
     "vertex_safety_review": "Gemini is evaluating safety constraints.",
 }

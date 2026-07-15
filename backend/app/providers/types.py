@@ -4,22 +4,20 @@ Common provider contracts shared across provider implementations and service orc
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
+from enum import Enum
 from typing import Literal
 
 
 PriceEstimateCompleteness = Literal["complete", "partial"]
 ProviderStreamEventKind = Literal[
     "answer_delta",
-    "reasoning_delta",
-    "tool_input_delta",
-    "tool_result",
-    "citation",
     "status",
     "completion",
     "heartbeat",
     "metadata",
 ]
+ThinkingBlockOperation = Literal["start", "delta", "end"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -60,6 +58,23 @@ class ProviderRawStreamChunk:
 
 
 @dataclass(slots=True, frozen=True)
+class ThinkingDeltaBlock:
+    block_id: str
+    operation: ThinkingBlockOperation
+    metadata: dict[str, object]
+    text_delta: str = ""
+
+
+@dataclass(slots=True, frozen=True)
+class ToolUsageBlock:
+    metadata: dict[str, object]
+    raw: object
+
+
+ProviderBlock = ThinkingDeltaBlock | ToolUsageBlock
+
+
+@dataclass(slots=True, frozen=True)
 class ProviderStreamEvent:
     kind: ProviderStreamEventKind = "heartbeat"
     text_delta: str = ""
@@ -69,13 +84,10 @@ class ProviderStreamEvent:
     model_version: str | None = None
     finish_reason: str | None = None
     usage: ProviderUsageMetadata | None = None
+    block: ProviderBlock | None = None
     status_code: str | None = None
     status_message: str | None = None
     raw_event_type: str | None = None
-    tool_type: str | None = None
-    item_id: str | None = None
-    output_index: int | None = None
-    content_index: int | None = None
     metadata: dict[str, object] | None = None
 
 
@@ -84,13 +96,6 @@ class ProviderToolDefinition:
     public_id: str
     display_name: str
     available: bool = True
-
-
-@dataclass(slots=True, frozen=True)
-class ProviderFunctionDeclaration:
-    name: str
-    description: str
-    parameters_json_schema: dict[str, object]
 
 
 @dataclass(slots=True, frozen=True)
@@ -110,7 +115,6 @@ class ProviderModelDefinition:
 class ProviderRoute:
     model: ProviderModelDefinition
     tool_ids: tuple[str, ...] = ()
-    function_declarations: tuple[ProviderFunctionDeclaration, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -125,3 +129,38 @@ class PreparedProviderChatRequest:
     @property
     def budget_input_tokens(self) -> int:
         return self.resolved_input_tokens or self.estimated_input_tokens
+
+
+def dump_provider_value(value: object) -> object:
+    """Convert an SDK object to a JSON-compatible tree without selecting fields."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Enum):
+        return dump_provider_value(value.value)
+    if isinstance(value, dict):
+        return {str(key): dump_provider_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [dump_provider_value(item) for item in value]
+
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            dumped = model_dump(mode="json", by_alias=True, exclude_none=False)
+        except TypeError:
+            dumped = model_dump()
+        return dump_provider_value(dumped)
+
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return dump_provider_value(to_dict())
+    if is_dataclass(value) and not isinstance(value, type):
+        return dump_provider_value(asdict(value))
+    if hasattr(value, "__dict__"):
+        return dump_provider_value(
+            {
+                key: item
+                for key, item in vars(value).items()
+                if not key.startswith("_")
+            }
+        )
+    return str(value)

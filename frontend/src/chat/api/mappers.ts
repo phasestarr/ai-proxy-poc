@@ -4,7 +4,7 @@ import type {
   ChatHistoryMessageApiPayload,
   ChatHistorySummaryApiPayload,
   ChatStreamDoneApiEvent,
-  ChatStreamProviderApiEvent,
+  ChatStreamBlockApiEvent,
   ChatStreamStartApiEvent,
   ChatStreamStatusApiEvent,
 } from "./contracts";
@@ -13,7 +13,7 @@ import type {
   ChatHistoryFile,
   ChatHistoryMessage,
   ChatHistorySummary,
-  ChatProviderStreamEvent,
+  ChatStreamBlock,
   ChatStreamDone,
   ChatStreamStart,
   ChatStreamStatus,
@@ -54,19 +54,20 @@ export function mapStatusEvent(payload: ChatStreamStatusApiEvent): ChatStreamSta
   };
 }
 
-export function mapProviderEvent(payload: ChatStreamProviderApiEvent): ChatProviderStreamEvent {
+export function mapStreamBlock(payload: ChatStreamBlockApiEvent): ChatStreamBlock {
+  if (payload.type === "thinking") {
+    return {
+      type: "thinking",
+      operation: payload.operation,
+      blockId: payload.block_id,
+      text: payload.text_delta,
+      metadata: payload.metadata,
+    };
+  }
   return {
-    provider: payload.provider ?? null,
-    eventKind: payload.event_kind,
-    rawEventType: payload.raw_event_type ?? null,
-    textDelta: payload.text_delta ?? null,
-    toolType: payload.tool_type ?? null,
-    itemId: payload.item_id ?? null,
-    outputIndex: payload.output_index ?? null,
-    contentIndex: payload.content_index ?? null,
-    statusCode: payload.status_code ?? null,
-    statusMessage: payload.status_message ?? null,
-    metadata: payload.metadata ?? null,
+    type: "tool",
+    metadata: payload.metadata,
+    raw: payload.raw,
   };
 }
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from app.config.providers.openai import openai_settings
 from app.providers.types import ProviderPriceEstimate, ProviderUsageMetadata
 
 OPENAI_PRICING_VERSION = "openai-2026-05-11"
@@ -87,6 +86,8 @@ def estimate_openai_price(
     file_search_request_count: int | None,
     code_execution_request_count: int | None,
 ) -> ProviderPriceEstimate:
+    from app.config.providers.openai import openai_settings
+
     del selected_tool_ids
 
     price_card = _OPENAI_PRICE_CARDS.get(public_model_id)

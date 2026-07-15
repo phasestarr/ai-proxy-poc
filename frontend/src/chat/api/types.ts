@@ -31,19 +31,21 @@ export type ChatStreamStatus = {
   statusMessage: string;
 };
 
-export type ChatProviderStreamEvent = {
-  provider: string | null;
-  eventKind: string;
-  rawEventType: string | null;
-  textDelta: string | null;
-  toolType: string | null;
-  itemId: string | null;
-  outputIndex: number | null;
-  contentIndex: number | null;
-  statusCode: string | null;
-  statusMessage: string | null;
-  metadata: Record<string, unknown> | null;
+export type ChatThinkingBlock = {
+  type: "thinking";
+  operation: "start" | "delta" | "end";
+  blockId: string;
+  text: string;
+  metadata: Record<string, unknown>;
 };
+
+export type ChatToolUsageBlock = {
+  type: "tool";
+  metadata: Record<string, unknown>;
+  raw: unknown;
+};
+
+export type ChatStreamBlock = ChatThinkingBlock | ChatToolUsageBlock;
 
 export type ChatHistorySummary = {
   id: string;
@@ -132,7 +134,7 @@ export type StreamChatReplyOptions = {
   signal?: AbortSignal;
   onStart?: (event: ChatStreamStart) => void;
   onStatus?: (event: ChatStreamStatus) => void;
-  onProviderEvent?: (event: ChatProviderStreamEvent) => void;
+  onBlock?: (block: ChatStreamBlock) => void;
   onDelta?: (deltaText: string) => void;
   onDone?: (event: ChatStreamDone) => void;
   onError?: (event: {

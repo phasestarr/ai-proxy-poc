@@ -32,29 +32,38 @@ export default function ConversationList({
             <div
               className={`chat-content ${message.role === "user" ? "chat-content--question" : "chat-content--answer"} ${isPlainTextAnswer ? "chat-content--plain-answer" : ""}`}
             >
-            {message.role === "assistant" && message.streamEvents && message.streamEvents.length > 0 ? (
+            {message.role === "assistant" && message.streamBlocks && message.streamBlocks.length > 0 ? (
               <div className="chat-provider-events">
-                {message.streamEvents.map((event, index) => (
-                  <div className="chat-provider-event" key={`${message.id}-${index}`}>
-                    <p className="chat-provider-event-label">{buildProviderEventLabel(event)}</p>
-                    {event.textDelta ? (
-                      <MarkdownMessage
-                        className="markdown-message chat-provider-event-text"
-                        content={event.textDelta}
-                        enableLatex={latexEnabled}
-                        enableMarkdown={markdownEnabled}
-                      />
-                    ) : null}
-                    {event.metadata ? (
-                      <pre className="chat-provider-event-metadata">
-                        {JSON.stringify(event.metadata, null, 2)}
-                      </pre>
-                    ) : null}
-                  </div>
-                ))}
+                {message.streamBlocks.map((block, index) => {
+                  if (block.type === "thinking") {
+                    const presentation = parseThinkingText(block.text);
+                    return (
+                      <div className="chat-provider-event" key={`${message.id}-${block.blockId}-${index}`}>
+                        <p className="chat-provider-event-label">{buildStreamBlockLabel(block)}</p>
+                        {presentation.title ? (
+                          <p className="chat-provider-event-title">{presentation.title}</p>
+                        ) : null}
+                        {presentation.body ? (
+                          <MarkdownMessage
+                            className="markdown-message chat-provider-event-text"
+                            content={presentation.body}
+                            enableLatex={latexEnabled}
+                            enableMarkdown={markdownEnabled}
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="chat-provider-event chat-provider-event--tool" key={`${message.id}-${index}`}>
+                      <p className="chat-provider-event-label">{buildStreamBlockLabel(block)}</p>
+                      <pre className="chat-provider-event-metadata">{JSON.stringify(block.raw, null, 2)}</pre>
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
-            {message.role === "assistant" && message.status === "streaming" && message.content.length === 0 && (!message.streamEvents || message.streamEvents.length === 0) ? (
+            {message.role === "assistant" && message.status === "streaming" && message.content.length === 0 && (!message.streamBlocks || message.streamBlocks.length === 0) ? (
               <p className={buildLoadingClassName(message.streamStatusCode)}>
                 {message.streamStatusMessage ?? "Generating response..."}
               </p>
@@ -117,9 +126,37 @@ export default function ConversationList({
   );
 }
 
-function buildProviderEventLabel(event: NonNullable<TranscriptMessage["streamEvents"]>[number]): string {
-  const parts = [event.provider, event.eventKind, event.toolType, event.rawEventType].filter(Boolean);
-  return parts.join(" / ");
+function buildStreamBlockLabel(block: NonNullable<TranscriptMessage["streamBlocks"]>[number]): string {
+  const metadata = block.metadata;
+  return [
+    metadata.provider,
+    metadata.semantic_type,
+    metadata.provider_event,
+    metadata.provider_subtype,
+    metadata.value_path,
+  ]
+    .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
+    .join(" / ");
+}
+
+function parseThinkingText(text: string): { title: string | null; body: string } {
+  const boldHeading = text.match(/^\*\*([^\r\n]+?)\*\*\r?\n(?:\r?\n)?/);
+  if (boldHeading) {
+    return {
+      title: boldHeading[1],
+      body: text.slice(boldHeading[0].length),
+    };
+  }
+
+  const atxHeading = text.match(/^#{1,6}\s+([^\r\n]+)\r?\n(?:\r?\n)?/);
+  if (atxHeading) {
+    return {
+      title: atxHeading[1],
+      body: text.slice(atxHeading[0].length),
+    };
+  }
+
+  return { title: null, body: text };
 }
 
 function buildAssistantFooterStatus(message: TranscriptMessage): { className: string; text: string } | null {

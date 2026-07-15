@@ -18,10 +18,10 @@ export type {
   ChatHistoryIndex,
   ChatHistoryMessage,
   ChatHistorySummary,
-  ChatProviderStreamEvent,
   ChatRequestMessage,
   ChatRole,
   ChatSelection,
+  ChatStreamBlock,
   ChatStreamDone,
   ChatStreamStart,
 } from "./types";

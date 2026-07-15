@@ -19,6 +19,7 @@ from app.providers.anthropic.provider import (
     ensure_anthropic_provider_ready,
 )
 from app.providers.anthropic.count_tokens import count_anthropic_input_tokens
+from app.providers.anthropic.mapper import AnthropicStreamState
 from app.providers.anthropic.stream import prepare_anthropic_chat_completion_request
 from app.providers.anthropic.stream import (
     build_anthropic_prepared_chat_completion_request,
@@ -32,6 +33,7 @@ from app.providers.openai.provider import (
     ensure_openai_provider_ready,
 )
 from app.providers.openai.count_tokens import count_openai_input_tokens
+from app.providers.openai.mapper import OpenAIStreamState
 from app.providers.openai.stream import prepare_openai_chat_completion_request
 from app.providers.openai.stream import (
     build_openai_prepared_chat_completion_request,
@@ -51,6 +53,7 @@ from app.providers.vertex.provider import (
     ensure_vertex_provider_ready,
 )
 from app.providers.vertex.count_tokens import count_vertex_input_tokens
+from app.providers.vertex.mapper import VertexStreamState
 from app.providers.vertex.stream import prepare_vertex_chat_completion_request
 from app.providers.vertex.stream import (
     build_vertex_prepared_chat_completion_request,
@@ -87,6 +90,54 @@ class ProviderExecutionError(RuntimeError):
         super().__init__(message)
 
 
+class ProviderStreamMapper:
+    """Own the provider-specific correlation state for one response stream."""
+
+    def __init__(self, prepared_request: PreparedProviderChatRequest) -> None:
+        self.prepared_request = prepared_request
+        if prepared_request.provider == VERTEX_PROVIDER_ID:
+            self.state = VertexStreamState()
+        elif prepared_request.provider == OPENAI_PROVIDER_ID:
+            self.state = OpenAIStreamState()
+        elif prepared_request.provider == ANTHROPIC_PROVIDER_ID:
+            self.state = AnthropicStreamState()
+        else:
+            raise ProviderExecutionError(
+                f"provider is not configured: {prepared_request.provider}",
+                provider=prepared_request.provider,
+            )
+
+    def map(self, raw_chunk: ProviderRawStreamChunk) -> tuple[ProviderStreamEvent, ...]:
+        provider = self.prepared_request.provider
+        if raw_chunk.provider != provider:
+            raise ProviderExecutionError(
+                f"provider stream mismatch: expected {provider}, got {raw_chunk.provider}",
+                provider=provider,
+            )
+        if provider == VERTEX_PROVIDER_ID:
+            return map_prepared_vertex_raw_stream_event(
+                self.prepared_request,
+                raw_chunk,
+                state=self.state,
+            )
+        if provider == OPENAI_PROVIDER_ID:
+            return map_prepared_openai_raw_stream_event(
+                self.prepared_request,
+                raw_chunk,
+                state=self.state,
+            )
+        if provider == ANTHROPIC_PROVIDER_ID:
+            return map_prepared_anthropic_raw_stream_event(
+                self.prepared_request,
+                raw_chunk,
+                state=self.state,
+            )
+        raise ProviderExecutionError(
+            f"provider is not configured: {provider}",
+            provider=provider,
+        )
+
+
 def ensure_provider_ready(*, provider: str) -> None:
     try:
         if provider == VERTEX_PROVIDER_ID:
@@ -118,7 +169,6 @@ def validate_provider_request(
             public_model_id=route.model.public_id,
             messages=messages,
             selected_tool_ids=route.tool_ids,
-            function_declarations=route.function_declarations,
         )
         return
     if route.model.provider == OPENAI_PROVIDER_ID:
@@ -126,7 +176,6 @@ def validate_provider_request(
             public_model_id=route.model.public_id,
             messages=messages,
             selected_tool_ids=route.tool_ids,
-            function_declarations=route.function_declarations,
         )
         return
     if route.model.provider == ANTHROPIC_PROVIDER_ID:
@@ -134,7 +183,6 @@ def validate_provider_request(
             public_model_id=route.model.public_id,
             messages=messages,
             selected_tool_ids=route.tool_ids,
-            function_declarations=route.function_declarations,
         )
         return
 
@@ -151,21 +199,18 @@ def prepare_provider_chat_completion(
             public_model_id=route.model.public_id,
             messages=messages,
             selected_tool_ids=route.tool_ids,
-            function_declarations=route.function_declarations,
         )
     if route.model.provider == OPENAI_PROVIDER_ID:
         return build_openai_prepared_chat_completion_request(
             public_model_id=route.model.public_id,
             messages=messages,
             selected_tool_ids=route.tool_ids,
-            function_declarations=route.function_declarations,
         )
     if route.model.provider == ANTHROPIC_PROVIDER_ID:
         return build_anthropic_prepared_chat_completion_request(
             public_model_id=route.model.public_id,
             messages=messages,
             selected_tool_ids=route.tool_ids,
-            function_declarations=route.function_declarations,
         )
 
     raise ProviderConfigurationError(f"provider is not configured: {route.model.provider}")
@@ -175,12 +220,9 @@ async def stream_provider_chat_completion(
     *,
     prepared_request: PreparedProviderChatRequest,
 ) -> AsyncIterator[ProviderStreamEvent]:
+    mapper = ProviderStreamMapper(prepared_request)
     async for raw_chunk in stream_provider_raw_chat_completion(prepared_request=prepared_request):
-        stream_events = map_provider_raw_stream_events(
-            prepared_request=prepared_request,
-            raw_chunk=raw_chunk,
-        )
-        for stream_event in stream_events:
+        for stream_event in mapper.map(raw_chunk):
             yield stream_event
 
 
@@ -229,23 +271,6 @@ async def stream_provider_raw_chat_completion(
             result_message=exc.result_message,
         ) from exc
 
-    raise ProviderExecutionError(
-        f"provider is not configured: {prepared_request.provider}",
-        provider=prepared_request.provider,
-    )
-
-
-def map_provider_raw_stream_events(
-    *,
-    prepared_request: PreparedProviderChatRequest,
-    raw_chunk: ProviderRawStreamChunk,
-) -> tuple[ProviderStreamEvent, ...]:
-    if prepared_request.provider == VERTEX_PROVIDER_ID:
-        return map_prepared_vertex_raw_stream_event(prepared_request, raw_chunk)
-    if prepared_request.provider == OPENAI_PROVIDER_ID:
-        return map_prepared_openai_raw_stream_event(prepared_request, raw_chunk)
-    if prepared_request.provider == ANTHROPIC_PROVIDER_ID:
-        return map_prepared_anthropic_raw_stream_event(prepared_request, raw_chunk)
     raise ProviderExecutionError(
         f"provider is not configured: {prepared_request.provider}",
         provider=prepared_request.provider,
