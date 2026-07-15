@@ -32,7 +32,29 @@ export default function ConversationList({
             <div
               className={`chat-content ${message.role === "user" ? "chat-content--question" : "chat-content--answer"} ${isPlainTextAnswer ? "chat-content--plain-answer" : ""}`}
             >
-            {message.role === "assistant" && message.status === "streaming" && message.content.length === 0 ? (
+            {message.role === "assistant" && message.streamEvents && message.streamEvents.length > 0 ? (
+              <div className="chat-provider-events">
+                {message.streamEvents.map((event, index) => (
+                  <div className="chat-provider-event" key={`${message.id}-${index}`}>
+                    <p className="chat-provider-event-label">{buildProviderEventLabel(event)}</p>
+                    {event.textDelta ? (
+                      <MarkdownMessage
+                        className="markdown-message chat-provider-event-text"
+                        content={event.textDelta}
+                        enableLatex={latexEnabled}
+                        enableMarkdown={markdownEnabled}
+                      />
+                    ) : null}
+                    {event.metadata ? (
+                      <pre className="chat-provider-event-metadata">
+                        {JSON.stringify(event.metadata, null, 2)}
+                      </pre>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {message.role === "assistant" && message.status === "streaming" && message.content.length === 0 && (!message.streamEvents || message.streamEvents.length === 0) ? (
               <p className={buildLoadingClassName(message.streamStatusCode)}>
                 {message.streamStatusMessage ?? "Generating response..."}
               </p>
@@ -93,6 +115,11 @@ export default function ConversationList({
       })}
     </div>
   );
+}
+
+function buildProviderEventLabel(event: NonNullable<TranscriptMessage["streamEvents"]>[number]): string {
+  const parts = [event.provider, event.eventKind, event.toolType, event.rawEventType].filter(Boolean);
+  return parts.join(" / ");
 }
 
 function buildAssistantFooterStatus(message: TranscriptMessage): { className: string; text: string } | null {

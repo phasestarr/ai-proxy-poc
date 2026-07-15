@@ -6,10 +6,11 @@ import type {
   ChatStreamDeltaApiEvent,
   ChatStreamDoneApiEvent,
   ChatStreamErrorApiEvent,
+  ChatStreamProviderApiEvent,
   ChatStreamStartApiEvent,
   ChatStreamStatusApiEvent,
 } from "./contracts";
-import { mapDoneEvent, mapStartEvent, mapStatusEvent } from "./mappers";
+import { mapDoneEvent, mapProviderEvent, mapStartEvent, mapStatusEvent } from "./mappers";
 import type { ChatStreamDone, StreamChatReplyOptions } from "./types";
 
 export async function streamChatReply(options: StreamChatReplyOptions): Promise<ChatStreamDone> {
@@ -78,6 +79,10 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
       }
       case "status": {
         options.onStatus?.(mapStatusEvent(JSON.parse(event.data) as ChatStreamStatusApiEvent));
+        return;
+      }
+      case "provider_event": {
+        options.onProviderEvent?.(mapProviderEvent(JSON.parse(event.data) as ChatStreamProviderApiEvent));
         return;
       }
       case "done": {

@@ -31,6 +31,20 @@ export type ChatStreamStatus = {
   statusMessage: string;
 };
 
+export type ChatProviderStreamEvent = {
+  provider: string | null;
+  eventKind: string;
+  rawEventType: string | null;
+  textDelta: string | null;
+  toolType: string | null;
+  itemId: string | null;
+  outputIndex: number | null;
+  contentIndex: number | null;
+  statusCode: string | null;
+  statusMessage: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
 export type ChatHistorySummary = {
   id: string;
   title: string;
@@ -118,6 +132,7 @@ export type StreamChatReplyOptions = {
   signal?: AbortSignal;
   onStart?: (event: ChatStreamStart) => void;
   onStatus?: (event: ChatStreamStatus) => void;
+  onProviderEvent?: (event: ChatProviderStreamEvent) => void;
   onDelta?: (deltaText: string) => void;
   onDone?: (event: ChatStreamDone) => void;
   onError?: (event: {

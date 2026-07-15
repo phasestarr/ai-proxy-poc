@@ -225,6 +225,7 @@ def persist_chat_turn_failure(
     result_code: str,
     result_message: str,
     detail: str,
+    exclude_from_context: bool = True,
     allow_expired_operation: bool = False,
     operation_state: str = "failed",
 ) -> bool:
@@ -239,13 +240,13 @@ def persist_chat_turn_failure(
 
     user_message = db.get(ChatMessage, user_message_id)
     if user_message is not None:
-        user_message.excluded_from_context = True
+        user_message.excluded_from_context = exclude_from_context
         user_message.updated_at = now
 
     if assistant_message is not None:
         assistant_message.content = content
         assistant_message.status = "error"
-        assistant_message.excluded_from_context = True
+        assistant_message.excluded_from_context = exclude_from_context
         assistant_message.result_code = result_code
         assistant_message.result_message = result_message
         assistant_message.error_detail = detail

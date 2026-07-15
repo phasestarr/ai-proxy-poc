@@ -25,7 +25,11 @@ from app.providers.vertex.outcomes import (
     build_vertex_status_error_detail,
     get_vertex_result_message,
 )
-from app.providers.types import ProviderFunctionDeclaration, ProviderStreamChunk
+from app.providers.types import (
+    ProviderFunctionDeclaration,
+    ProviderRawStreamChunk,
+    ProviderStreamEvent,
+)
 from app.providers.token_estimation import estimate_token_count_from_object
 from app.providers.types import PreparedProviderChatRequest
 from app.providers.vertex.tools import VertexToolConfigurationError
@@ -68,7 +72,7 @@ async def stream_vertex_chat_completion(
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
     function_declarations: Iterable[ProviderFunctionDeclaration] = (),
-) -> AsyncIterator:
+) -> AsyncIterator[ProviderStreamEvent]:
     prepared_request = build_vertex_prepared_chat_completion_request(
         public_model_id=public_model_id,
         messages=messages,
@@ -81,7 +85,15 @@ async def stream_vertex_chat_completion(
 
 async def stream_prepared_vertex_chat_completion(
     prepared_request: PreparedProviderChatRequest,
-) -> AsyncIterator:
+) -> AsyncIterator[ProviderStreamEvent]:
+    async for raw_chunk in stream_prepared_vertex_raw_chat_completion(prepared_request):
+        for stream_event in map_prepared_vertex_raw_stream_event(prepared_request, raw_chunk):
+            yield stream_event
+
+
+async def stream_prepared_vertex_raw_chat_completion(
+    prepared_request: PreparedProviderChatRequest,
+) -> AsyncIterator[ProviderRawStreamChunk]:
     saw_visible_text = False
     saw_terminal_finish_reason = False
     last_finish_reason: str | None = None
@@ -112,17 +124,17 @@ async def stream_prepared_vertex_chat_completion(
                         result_message=failure.result_message,
                     )
 
-                mapped_chunk = map_vertex_stream_chunk(
-                    chunk,
-                    public_model_id=prepared_request.public_model_id,
-                    selected_tool_ids=_extract_selected_tool_ids(config),
-                )
-                if mapped_chunk.text:
+                if getattr(chunk, "text", None):
                     saw_visible_text = True
-                if mapped_chunk.finish_reason is not None:
+                finish_reason = _extract_vertex_finish_reason(chunk)
+                if finish_reason is not None:
                     saw_terminal_finish_reason = True
-                    last_finish_reason = mapped_chunk.finish_reason
-                yield mapped_chunk
+                    last_finish_reason = finish_reason
+                yield ProviderRawStreamChunk(
+                    provider="vertex_ai",
+                    raw_chunk=chunk,
+                    raw_event_type=type(chunk).__name__,
+                )
 
         if not saw_terminal_finish_reason:
             result_code = "vertex_stream_error"
@@ -147,6 +159,20 @@ async def stream_prepared_vertex_chat_completion(
     finally:
         if "client" in locals():
             client.close()
+
+
+def map_prepared_vertex_raw_stream_event(
+    prepared_request: PreparedProviderChatRequest,
+    raw_chunk: ProviderRawStreamChunk,
+) -> tuple[ProviderStreamEvent, ...]:
+    payload = prepared_request.payload
+    if not isinstance(payload, dict):
+        raise VertexProviderError("vertex prepared payload must be a dict")
+    return map_vertex_stream_chunk(
+        raw_chunk.raw_chunk,
+        public_model_id=prepared_request.public_model_id,
+        selected_tool_ids=_extract_selected_tool_ids(payload["config"]),
+    )
 
 
 def prepare_vertex_chat_completion_request(
@@ -276,6 +302,16 @@ def extract_vertex_stream_error(chunk) -> _VertexStreamFailure | None:
         detail=build_vertex_prompt_block_detail(block_reason=block_reason_name, block_message=block_message),
         error_code=block_reason_name,
     )
+
+
+def _extract_vertex_finish_reason(chunk) -> str | None:
+    candidates = getattr(chunk, "candidates", None) or []
+    if not candidates:
+        return None
+    finish_reason_value = getattr(candidates[0], "finish_reason", None)
+    if finish_reason_value is None:
+        return None
+    return getattr(finish_reason_value, "name", None) or str(finish_reason_value)
 
 
 def _map_vertex_http_result_code(status_code: int | None) -> str:

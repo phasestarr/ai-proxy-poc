@@ -9,6 +9,17 @@ from typing import Literal
 
 
 PriceEstimateCompleteness = Literal["complete", "partial"]
+ProviderStreamEventKind = Literal[
+    "answer_delta",
+    "reasoning_delta",
+    "tool_input_delta",
+    "tool_result",
+    "citation",
+    "status",
+    "completion",
+    "heartbeat",
+    "metadata",
+]
 
 
 @dataclass(slots=True, frozen=True)
@@ -42,14 +53,30 @@ class ProviderUsageMetadata:
 
 
 @dataclass(slots=True, frozen=True)
-class ProviderStreamChunk:
-    text: str = ""
+class ProviderRawStreamChunk:
+    provider: str
+    raw_chunk: object
+    raw_event_type: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class ProviderStreamEvent:
+    kind: ProviderStreamEventKind = "heartbeat"
+    text_delta: str = ""
+    append_to_message_content: bool = False
+    stream_to_client: bool = True
     response_id: str | None = None
     model_version: str | None = None
     finish_reason: str | None = None
     usage: ProviderUsageMetadata | None = None
     status_code: str | None = None
     status_message: str | None = None
+    raw_event_type: str | None = None
+    tool_type: str | None = None
+    item_id: str | None = None
+    output_index: int | None = None
+    content_index: int | None = None
+    metadata: dict[str, object] | None = None
 
 
 @dataclass(slots=True, frozen=True)

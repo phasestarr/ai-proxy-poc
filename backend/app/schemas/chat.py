@@ -93,6 +93,20 @@ class ChatStreamStatusEvent(BaseModel):
     status_message: str
 
 
+class ChatStreamProviderEvent(BaseModel):
+    provider: str | None = None
+    event_kind: str
+    raw_event_type: str | None = None
+    text_delta: str | None = None
+    tool_type: str | None = None
+    item_id: str | None = None
+    output_index: int | None = None
+    content_index: int | None = None
+    status_code: str | None = None
+    status_message: str | None = None
+    metadata: dict[str, object] | None = None
+
+
 class ChatStreamDoneEvent(BaseModel):
     model: str | None = None
     provider: str | None = None

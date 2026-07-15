@@ -1,4 +1,4 @@
-import type { ChatHistoryMessage, ChatRequestMessage } from "../../../chat/api";
+import type { ChatHistoryMessage, ChatProviderStreamEvent, ChatRequestMessage } from "../../../chat/api";
 import type { ChatModelOption } from "../../../chat/api/modelApi";
 
 export type MessageRole = "user" | "assistant";
@@ -23,6 +23,7 @@ export type TranscriptMessage = {
   completionNote?: string;
   detail?: string;
   resultCode?: string | null;
+  streamEvents?: ChatProviderStreamEvent[];
   excludedFromRequest?: boolean;
   renderOptions?: AssistantRenderOptions;
 };
@@ -78,9 +79,42 @@ export function appendAssistantDelta(
       ? {
           ...message,
           content: `${message.content}${deltaText}`,
+          streamEvents: undefined,
         }
       : message,
   );
+}
+
+export function appendAssistantProviderEvent(
+  messages: TranscriptMessage[],
+  assistantMessageId: number,
+  providerEvent: ChatProviderStreamEvent,
+): TranscriptMessage[] {
+  return messages.map((message) => {
+    if (message.id !== assistantMessageId) {
+      return message;
+    }
+    if (message.content.length > 0) {
+      return message;
+    }
+
+    const streamEvents = [...(message.streamEvents ?? [])];
+    const previousEvent = streamEvents[streamEvents.length - 1];
+    if (canMergeProviderEvents(previousEvent, providerEvent)) {
+      streamEvents[streamEvents.length - 1] = {
+        ...previousEvent,
+        textDelta: `${previousEvent.textDelta ?? ""}${providerEvent.textDelta ?? ""}`,
+        metadata: providerEvent.metadata ?? previousEvent.metadata,
+      };
+    } else {
+      streamEvents.push(providerEvent);
+    }
+
+    return {
+      ...message,
+      streamEvents,
+    };
+  });
 }
 
 export function updateAssistantStatus(
@@ -97,6 +131,23 @@ export function updateAssistantStatus(
           streamStatusMessage: statusMessage,
         }
       : message,
+  );
+}
+
+function canMergeProviderEvents(
+  previousEvent: ChatProviderStreamEvent | undefined,
+  nextEvent: ChatProviderStreamEvent,
+): previousEvent is ChatProviderStreamEvent {
+  return Boolean(
+    previousEvent &&
+      previousEvent.eventKind === nextEvent.eventKind &&
+      previousEvent.rawEventType === nextEvent.rawEventType &&
+      previousEvent.toolType === nextEvent.toolType &&
+      previousEvent.itemId === nextEvent.itemId &&
+      previousEvent.outputIndex === nextEvent.outputIndex &&
+      previousEvent.contentIndex === nextEvent.contentIndex &&
+      previousEvent.textDelta !== null &&
+      nextEvent.textDelta !== null,
   );
 }
 
@@ -117,6 +168,7 @@ export function completeAssistantMessage(
           completionNote: resultMessage,
           resultCode,
           detail: finishReason ? `finish reason: ${finishReason}` : undefined,
+          streamEvents: undefined,
         }
       : message,
   );
@@ -145,6 +197,7 @@ export function failAssistantMessage(
           detail,
           status: "error",
           resultCode,
+          streamEvents: undefined,
           excludedFromRequest: true,
         }
       : message,

@@ -4,6 +4,7 @@ import type {
   ChatHistoryMessageApiPayload,
   ChatHistorySummaryApiPayload,
   ChatStreamDoneApiEvent,
+  ChatStreamProviderApiEvent,
   ChatStreamStartApiEvent,
   ChatStreamStatusApiEvent,
 } from "./contracts";
@@ -12,6 +13,7 @@ import type {
   ChatHistoryFile,
   ChatHistoryMessage,
   ChatHistorySummary,
+  ChatProviderStreamEvent,
   ChatStreamDone,
   ChatStreamStart,
   ChatStreamStatus,
@@ -49,6 +51,22 @@ export function mapStatusEvent(payload: ChatStreamStatusApiEvent): ChatStreamSta
     provider: payload.provider ?? null,
     statusCode: payload.status_code,
     statusMessage: payload.status_message,
+  };
+}
+
+export function mapProviderEvent(payload: ChatStreamProviderApiEvent): ChatProviderStreamEvent {
+  return {
+    provider: payload.provider ?? null,
+    eventKind: payload.event_kind,
+    rawEventType: payload.raw_event_type ?? null,
+    textDelta: payload.text_delta ?? null,
+    toolType: payload.tool_type ?? null,
+    itemId: payload.item_id ?? null,
+    outputIndex: payload.output_index ?? null,
+    contentIndex: payload.content_index ?? null,
+    statusCode: payload.status_code ?? null,
+    statusMessage: payload.status_message ?? null,
+    metadata: payload.metadata ?? null,
   };
 }
 

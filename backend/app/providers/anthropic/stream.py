@@ -32,7 +32,8 @@ from app.providers.token_estimation import estimate_token_count_from_object
 from app.providers.types import (
     PreparedProviderChatRequest,
     ProviderFunctionDeclaration,
-    ProviderStreamChunk,
+    ProviderRawStreamChunk,
+    ProviderStreamEvent,
 )
 from app.schemas.chat import ChatMessage
 
@@ -73,7 +74,7 @@ async def stream_anthropic_chat_completion(
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
     function_declarations: Iterable[ProviderFunctionDeclaration] = (),
-) -> AsyncIterator:
+) -> AsyncIterator[ProviderStreamEvent]:
     prepared_request = build_anthropic_prepared_chat_completion_request(
         public_model_id=public_model_id,
         messages=messages,
@@ -86,7 +87,15 @@ async def stream_anthropic_chat_completion(
 
 async def stream_prepared_anthropic_chat_completion(
     prepared_request: PreparedProviderChatRequest,
-) -> AsyncIterator:
+) -> AsyncIterator[ProviderStreamEvent]:
+    async for raw_chunk in stream_prepared_anthropic_raw_chat_completion(prepared_request):
+        for stream_event in map_prepared_anthropic_raw_stream_event(prepared_request, raw_chunk):
+            yield stream_event
+
+
+async def stream_prepared_anthropic_raw_chat_completion(
+    prepared_request: PreparedProviderChatRequest,
+) -> AsyncIterator[ProviderRawStreamChunk]:
     client = build_anthropic_client()
     saw_visible_text = False
     saw_terminal_stop_reason = False
@@ -98,6 +107,7 @@ async def stream_prepared_anthropic_chat_completion(
             stream=True,
         )
         async for event in stream:
+            event_type = getattr(event, "type", None)
             failure = extract_anthropic_stream_error(event)
             if failure:
                 raise AnthropicProviderError(
@@ -108,18 +118,21 @@ async def stream_prepared_anthropic_chat_completion(
                     result_message=failure.result_message,
                 )
 
-            chunk = map_anthropic_stream_event(
-                event,
-                public_model_id=prepared_request.public_model_id,
-                selected_tool_ids=_extract_selected_tool_ids(prepared_request.payload),
-            )
-            if chunk is not None:
-                if chunk.text:
-                    saw_visible_text = True
-                if chunk.finish_reason is not None:
+            if event_type == "content_block_delta":
+                delta = getattr(event, "delta", None)
+                if getattr(delta, "type", None) == "text_delta":
+                    saw_visible_text = saw_visible_text or bool(getattr(delta, "text", None))
+            if event_type == "message_delta":
+                delta = getattr(event, "delta", None)
+                stop_reason = getattr(delta, "stop_reason", None)
+                if stop_reason is not None:
                     saw_terminal_stop_reason = True
-                    last_stop_reason = chunk.finish_reason
-                yield chunk
+                    last_stop_reason = stop_reason
+            yield ProviderRawStreamChunk(
+                provider="anthropic",
+                raw_chunk=event,
+                raw_event_type=event_type,
+            )
 
         if not saw_terminal_stop_reason:
             result_code = "anthropic_stream_error"
@@ -143,6 +156,17 @@ async def stream_prepared_anthropic_chat_completion(
         raise _map_anthropic_exception(exc) from exc
     finally:
         await client.close()
+
+
+def map_prepared_anthropic_raw_stream_event(
+    prepared_request: PreparedProviderChatRequest,
+    raw_chunk: ProviderRawStreamChunk,
+) -> tuple[ProviderStreamEvent, ...]:
+    return map_anthropic_stream_event(
+        raw_chunk.raw_chunk,
+        public_model_id=prepared_request.public_model_id,
+        selected_tool_ids=_extract_selected_tool_ids(prepared_request.payload),
+    )
 
 
 def prepare_anthropic_chat_completion_request(

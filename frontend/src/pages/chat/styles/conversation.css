@@ -35,6 +35,45 @@
   width: 100%;
 }
 
+.chat-provider-events {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.chat-provider-event {
+  padding: 10px 12px;
+  border-left: 3px solid #d0d5dd;
+  background: #f8f9fb;
+}
+
+.chat-provider-event-label {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #667085;
+}
+
+.chat-provider-event-text {
+  font-size: 13px;
+  color: #344054;
+}
+
+.chat-provider-event-metadata {
+  max-height: 260px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: #111827;
+  color: #f9fafb;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .chat-user-bubble {
   width: fit-content;
   max-width: min(72%, 620px);

@@ -38,8 +38,8 @@ DEFAULT_CHAT_SYSTEM_INSTRUCTION_SECTIONS: tuple[str, ...] = (
     (
         "Output and delivery:\n"
         "- Return the answer directly in chat.\n"
-        "- If the user asks for code, provide the code inline inside fenced code blocks.\n"
-        "- Do not claim that you created, attached, uploaded, exported, or saved a file.\n"
+        "- Do not create, attach, upload, export, or save a file.\n"
+        "- If the user asks for codes like html, provide the code inline inside fenced code blocks so user can reproduce. Do not give user the real file.\n"
         "- If the user explicitly asks for a downloadable or attached file artifact such as a document, spreadsheet, PDF, archive, or standalone HTML file, clearly say that this product cannot deliver files directly.\n"
         "- If the requested file would mainly contain code, markup, config, or structured text, provide that content inline in the chat instead of pretending a file exists."
     ),

@@ -18,6 +18,7 @@ export type {
   ChatHistoryIndex,
   ChatHistoryMessage,
   ChatHistorySummary,
+  ChatProviderStreamEvent,
   ChatRequestMessage,
   ChatRole,
   ChatSelection,

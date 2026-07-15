@@ -10,19 +10,34 @@ from app.providers.anthropic.outcomes import (
     get_anthropic_result_message,
     pick_anthropic_success_message,
 )
-from app.providers.dispatcher import ProviderExecutionError, stream_provider_chat_completion
+from app.providers.dispatcher import (
+    ProviderExecutionError,
+    map_provider_raw_stream_events,
+    stream_provider_raw_chat_completion,
+)
 from app.providers.openai.outcomes import (
     OPENAI_SUCCESS_RESULT_CODE,
     get_openai_result_message,
     pick_openai_success_message,
 )
-from app.providers.types import PreparedProviderChatRequest, ProviderRoute, ProviderStreamChunk
+from app.providers.types import (
+    PreparedProviderChatRequest,
+    ProviderRawStreamChunk,
+    ProviderRoute,
+    ProviderStreamEvent,
+)
 from app.providers.vertex.outcomes import (
     VERTEX_SUCCESS_RESULT_CODE,
     get_vertex_result_message,
     pick_vertex_success_message,
 )
-from app.schemas.chat import ChatStreamDeltaEvent, ChatStreamDoneEvent, ChatStreamStatusEvent, ChatUsageSummary
+from app.schemas.chat import (
+    ChatStreamDeltaEvent,
+    ChatStreamDoneEvent,
+    ChatStreamProviderEvent,
+    ChatStreamStatusEvent,
+    ChatUsageSummary,
+)
 from app.services.chat.completions.validation import build_safe_error_detail
 from app.services.chat.completions.sse import LiveChatStreamSink, build_error_event
 from app.services.chat.completions.turn_persistence import (
@@ -49,20 +64,21 @@ async def run_chat_completion_turn(
     route: ProviderRoute,
     sink: LiveChatStreamSink,
 ) -> None:
-    last_chunk: ProviderStreamChunk | None = None
+    last_event: ProviderStreamEvent | None = None
     accumulated_text = ""
     last_status_code: str | None = None
     event_idle_timeout_seconds = provider_event_idle_timeout_seconds()
     max_runtime_seconds = provider_max_runtime_seconds()
     provider_event_seen = False
+    final_answer_completed = False
     max_runtime_deadline = asyncio.get_running_loop().time() + max_runtime_seconds
     stream = None
 
     try:
-        stream = stream_provider_chat_completion(prepared_request=prepared_request).__aiter__()
+        stream = stream_provider_raw_chat_completion(prepared_request=prepared_request).__aiter__()
         while True:
             try:
-                chunk = await _next_provider_chunk(
+                raw_chunk = await _next_provider_raw_chunk(
                     stream,
                     timeout_seconds=_next_provider_timeout_seconds(
                         event_idle_timeout_seconds=event_idle_timeout_seconds,
@@ -79,6 +95,7 @@ async def run_chat_completion_turn(
                     sink=sink,
                     accumulated_text=accumulated_text,
                     first_response_received=provider_event_seen,
+                    final_answer_completed=final_answer_completed,
                     event_idle_timeout_seconds=event_idle_timeout_seconds,
                     max_runtime_seconds=max_runtime_seconds,
                 )
@@ -91,25 +108,51 @@ async def run_chat_completion_turn(
                     sink=sink,
                     accumulated_text=accumulated_text,
                     first_response_received=True,
+                    final_answer_completed=final_answer_completed,
                     event_idle_timeout_seconds=event_idle_timeout_seconds,
                     max_runtime_seconds=max_runtime_seconds,
                 )
                 return
-            last_chunk, accumulated_text, last_status_code = emit_provider_chunk(
-                chunk=chunk,
-                route=route,
-                sink=sink,
-                accumulated_text=accumulated_text,
-                last_status_code=last_status_code,
+            stream_events = map_provider_raw_stream_events(
+                prepared_request=prepared_request,
+                raw_chunk=raw_chunk,
             )
+            for stream_event in stream_events:
+                last_event, accumulated_text, last_status_code = emit_provider_event(
+                    stream_event=stream_event,
+                    route=route,
+                    sink=sink,
+                    accumulated_text=accumulated_text,
+                    last_status_code=last_status_code,
+                )
+                final_answer_completed = final_answer_completed or is_strong_final_answer_event(
+                    route.model.provider,
+                    stream_event,
+                )
     except ProviderExecutionError as exc:
         error = map_provider_execution_error(exc)
-        persist_turn_failure(turn, accumulated_text, error)
+        persist_turn_failure(
+            turn,
+            accumulated_text,
+            error,
+            exclude_from_context=not should_include_error_turn(
+                accumulated_text=accumulated_text,
+                final_answer_completed=final_answer_completed,
+            ),
+        )
         persist_turn_failure_event(turn=turn, route=route, error=error)
         sink.emit("error", build_error_event(error))
         return
     except ChatProxyError as exc:
-        persist_turn_failure(turn, accumulated_text, exc)
+        persist_turn_failure(
+            turn,
+            accumulated_text,
+            exc,
+            exclude_from_context=not should_include_error_turn(
+                accumulated_text=accumulated_text,
+                final_answer_completed=final_answer_completed,
+            ),
+        )
         persist_turn_failure_event(turn=turn, route=route, error=exc)
         sink.emit("error", build_error_event(exc))
         return
@@ -131,7 +174,7 @@ async def run_chat_completion_turn(
 
     result_code, result_message = build_success_outcome(
         route=route,
-        finish_reason=last_chunk.finish_reason if last_chunk else None,
+        finish_reason=last_event.finish_reason if last_event else None,
     )
     try:
         with SessionLocal() as stream_db:
@@ -143,8 +186,8 @@ async def run_chat_completion_turn(
                 auth_session_id=turn.auth_session_id,
                 assistant_message_id=turn.assistant_message_id,
                 content=accumulated_text,
-                finish_reason=last_chunk.finish_reason if last_chunk else None,
-                usage=last_chunk.usage if last_chunk else None,
+                finish_reason=last_event.finish_reason if last_event else None,
+                usage=last_event.usage if last_event else None,
                 result_code=result_code,
                 result_message=result_message,
             )
@@ -155,6 +198,7 @@ async def run_chat_completion_turn(
             sink=sink,
             accumulated_text=accumulated_text,
             first_response_received=provider_event_seen,
+            final_answer_completed=final_answer_completed,
             event_idle_timeout_seconds=event_idle_timeout_seconds,
             max_runtime_seconds=max_runtime_seconds,
         )
@@ -168,37 +212,66 @@ async def run_chat_completion_turn(
             provider=route.model.provider,
             result_code=result_code,
             result_message=result_message,
-            finish_reason=last_chunk.finish_reason if last_chunk else None,
-            usage=map_usage_summary(last_chunk),
+            finish_reason=last_event.finish_reason if last_event else None,
+            usage=map_usage_summary(last_event),
         ),
     )
 
 
-def emit_provider_chunk(
+def emit_provider_event(
     *,
-    chunk: ProviderStreamChunk,
+    stream_event: ProviderStreamEvent,
     route: ProviderRoute,
     sink: LiveChatStreamSink,
     accumulated_text: str,
     last_status_code: str | None,
-) -> tuple[ProviderStreamChunk, str, str | None]:
-    if chunk.status_code and chunk.status_message and chunk.status_code != last_status_code:
-        last_status_code = chunk.status_code
+) -> tuple[ProviderStreamEvent, str, str | None]:
+    if (
+        stream_event.status_code
+        and stream_event.status_message
+        and stream_event.status_code != last_status_code
+    ):
+        last_status_code = stream_event.status_code
         sink.emit(
             "status",
             ChatStreamStatusEvent(
                 provider=route.model.provider,
-                status_code=chunk.status_code,
-                status_message=chunk.status_message,
+                status_code=stream_event.status_code,
+                status_message=stream_event.status_message,
             ),
         )
-    if chunk.text:
-        accumulated_text = f"{accumulated_text}{chunk.text}"
+    if stream_event.text_delta and stream_event.append_to_message_content:
+        accumulated_text = f"{accumulated_text}{stream_event.text_delta}"
         sink.emit(
             "delta",
-            ChatStreamDeltaEvent(delta_text=chunk.text),
+            ChatStreamDeltaEvent(delta_text=stream_event.text_delta),
         )
-    return chunk, accumulated_text, last_status_code
+    elif should_emit_provider_event(stream_event):
+        sink.emit(
+            "provider_event",
+            ChatStreamProviderEvent(
+                provider=route.model.provider,
+                event_kind=stream_event.kind,
+                raw_event_type=stream_event.raw_event_type,
+                text_delta=stream_event.text_delta or None,
+                tool_type=stream_event.tool_type,
+                item_id=stream_event.item_id,
+                output_index=stream_event.output_index,
+                content_index=stream_event.content_index,
+                status_code=stream_event.status_code,
+                status_message=stream_event.status_message,
+                metadata=stream_event.metadata,
+            ),
+        )
+    return stream_event, accumulated_text, last_status_code
+
+
+def should_emit_provider_event(stream_event: ProviderStreamEvent) -> bool:
+    if not stream_event.stream_to_client:
+        return False
+    if stream_event.kind in {"heartbeat", "completion", "status", "answer_delta"}:
+        return False
+    return bool(stream_event.text_delta or stream_event.metadata)
 
 
 def mark_turn_provider_event(turn: PersistedChatTurn) -> bool:
@@ -213,13 +286,13 @@ def mark_turn_provider_event(turn: PersistedChatTurn) -> bool:
         return False
 
 
-def map_usage_summary(chunk: ProviderStreamChunk | None) -> ChatUsageSummary | None:
-    if chunk is None or chunk.usage is None:
+def map_usage_summary(stream_event: ProviderStreamEvent | None) -> ChatUsageSummary | None:
+    if stream_event is None or stream_event.usage is None:
         return None
     return ChatUsageSummary(
-        input_tokens=chunk.usage.prompt_token_count,
-        output_tokens=chunk.usage.candidates_token_count,
-        total_tokens=chunk.usage.total_token_count,
+        input_tokens=stream_event.usage.prompt_token_count,
+        output_tokens=stream_event.usage.candidates_token_count,
+        total_tokens=stream_event.usage.total_token_count,
     )
 
 
@@ -227,6 +300,8 @@ def persist_turn_failure(
     turn: PersistedChatTurn,
     content: str,
     error: ChatProxyError,
+    *,
+    exclude_from_context: bool = True,
 ) -> None:
     with SessionLocal() as stream_db:
         persisted = persist_chat_turn_failure(
@@ -239,8 +314,41 @@ def persist_turn_failure(
             result_code=error.code,
             result_message=error.result_message,
             detail=error.detail,
+            exclude_from_context=exclude_from_context,
             allow_expired_operation=True,
         )
+
+
+def should_include_error_turn(
+    *,
+    accumulated_text: str,
+    final_answer_completed: bool,
+) -> bool:
+    return final_answer_completed and bool(accumulated_text.strip())
+
+
+def is_strong_final_answer_event(provider: str, stream_event: ProviderStreamEvent) -> bool:
+    if provider == "openai":
+        if (
+            stream_event.raw_event_type == "response.output_item.done"
+            and (stream_event.metadata or {}).get("item_type") == "message"
+        ):
+            return (stream_event.metadata or {}).get("status") == "completed"
+        return (
+            stream_event.raw_event_type == "response.completed"
+            and stream_event.finish_reason == "completed"
+        )
+
+    if provider == "anthropic":
+        return (
+            stream_event.raw_event_type == "message_delta"
+            and stream_event.finish_reason in {"end_turn", "stop_sequence", "refusal"}
+        )
+
+    if provider == "vertex_ai":
+        return stream_event.kind == "completion" and stream_event.finish_reason == "STOP"
+
+    return False
 
 
 def persist_turn_failure_event(
@@ -326,12 +434,12 @@ def map_vertex_finish_result_code(finish_reason: str | None) -> str:
     return result_code_by_finish_reason.get(finish_reason, "vertex_stream_error")
 
 
-async def _next_provider_chunk(
+async def _next_provider_raw_chunk(
     stream,
     *,
     timeout_seconds: float | None = None,
     deadline: float | None = None,
-) -> ProviderStreamChunk:
+) -> ProviderRawStreamChunk:
     effective_timeout_seconds = timeout_seconds
     if deadline is not None:
         remaining_seconds = deadline - asyncio.get_running_loop().time()
@@ -367,6 +475,7 @@ def persist_provider_timeout(
     sink: LiveChatStreamSink,
     accumulated_text: str,
     first_response_received: bool,
+    final_answer_completed: bool,
     event_idle_timeout_seconds: int,
     max_runtime_seconds: int,
 ) -> None:
@@ -394,6 +503,10 @@ def persist_provider_timeout(
             result_code=error.code,
             result_message=error.result_message,
             detail=error.detail,
+            exclude_from_context=not should_include_error_turn(
+                accumulated_text=accumulated_text,
+                final_answer_completed=final_answer_completed,
+            ),
             allow_expired_operation=True,
             operation_state="timed_out",
         )

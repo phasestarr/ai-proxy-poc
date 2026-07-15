@@ -32,7 +32,8 @@ from app.providers.token_estimation import estimate_token_count_from_object
 from app.providers.types import (
     PreparedProviderChatRequest,
     ProviderFunctionDeclaration,
-    ProviderStreamChunk,
+    ProviderRawStreamChunk,
+    ProviderStreamEvent,
 )
 from app.schemas.chat import ChatMessage
 
@@ -73,7 +74,7 @@ async def stream_openai_chat_completion(
     messages: list[ChatMessage],
     selected_tool_ids: Iterable[str] = (),
     function_declarations: Iterable[ProviderFunctionDeclaration] = (),
-) -> AsyncIterator:
+) -> AsyncIterator[ProviderStreamEvent]:
     prepared_request = build_openai_prepared_chat_completion_request(
         public_model_id=public_model_id,
         messages=messages,
@@ -86,7 +87,15 @@ async def stream_openai_chat_completion(
 
 async def stream_prepared_openai_chat_completion(
     prepared_request: PreparedProviderChatRequest,
-) -> AsyncIterator:
+) -> AsyncIterator[ProviderStreamEvent]:
+    async for raw_chunk in stream_prepared_openai_raw_chat_completion(prepared_request):
+        for stream_event in map_prepared_openai_raw_stream_event(prepared_request, raw_chunk):
+            yield stream_event
+
+
+async def stream_prepared_openai_raw_chat_completion(
+    prepared_request: PreparedProviderChatRequest,
+) -> AsyncIterator[ProviderRawStreamChunk]:
     client = build_openai_client()
     saw_visible_text = False
     saw_terminal_completion = False
@@ -97,6 +106,7 @@ async def stream_prepared_openai_chat_completion(
             stream=True,
         )
         async for event in stream:
+            event_type = getattr(event, "type", None)
             failure = extract_openai_stream_error(event)
             if failure:
                 raise OpenAIProviderError(
@@ -107,17 +117,15 @@ async def stream_prepared_openai_chat_completion(
                     result_message=failure.result_message,
                 )
 
-            chunk = map_openai_stream_event(
-                event,
-                public_model_id=prepared_request.public_model_id,
-                selected_tool_ids=_extract_selected_tool_ids(prepared_request.payload),
+            if event_type in {"response.output_text.delta", "response.refusal.delta"}:
+                saw_visible_text = saw_visible_text or bool(getattr(event, "delta", None))
+            if event_type in {"response.completed", "response.incomplete"}:
+                saw_terminal_completion = True
+            yield ProviderRawStreamChunk(
+                provider="openai",
+                raw_chunk=event,
+                raw_event_type=event_type,
             )
-            if chunk is not None:
-                if chunk.text:
-                    saw_visible_text = True
-                if _is_terminal_completion_chunk(chunk):
-                    saw_terminal_completion = True
-                yield chunk
 
         if not saw_terminal_completion:
             result_code = "openai_response_failed"
@@ -140,6 +148,17 @@ async def stream_prepared_openai_chat_completion(
         raise _map_openai_exception(exc) from exc
     finally:
         await client.close()
+
+
+def map_prepared_openai_raw_stream_event(
+    prepared_request: PreparedProviderChatRequest,
+    raw_chunk: ProviderRawStreamChunk,
+) -> tuple[ProviderStreamEvent, ...]:
+    return map_openai_stream_event(
+        raw_chunk.raw_chunk,
+        public_model_id=prepared_request.public_model_id,
+        selected_tool_ids=_extract_selected_tool_ids(prepared_request.payload),
+    )
 
 
 def prepare_openai_chat_completion_request(
@@ -251,10 +270,6 @@ def extract_openai_stream_error(event) -> _OpenAIStreamFailure | None:
         )
 
     return None
-
-
-def _is_terminal_completion_chunk(chunk: ProviderStreamChunk) -> bool:
-    return chunk.finish_reason is not None or chunk.usage is not None or chunk.response_id is not None
 
 
 def _build_openai_input_token_count_payload(request_kwargs: dict[str, object]) -> dict[str, object]:

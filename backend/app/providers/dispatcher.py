@@ -17,40 +17,45 @@ from app.providers.anthropic.provider import (
     AnthropicProviderConfigurationError,
     AnthropicProviderError,
     ensure_anthropic_provider_ready,
-    stream_anthropic_chat_completion,
 )
 from app.providers.anthropic.count_tokens import count_anthropic_input_tokens
 from app.providers.anthropic.stream import prepare_anthropic_chat_completion_request
 from app.providers.anthropic.stream import (
     build_anthropic_prepared_chat_completion_request,
-    stream_prepared_anthropic_chat_completion,
+    map_prepared_anthropic_raw_stream_event,
+    stream_prepared_anthropic_raw_chat_completion,
 )
 from app.providers.openai.provider import (
     OPENAI_PROVIDER_ID,
     OpenAIProviderConfigurationError,
     OpenAIProviderError,
     ensure_openai_provider_ready,
-    stream_openai_chat_completion,
 )
 from app.providers.openai.count_tokens import count_openai_input_tokens
 from app.providers.openai.stream import prepare_openai_chat_completion_request
 from app.providers.openai.stream import (
     build_openai_prepared_chat_completion_request,
-    stream_prepared_openai_chat_completion,
+    map_prepared_openai_raw_stream_event,
+    stream_prepared_openai_raw_chat_completion,
 )
-from app.providers.types import PreparedProviderChatRequest, ProviderRoute, ProviderStreamChunk
+from app.providers.types import (
+    PreparedProviderChatRequest,
+    ProviderRawStreamChunk,
+    ProviderRoute,
+    ProviderStreamEvent,
+)
 from app.providers.vertex.provider import (
     VERTEX_PROVIDER_ID,
     VertexProviderConfigurationError,
     VertexProviderError,
     ensure_vertex_provider_ready,
-    stream_vertex_chat_completion,
 )
 from app.providers.vertex.count_tokens import count_vertex_input_tokens
 from app.providers.vertex.stream import prepare_vertex_chat_completion_request
 from app.providers.vertex.stream import (
     build_vertex_prepared_chat_completion_request,
-    stream_prepared_vertex_chat_completion,
+    map_prepared_vertex_raw_stream_event,
+    stream_prepared_vertex_raw_chat_completion,
 )
 from app.schemas.chat import ChatMessage
 
@@ -169,18 +174,31 @@ def prepare_provider_chat_completion(
 async def stream_provider_chat_completion(
     *,
     prepared_request: PreparedProviderChatRequest,
-) -> AsyncIterator[ProviderStreamChunk]:
+) -> AsyncIterator[ProviderStreamEvent]:
+    async for raw_chunk in stream_provider_raw_chat_completion(prepared_request=prepared_request):
+        stream_events = map_provider_raw_stream_events(
+            prepared_request=prepared_request,
+            raw_chunk=raw_chunk,
+        )
+        for stream_event in stream_events:
+            yield stream_event
+
+
+async def stream_provider_raw_chat_completion(
+    *,
+    prepared_request: PreparedProviderChatRequest,
+) -> AsyncIterator[ProviderRawStreamChunk]:
     try:
         if prepared_request.provider == VERTEX_PROVIDER_ID:
-            async for chunk in stream_prepared_vertex_chat_completion(prepared_request):
+            async for chunk in stream_prepared_vertex_raw_chat_completion(prepared_request):
                 yield chunk
             return
         if prepared_request.provider == OPENAI_PROVIDER_ID:
-            async for chunk in stream_prepared_openai_chat_completion(prepared_request):
+            async for chunk in stream_prepared_openai_raw_chat_completion(prepared_request):
                 yield chunk
             return
         if prepared_request.provider == ANTHROPIC_PROVIDER_ID:
-            async for chunk in stream_prepared_anthropic_chat_completion(prepared_request):
+            async for chunk in stream_prepared_anthropic_raw_chat_completion(prepared_request):
                 yield chunk
             return
     except VertexProviderError as exc:
@@ -211,6 +229,23 @@ async def stream_provider_chat_completion(
             result_message=exc.result_message,
         ) from exc
 
+    raise ProviderExecutionError(
+        f"provider is not configured: {prepared_request.provider}",
+        provider=prepared_request.provider,
+    )
+
+
+def map_provider_raw_stream_events(
+    *,
+    prepared_request: PreparedProviderChatRequest,
+    raw_chunk: ProviderRawStreamChunk,
+) -> tuple[ProviderStreamEvent, ...]:
+    if prepared_request.provider == VERTEX_PROVIDER_ID:
+        return map_prepared_vertex_raw_stream_event(prepared_request, raw_chunk)
+    if prepared_request.provider == OPENAI_PROVIDER_ID:
+        return map_prepared_openai_raw_stream_event(prepared_request, raw_chunk)
+    if prepared_request.provider == ANTHROPIC_PROVIDER_ID:
+        return map_prepared_anthropic_raw_stream_event(prepared_request, raw_chunk)
     raise ProviderExecutionError(
         f"provider is not configured: {prepared_request.provider}",
         provider=prepared_request.provider,

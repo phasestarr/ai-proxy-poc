@@ -13,7 +13,7 @@ from app.providers.dispatcher import ensure_provider_ready, prepare_provider_cha
 from app.providers.openai.attachments import delete_openai_file, upload_openai_file
 from app.providers.openai.count_tokens import OPENAI_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.openai.provider import OPENAI_PROVIDER_ID, list_openai_models
-from app.providers.types import ProviderModelDefinition, ProviderRoute, ProviderStreamChunk
+from app.providers.types import ProviderModelDefinition, ProviderRoute, ProviderStreamEvent
 from app.providers.vertex.attachments import delete_vertex_file, upload_vertex_file
 from app.providers.vertex.count_tokens import VERTEX_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.vertex.provider import VERTEX_PROVIDER_ID, list_vertex_models
@@ -89,11 +89,11 @@ async def run_text_smoke(*, provider: str, model: ProviderModelDefinition) -> No
             )
         ],
     )
-    chunks: list[ProviderStreamChunk] = []
+    chunks: list[ProviderStreamEvent] = []
     async for chunk in stream_provider_chat_completion(prepared_request=prepared_request):
         chunks.append(chunk)
 
-    if not any(chunk.text.strip() for chunk in chunks):
+    if not any(chunk.text_delta.strip() for chunk in chunks):
         raise RuntimeError(f"{provider} text smoke returned no visible text")
 
 
