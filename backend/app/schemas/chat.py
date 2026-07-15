@@ -103,6 +103,8 @@ class ChatStreamThinkingBlock(BaseModel):
 
 class ChatStreamToolUsageBlock(BaseModel):
     type: Literal["tool"] = "tool"
+    operation: Literal["start", "delta", "end"]
+    block_id: str
     metadata: dict[str, object]
     raw: object
 

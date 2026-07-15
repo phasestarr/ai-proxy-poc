@@ -101,14 +101,11 @@ export function appendAssistantStreamBlock(
     // }
 
     const streamBlocks = [...(message.streamBlocks ?? [])];
-    const previousBlock = streamBlocks[streamBlocks.length - 1];
-    if (streamBlock.type === "thinking" && canMergeThinkingBlocks(previousBlock, streamBlock)) {
-      streamBlocks[streamBlocks.length - 1] = {
-        ...previousBlock,
-        operation: streamBlock.operation,
-        text: `${previousBlock.text}${streamBlock.text}`,
-        metadata: streamBlock.text ? streamBlock.metadata : previousBlock.metadata,
-      };
+    const matchingBlockIndex = streamBlocks.findIndex((currentBlock) =>
+      canMergeStreamBlocks(currentBlock, streamBlock),
+    );
+    if (matchingBlockIndex >= 0) {
+      streamBlocks[matchingBlockIndex] = mergeStreamBlocks(streamBlocks[matchingBlockIndex], streamBlock);
     } else {
       streamBlocks.push(streamBlock);
     }
@@ -137,16 +134,30 @@ export function updateAssistantStatus(
   );
 }
 
-function canMergeThinkingBlocks(
-  previousBlock: ChatStreamBlock | undefined,
-  nextBlock: Extract<ChatStreamBlock, { type: "thinking" }>,
-): previousBlock is Extract<ChatStreamBlock, { type: "thinking" }> {
-  return Boolean(
-    previousBlock &&
-      previousBlock.type === "thinking" &&
-      nextBlock.type === "thinking" &&
-      previousBlock.blockId === nextBlock.blockId,
-  );
+function canMergeStreamBlocks(previousBlock: ChatStreamBlock, nextBlock: ChatStreamBlock): boolean {
+  return previousBlock.type === nextBlock.type && previousBlock.blockId === nextBlock.blockId;
+}
+
+function mergeStreamBlocks(previousBlock: ChatStreamBlock, nextBlock: ChatStreamBlock): ChatStreamBlock {
+  if (previousBlock.type === "thinking" && nextBlock.type === "thinking") {
+    return {
+      ...previousBlock,
+      operation: nextBlock.operation,
+      text: `${previousBlock.text}${nextBlock.text}`,
+      metadata: nextBlock.text ? nextBlock.metadata : previousBlock.metadata,
+    };
+  }
+
+  if (previousBlock.type === "tool" && nextBlock.type === "tool") {
+    return {
+      ...previousBlock,
+      operation: nextBlock.operation,
+      metadata: nextBlock.metadata,
+      rawEvents: [...previousBlock.rawEvents, ...nextBlock.rawEvents],
+    };
+  }
+
+  return nextBlock;
 }
 
 export function completeAssistantMessage(

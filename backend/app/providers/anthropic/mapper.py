@@ -10,6 +10,7 @@ from app.providers.anthropic.usage import map_anthropic_usage
 from app.providers.types import (
     ProviderStreamEvent,
     ThinkingDeltaBlock,
+    ToolBlockOperation,
     ToolUsageBlock,
     dump_provider_value,
 )
@@ -137,6 +138,7 @@ def _map_content_block_start(
                     block_index=block_index,
                     block_state=block_state,
                     provider_subtype=content_type,
+                    operation="delta" if _is_anthropic_tool_result_block(content_type) else "start",
                 ),
                 status_code=status_code,
                 status_message=get_anthropic_status_message(status_code),
@@ -187,6 +189,7 @@ def _map_content_block_delta(
                     block_index=index if index is not None else -1,
                     block_state=block_state,
                     provider_subtype=delta_type,
+                    operation="delta",
                 ),
                 status_code=status_code,
                 status_message=get_anthropic_status_message(status_code) if status_code else None,
@@ -256,6 +259,9 @@ def _map_content_block_stop(
                     block_index=index if index is not None else -1,
                     block_state=block_state,
                     provider_subtype=block_state.content_type,
+                    operation="end"
+                    if _is_anthropic_tool_result_block(block_state.content_type)
+                    else "delta",
                 ),
                 raw_event_type="content_block_stop",
             ),
@@ -314,6 +320,7 @@ def _anthropic_tool_block(
     block_index: int,
     block_state: _AnthropicContentBlockState,
     provider_subtype: str | None,
+    operation: ToolBlockOperation,
 ) -> ToolUsageBlock:
     metadata: dict[str, object] = {
         "provider": "anthropic",
@@ -329,11 +336,34 @@ def _anthropic_tool_block(
         metadata["tool_name"] = block_state.tool_name
     if block_state.tool_use_id:
         metadata["tool_use_id"] = block_state.tool_use_id
-    return ToolUsageBlock(metadata=metadata, raw=dump_provider_value(event))
+    return ToolUsageBlock(
+        block_id=_anthropic_tool_block_id(
+            state=state,
+            block_index=block_index,
+            block_state=block_state,
+        ),
+        operation=operation,
+        metadata=metadata,
+        raw=dump_provider_value(event),
+    )
 
 
 def _is_anthropic_tool_block(content_type: str) -> bool:
-    return content_type == "server_tool_use" or content_type.endswith("_tool_result")
+    return content_type == "server_tool_use" or _is_anthropic_tool_result_block(content_type)
+
+
+def _is_anthropic_tool_result_block(content_type: str) -> bool:
+    return content_type.endswith("_tool_result")
+
+
+def _anthropic_tool_block_id(
+    *,
+    state: AnthropicStreamState,
+    block_index: int,
+    block_state: _AnthropicContentBlockState,
+) -> str:
+    key = block_state.tool_use_id or f"index:{block_index}"
+    return f"anthropic:{state.message_id or 'unknown'}:tool:{key}"
 
 
 def _status_event(event_type: object, status_code: str) -> ProviderStreamEvent:

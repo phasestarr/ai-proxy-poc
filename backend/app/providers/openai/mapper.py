@@ -10,6 +10,7 @@ from app.providers.openai.usage import map_openai_usage
 from app.providers.types import (
     ProviderStreamEvent,
     ThinkingDeltaBlock,
+    ToolBlockOperation,
     ToolUsageBlock,
     dump_provider_value,
 )
@@ -102,6 +103,7 @@ def map_openai_stream_event(
                     state=state,
                     item_id=item_id,
                     item_type=item_type,
+                    operation="delta",
                 ),
                 status_code=status_code,
                 status_message=get_openai_status_message(status_code) if status_code else None,
@@ -213,6 +215,7 @@ def _map_output_item_event(
                 state=state,
                 item_id=item_id,
                 item_type=item_type,
+                operation="end" if event_type == "response.output_item.done" else "start",
             ),
             status_code=status_code,
             status_message=get_openai_status_message(status_code) if status_code else None,
@@ -317,6 +320,7 @@ def _openai_tool_block(
     state: OpenAIStreamState,
     item_id: str,
     item_type: str,
+    operation: ToolBlockOperation,
 ) -> ToolUsageBlock:
     metadata: dict[str, object] = {
         "provider": "openai",
@@ -333,7 +337,12 @@ def _openai_tool_block(
         metadata["sequence_number"] = sequence_number
     if output_index is not None:
         metadata["output_index"] = output_index
-    return ToolUsageBlock(metadata=metadata, raw=dump_provider_value(event))
+    return ToolUsageBlock(
+        block_id=_openai_tool_block_id(state=state, item_id=item_id),
+        operation=operation,
+        metadata=metadata,
+        raw=dump_provider_value(event),
+    )
 
 
 def _thinking_key(event) -> tuple[str, int] | None:
@@ -351,6 +360,14 @@ def _openai_thinking_block_id(
 ) -> str:
     item_id, summary_index = key
     return f"openai:{state.response_id or 'unknown'}:{item_id}:{summary_index}"
+
+
+def _openai_tool_block_id(
+    *,
+    state: OpenAIStreamState,
+    item_id: str,
+) -> str:
+    return f"openai:{state.response_id or 'unknown'}:tool:{item_id}"
 
 
 def _is_openai_tool_item_type(item_type: str) -> bool:

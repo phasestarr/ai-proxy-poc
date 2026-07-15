@@ -82,6 +82,8 @@ class AnthropicStreamMappingTests(unittest.TestCase):
         self.assertEqual([block.operation for block in thinking], ["start", "end"])
         self.assertEqual("".join(block.text_delta for block in thinking), "Readable thought")
         self.assertEqual(len(tools), 5)
+        self.assertEqual([block.block_id for block in tools], ["anthropic:msg_1:tool:srv_1"] * 5)
+        self.assertEqual([block.operation for block in tools], ["start", "delta", "delta", "delta", "end"])
         self.assertEqual(tools[0].raw, raw_events[4])
         self.assertEqual(tools[1].raw, raw_events[5])
         self.assertEqual(tools[-1].raw, raw_events[8])
@@ -204,6 +206,8 @@ class OpenAIStreamMappingTests(unittest.TestCase):
         self.assertEqual("".join(block.text_delta for block in thinking), "**Search title**\n\nReadable summary")
         self.assertEqual(thinking[0].metadata["response_id"], "resp_1")
         self.assertEqual(len(tools), 3)
+        self.assertEqual([block.block_id for block in tools], ["openai:resp_1:tool:ws_1"] * 3)
+        self.assertEqual([block.operation for block in tools], ["start", "delta", "end"])
         self.assertEqual(tools[1].raw, raw_events[6])
         self.assertEqual(tools[2].raw, raw_events[7])
         self.assertEqual(answer, "Final answer")
@@ -265,6 +269,8 @@ class VertexStreamMappingTests(unittest.TestCase):
         self.assertEqual(thinking[0].metadata["value_path"], "$.candidates[0].content.parts[0].text")
         self.assertEqual(answer, "Final text")
         self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0].block_id, "vertex_ai:vertex_resp_1:tool")
+        self.assertEqual(tools[0].operation, "end")
         self.assertEqual(tools[0].raw, raw_chunk)
         self.assertEqual(tools[0].raw["sdkHttpResponse"]["headers"]["content-type"], "application/json")
         self.assertEqual(
@@ -305,6 +311,50 @@ class VertexStreamMappingTests(unittest.TestCase):
             public_model_id="gemini-3-flash-preview",
         )
         self.assertFalse(any(isinstance(event.block, ToolUsageBlock) for event in mapped))
+
+    def test_future_text_tool_payloads_share_one_response_tool_block(self) -> None:
+        state = VertexStreamState()
+        first = map_vertex_stream_chunk(
+            {
+                "responseId": "vertex_resp_4",
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {"futureTextToolPayload": {"query": "docs"}},
+                            ],
+                        },
+                    }
+                ],
+            },
+            state=state,
+            public_model_id="gemini-3-flash-preview",
+        )
+        second = map_vertex_stream_chunk(
+            {
+                "responseId": "vertex_resp_4",
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {"futureTextToolResult": {"text": "result"}},
+                            ],
+                        },
+                    }
+                ],
+            },
+            state=state,
+            public_model_id="gemini-3-flash-preview",
+        )
+
+        tools = [
+            event.block
+            for event in [*first, *second]
+            if isinstance(event.block, ToolUsageBlock)
+        ]
+
+        self.assertEqual([block.block_id for block in tools], ["vertex_ai:vertex_resp_4:tool"] * 2)
+        self.assertEqual([block.operation for block in tools], ["start", "delta"])
 
 
 if __name__ == "__main__":

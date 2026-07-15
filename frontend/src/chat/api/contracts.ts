@@ -28,6 +28,8 @@ export type ChatStreamThinkingBlockApiEvent = {
 
 export type ChatStreamToolUsageBlockApiEvent = {
   type: "tool";
+  operation: "start" | "delta" | "end";
+  block_id: string;
   metadata: Record<string, unknown>;
   raw: unknown;
 };

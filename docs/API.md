@@ -141,9 +141,11 @@ Important:
     - readable provider-authored `text_delta`
     - provider/event correlation `metadata`
   - tool block includes:
+    - `operation: "start" | "delta" | "end"`
+    - stable `block_id` within the response stream
     - `type: "tool"`
     - provider/event correlation `metadata`
-    - `raw`, the complete JSON-compatible provider event or chunk without tool-specific projection
+    - `raw`, one complete JSON-compatible provider event or chunk without tool-specific projection
 - `status`
   - includes:
     - `provider`
@@ -168,6 +170,7 @@ Important:
 Notes:
 - thinking blocks never contain signatures, encrypted reasoning, tool arguments, or answer text
 - tool blocks are classified structurally and keep provider-native JSON instead of mapping each tool schema
+- related tool block events share `block_id`, so clients can merge multiple raw provider pieces into one visible tool usage block
 - block events are live-rendering only; the current persistence model stores the final assistant answer, not block history
 - `status_code` values are provider-specific progress codes
 - internal proxy status codes may also appear, including:

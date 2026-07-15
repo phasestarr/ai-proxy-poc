@@ -66,8 +66,10 @@ export function mapStreamBlock(payload: ChatStreamBlockApiEvent): ChatStreamBloc
   }
   return {
     type: "tool",
+    operation: payload.operation,
+    blockId: payload.block_id,
     metadata: payload.metadata,
-    raw: payload.raw,
+    rawEvents: [payload.raw],
   };
 }
 

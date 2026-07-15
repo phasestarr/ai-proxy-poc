@@ -267,6 +267,8 @@ def emit_provider_event(
             sink.emit(
                 "block",
                 ChatStreamToolUsageBlock(
+                    operation=block.operation,
+                    block_id=block.block_id,
                     metadata=block.metadata,
                     raw=block.raw,
                 ),

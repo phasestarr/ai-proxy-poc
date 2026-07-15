@@ -55,9 +55,9 @@ export default function ConversationList({
                     );
                   }
                   return (
-                    <div className="chat-provider-event chat-provider-event--tool" key={`${message.id}-${index}`}>
+                    <div className="chat-provider-event chat-provider-event--tool" key={`${message.id}-${block.blockId}-${index}`}>
                       <p className="chat-provider-event-label">{buildStreamBlockLabel(block)}</p>
-                      <pre className="chat-provider-event-metadata">{JSON.stringify(block.raw, null, 2)}</pre>
+                      <pre className="chat-provider-event-metadata">{JSON.stringify(block.rawEvents, null, 2)}</pre>
                     </div>
                   );
                 })}

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.providers.types import (
     ProviderStreamEvent,
     ThinkingDeltaBlock,
+    ToolBlockOperation,
     ToolUsageBlock,
     dump_provider_value,
 )
@@ -19,6 +20,7 @@ from app.schemas.chat import ChatMessage
 @dataclass(slots=True)
 class VertexStreamState:
     chunk_ordinal: int = 0
+    tool_blocks_started: set[str] = field(default_factory=set)
 
 
 def map_chat_messages_to_vertex_contents(
@@ -62,7 +64,7 @@ def map_vertex_stream_chunk(
     finish_reason: str | None = None
     status_code: str | None = None
     events: list[ProviderStreamEvent] = []
-    tool_discriminators: list[str] = []
+    tool_field_names: list[str] = []
     tool_candidate_indexes: list[int] = []
 
     for candidate_index, candidate in enumerate(candidates):
@@ -118,30 +120,37 @@ def map_vertex_stream_chunk(
                         )
                     )
 
-            part_discriminators = _vertex_part_tool_discriminators(part)
-            if part_discriminators:
-                tool_discriminators.extend(part_discriminators)
+            part_tool_fields = _vertex_part_tool_field_names(part)
+            if part_tool_fields:
+                tool_field_names.extend(part_tool_fields)
                 if candidate_index not in tool_candidate_indexes:
                     tool_candidate_indexes.append(candidate_index)
 
-        candidate_discriminators = _vertex_candidate_tool_discriminators(candidate)
-        if candidate_discriminators:
-            tool_discriminators.extend(candidate_discriminators)
+        candidate_tool_fields = _vertex_candidate_tool_field_names(candidate)
+        if candidate_tool_fields:
+            tool_field_names.extend(candidate_tool_fields)
             if candidate_index not in tool_candidate_indexes:
                 tool_candidate_indexes.append(candidate_index)
 
         if candidate_finish_reason == "SAFETY":
             status_code = "vertex_safety_review"
 
-    if tool_discriminators:
+    if tool_field_names:
+        block_id = _vertex_tool_block_id(response_id=response_id)
         events.append(
             ProviderStreamEvent(
                 block=_vertex_tool_block(
                     chunk,
+                    block_id=block_id,
+                    operation=_vertex_tool_operation(
+                        state=state,
+                        block_id=block_id,
+                        terminal=finish_reason is not None,
+                    ),
                     response_id=response_id,
                     model_version=model_version,
                     candidate_indexes=tool_candidate_indexes,
-                    discriminators=tool_discriminators,
+                    field_names=tool_field_names,
                 ),
                 raw_event_type="generateContent.chunk",
             )
@@ -218,46 +227,124 @@ def _vertex_thinking_metadata(
 def _vertex_tool_block(
     chunk,
     *,
+    block_id: str,
+    operation: ToolBlockOperation,
     response_id: str | None,
     model_version: str | None,
     candidate_indexes: list[int],
-    discriminators: list[str],
+    field_names: list[str],
 ) -> ToolUsageBlock:
     metadata: dict[str, object] = {
         "provider": "vertex_ai",
         "semantic_type": "tool_event",
         "provider_event": "generateContent.chunk",
-        "provider_subtype": ",".join(dict.fromkeys(discriminators)),
+        "provider_subtype": ",".join(dict.fromkeys(field_names)),
         "candidate_indexes": candidate_indexes,
     }
     if response_id:
         metadata["response_id"] = response_id
     if model_version:
         metadata["model"] = model_version
-    return ToolUsageBlock(metadata=metadata, raw=dump_provider_value(chunk))
-
-
-def _vertex_candidate_tool_discriminators(candidate) -> list[str]:
-    discriminators: list[str] = []
-    if _field_any(candidate, "grounding_metadata", "groundingMetadata") is not None:
-        discriminators.append("groundingMetadata")
-    if _field_any(candidate, "url_context_metadata", "urlContextMetadata") is not None:
-        discriminators.append("urlContextMetadata")
-    return discriminators
-
-
-def _vertex_part_tool_discriminators(part) -> list[str]:
-    discriminators: list[str] = []
-    fields = (
-        ("executable_code", "executableCode", "executableCode"),
-        ("code_execution_result", "codeExecutionResult", "codeExecutionResult"),
-        ("tool_call", "toolCall", "toolCall"),
-        ("tool_response", "toolResponse", "toolResponse"),
+    return ToolUsageBlock(
+        block_id=block_id,
+        operation=operation,
+        metadata=metadata,
+        raw=dump_provider_value(chunk),
     )
-    for snake_name, alias_name, label in fields:
-        if _field_any(part, snake_name, alias_name) is not None:
-            discriminators.append(label)
-    return discriminators
+
+
+def _vertex_tool_block_id(*, response_id: str | None) -> str:
+    return f"vertex_ai:{response_id or 'unknown'}:tool"
+
+
+def _vertex_tool_operation(
+    *,
+    state: VertexStreamState,
+    block_id: str,
+    terminal: bool,
+) -> ToolBlockOperation:
+    if block_id not in state.tool_blocks_started:
+        state.tool_blocks_started.add(block_id)
+        return "end" if terminal else "start"
+    return "end" if terminal else "delta"
+
+
+_VERTEX_STANDARD_CANDIDATE_FIELDS = {
+    "avgLogprobs",
+    "avg_logprobs",
+    "citationMetadata",
+    "citation_metadata",
+    "content",
+    "finishMessage",
+    "finishReason",
+    "finish_message",
+    "finish_reason",
+    "index",
+    "logprobsResult",
+    "logprobs_result",
+    "safetyRatings",
+    "safety_ratings",
+    "tokenCount",
+    "token_count",
+}
+
+_VERTEX_STANDARD_PART_FIELDS = {
+    "fileData",
+    "file_data",
+    "functionCall",
+    "functionResponse",
+    "function_call",
+    "function_response",
+    "inlineData",
+    "inline_data",
+    "mediaResolution",
+    "media_resolution",
+    "partMetadata",
+    "part_metadata",
+    "text",
+    "thought",
+    "thoughtSignature",
+    "thought_signature",
+    "videoMetadata",
+    "video_metadata",
+}
+
+
+def _vertex_candidate_tool_field_names(candidate) -> list[str]:
+    return [
+        field_name
+        for field_name, value in _iter_non_empty_fields(candidate)
+        if field_name not in _VERTEX_STANDARD_CANDIDATE_FIELDS
+    ]
+
+
+def _vertex_part_tool_field_names(part) -> list[str]:
+    return [
+        field_name
+        for field_name, value in _iter_non_empty_fields(part)
+        if field_name not in _VERTEX_STANDARD_PART_FIELDS
+    ]
+
+
+def _iter_non_empty_fields(value) -> list[tuple[str, object]]:
+    dumped = dump_provider_value(value)
+    if not isinstance(dumped, dict):
+        return []
+    return [
+        (field_name, field_value)
+        for field_name, field_value in dumped.items()
+        if _is_non_empty_value(field_value)
+    ]
+
+
+def _is_non_empty_value(value: object) -> bool:
+    if value is None:
+        return False
+    if value == "":
+        return False
+    if isinstance(value, (list, tuple, set, dict)) and len(value) == 0:
+        return False
+    return True
 
 
 def _finish_reason(candidate) -> str | None:

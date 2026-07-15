@@ -41,8 +41,10 @@ export type ChatThinkingBlock = {
 
 export type ChatToolUsageBlock = {
   type: "tool";
+  operation: "start" | "delta" | "end";
+  blockId: string;
   metadata: Record<string, unknown>;
-  raw: unknown;
+  rawEvents: unknown[];
 };
 
 export type ChatStreamBlock = ChatThinkingBlock | ChatToolUsageBlock;

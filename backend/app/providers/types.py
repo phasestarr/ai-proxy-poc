@@ -17,7 +17,9 @@ ProviderStreamEventKind = Literal[
     "heartbeat",
     "metadata",
 ]
-ThinkingBlockOperation = Literal["start", "delta", "end"]
+ProviderBlockOperation = Literal["start", "delta", "end"]
+ThinkingBlockOperation = ProviderBlockOperation
+ToolBlockOperation = ProviderBlockOperation
 
 
 @dataclass(slots=True, frozen=True)
@@ -67,6 +69,8 @@ class ThinkingDeltaBlock:
 
 @dataclass(slots=True, frozen=True)
 class ToolUsageBlock:
+    block_id: str
+    operation: ToolBlockOperation
     metadata: dict[str, object]
     raw: object
 

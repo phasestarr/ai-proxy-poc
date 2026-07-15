@@ -51,7 +51,7 @@ Current runtime and code ownership for AI Proxy.
 14. A text-only first send goes directly to `POST /api/v1/chat/completions` with neither id.
 15. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions` with an optional `chat_history_id`.
 16. The frontend consumes SSE `start`, `block`, `delta`, `status`, `done`, and `error`.
-17. `block` is either a readable thinking block or one unchanged provider-native tool event; ordinary answer text remains `delta`.
+17. `block` is either a readable thinking block or a provider-native tool event fragment with stable block identity; ordinary answer text remains `delta`.
 
 ## Backend Flow
 1. `backend/app/main.py`
