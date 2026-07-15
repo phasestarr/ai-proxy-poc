@@ -179,7 +179,12 @@ Anthropic:
    - provider events must keep arriving before `CHAT_PROVIDER_EVENT_IDLE_TIMEOUT_SECONDS`
    - DB heartbeat writes are throttled; incoming chunks still check the operation token
    - total provider runtime is bounded by `CHAT_PROVIDER_MAX_RUNTIME_SECONDS`
-13. usage normalization and ledger writes
+13. completed provider block persistence
+   - `backend/app/services/chat/completions/blocks.py`
+   - `backend/app/services/chat/completions/turn_persistence.py`
+   - block chunks are merged in memory and one `chat_message_blocks` row is written only when the block reaches `operation='end'`
+   - persisted block rows are returned by history reads and are not replayed over the active SSE response
+14. usage normalization and ledger writes
    - `backend/app/providers/<provider>/usage.py`
    - append-only usage ledger writes live in `backend/app/services/usage_ledger.py`
    - chat transcript rows do not store usage JSON; use `usage_ledger_events` for spend/token audit
@@ -251,6 +256,7 @@ Main files:
 ## Attachment Runtime Semantics
 - refresh does not restore selected history from browser storage
 - the frontend does not auto-recover interrupted SSE
+- completed thinking/tool blocks already committed to `chat_message_blocks` render only after an explicit history load or page reload plus history selection
 - `chat_operations.owner_token` plus the owner's active operation fields are the concurrency guard
 - blank-page upload staging draft cleanup uses `CHAT_DRAFT_TTL_SECONDS`
 - validation, compaction, upload/delete/toggle, and history-delete operations use `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS`

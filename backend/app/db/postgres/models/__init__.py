@@ -20,6 +20,7 @@ from app.db.postgres.models.chat_history import (
     ChatHistory,
     ChatHistoryMemory,
     ChatMessage,
+    ChatMessageBlock,
     ChatOperation,
 )
 from app.db.postgres.models.identities import GuestIdentity, MicrosoftIdentity
@@ -42,6 +43,7 @@ __all__ = [
     "ChatHistoryMemory",
     "ChatMessage",
     "ChatMessageAttachment",
+    "ChatMessageBlock",
     "ChatOperation",
     "MicrosoftIdentity",
     "OperatorEvent",

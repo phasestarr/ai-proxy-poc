@@ -6,6 +6,7 @@ from app.providers.anthropic.mapper import AnthropicStreamState, map_anthropic_s
 from app.providers.openai.mapper import OpenAIStreamState, map_openai_stream_event
 from app.providers.types import ThinkingDeltaBlock, ToolUsageBlock
 from app.providers.vertex.mapper import VertexStreamState, map_vertex_stream_chunk
+from app.services.chat.completions.blocks import ProviderBlockAccumulator
 
 
 class AnthropicStreamMappingTests(unittest.TestCase):
@@ -355,6 +356,64 @@ class VertexStreamMappingTests(unittest.TestCase):
 
         self.assertEqual([block.block_id for block in tools], ["vertex_ai:vertex_resp_4:tool"] * 2)
         self.assertEqual([block.operation for block in tools], ["start", "delta"])
+
+
+class ProviderBlockAccumulatorTests(unittest.TestCase):
+    def test_accumulates_thinking_until_end(self) -> None:
+        accumulator = ProviderBlockAccumulator()
+
+        first = accumulator.ingest(
+            ThinkingDeltaBlock(
+                block_id="thinking-1",
+                operation="start",
+                text_delta="first ",
+                metadata={"provider": "openai", "provider_event": "delta"},
+            )
+        )
+        second = accumulator.ingest(
+            ThinkingDeltaBlock(
+                block_id="thinking-1",
+                operation="delta",
+                text_delta="second",
+                metadata={"provider": "openai", "provider_event": "delta"},
+            )
+        )
+        completed = accumulator.ingest(
+            ThinkingDeltaBlock(
+                block_id="thinking-1",
+                operation="end",
+                metadata={"provider": "openai", "provider_event": "done"},
+            )
+        )
+
+        self.assertIsNone(first)
+        self.assertIsNone(second)
+        self.assertIsNotNone(completed)
+        self.assertEqual(completed.type, "thinking")
+        self.assertEqual(completed.provider_block_id, "thinking-1")
+        self.assertEqual(completed.text, "first second")
+        self.assertEqual(completed.metadata["provider_event"], "done")
+        self.assertEqual(completed.raw_events, [])
+        self.assertLessEqual(completed.started_at, completed.completed_at)
+
+    def test_persists_end_only_tool_as_one_completed_block(self) -> None:
+        accumulator = ProviderBlockAccumulator()
+        raw = {"responseId": "vertex_resp_1", "groundingMetadata": {"queries": ["docs"]}}
+
+        completed = accumulator.ingest(
+            ToolUsageBlock(
+                block_id="vertex_ai:vertex_resp_1:tool",
+                operation="end",
+                metadata={"provider": "vertex_ai", "provider_event": "generateContent.chunk"},
+                raw=raw,
+            )
+        )
+
+        self.assertIsNotNone(completed)
+        self.assertEqual(completed.type, "tool")
+        self.assertEqual(completed.provider_block_id, "vertex_ai:vertex_resp_1:tool")
+        self.assertEqual(completed.raw_events, [raw])
+        self.assertEqual(completed.text, "")
 
 
 if __name__ == "__main__":

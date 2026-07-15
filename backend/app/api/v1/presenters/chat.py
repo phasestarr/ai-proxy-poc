@@ -5,6 +5,7 @@ from app.schemas.chat import (
     ChatAttachmentLimitsView,
     ChatHistoryFileTokenSummary,
     ChatHistoryFileView,
+    ChatHistoryMessageBlockView,
     ChatHistoryMessageView,
     ChatHistorySummary,
 )
@@ -35,6 +36,14 @@ def build_attachment_limits_view() -> ChatAttachmentLimitsView:
 
 
 def build_chat_history_message_view(message) -> ChatHistoryMessageView:
+    blocks = [build_chat_history_message_block_view(block) for block in message.blocks]
+    block_activity_started_at = min((block.started_at for block in message.blocks), default=None)
+    block_activity_completed_at = max((block.completed_at for block in message.blocks), default=None)
+    block_activity_duration_ms = (
+        int((block_activity_completed_at - block_activity_started_at).total_seconds() * 1000)
+        if block_activity_started_at is not None and block_activity_completed_at is not None
+        else None
+    )
     return ChatHistoryMessageView(
         id=message.id,
         role=message.role,
@@ -49,9 +58,29 @@ def build_chat_history_message_view(message) -> ChatHistoryMessageView:
         result_code=message.result_code,
         result_message=message.result_message,
         error_detail=message.error_detail,
+        blocks=blocks,
+        block_activity_started_at=block_activity_started_at,
+        block_activity_completed_at=block_activity_completed_at,
+        block_activity_duration_ms=block_activity_duration_ms,
         completed_at=message.completed_at,
         created_at=message.created_at,
         updated_at=message.updated_at,
+    )
+
+
+def build_chat_history_message_block_view(block) -> ChatHistoryMessageBlockView:
+    return ChatHistoryMessageBlockView(
+        id=block.id,
+        type=block.type,
+        sequence=block.sequence,
+        block_id=block.provider_block_id,
+        text=block.text,
+        metadata=block.block_metadata,
+        raw_events=block.raw_events,
+        started_at=block.started_at,
+        completed_at=block.completed_at,
+        created_at=block.created_at,
+        updated_at=block.updated_at,
     )
 
 

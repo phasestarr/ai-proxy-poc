@@ -41,10 +41,12 @@ from app.schemas.chat import (
     ChatStreamStatusEvent,
     ChatUsageSummary,
 )
+from app.services.chat.completions.blocks import CompletedProviderBlock, ProviderBlockAccumulator
 from app.services.chat.completions.validation import build_safe_error_detail
 from app.services.chat.completions.sse import LiveChatStreamSink, build_error_event
 from app.services.chat.completions.turn_persistence import (
     PersistedChatTurn,
+    persist_chat_message_block,
     persist_chat_turn_provider_event,
     persist_chat_turn_failure,
     persist_chat_turn_success,
@@ -79,6 +81,7 @@ async def run_chat_completion_turn(
     stream = None
 
     try:
+        block_accumulator = ProviderBlockAccumulator()
         stream_mapper = ProviderStreamMapper(prepared_request)
         stream = stream_provider_raw_chat_completion(prepared_request=prepared_request).__aiter__()
         while True:
@@ -127,6 +130,23 @@ async def run_chat_completion_turn(
                     accumulated_text=accumulated_text,
                     last_status_code=last_status_code,
                 )
+                if stream_event.block is not None:
+                    completed_block = block_accumulator.ingest(stream_event.block)
+                    if completed_block is not None and not persist_provider_block(
+                        turn=turn,
+                        block=completed_block,
+                    ):
+                        persist_provider_timeout(
+                            turn=turn,
+                            route=route,
+                            sink=sink,
+                            accumulated_text=accumulated_text,
+                            first_response_received=True,
+                            final_answer_completed=final_answer_completed,
+                            event_idle_timeout_seconds=event_idle_timeout_seconds,
+                            max_runtime_seconds=max_runtime_seconds,
+                        )
+                        return
                 if stream_event.kind == "completion":
                     completion_event = stream_event
                 final_answer_completed = final_answer_completed or is_strong_final_answer_event(
@@ -283,6 +303,23 @@ def mark_turn_provider_event(turn: PersistedChatTurn) -> bool:
                 stream_db,
                 operation=turn.operation,
                 assistant_message_id=turn.assistant_message_id,
+            )
+    except ChatOperationExpiredError:
+        return False
+
+
+def persist_provider_block(
+    *,
+    turn: PersistedChatTurn,
+    block: CompletedProviderBlock,
+) -> bool:
+    try:
+        with SessionLocal() as stream_db:
+            return persist_chat_message_block(
+                stream_db,
+                operation=turn.operation,
+                assistant_message_id=turn.assistant_message_id,
+                block=block,
             )
     except ChatOperationExpiredError:
         return False

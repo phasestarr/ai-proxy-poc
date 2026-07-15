@@ -23,7 +23,12 @@ export type TranscriptMessage = {
   completionNote?: string;
   detail?: string;
   resultCode?: string | null;
-  streamBlocks?: ChatStreamBlock[];
+  blocks?: ChatStreamBlock[];
+  blocksCollapsed?: boolean;
+  blocksAutoCollapsedForAnswer?: boolean;
+  blockActivityStartedAtMs?: number;
+  blockActivityCompletedAtMs?: number;
+  blockActivityDurationMs?: number | null;
   excludedFromRequest?: boolean;
   renderOptions?: AssistantRenderOptions;
 };
@@ -53,6 +58,7 @@ export function createStreamingAssistantMessage(id: number): TranscriptMessage {
     content: "",
     status: "streaming",
     streamStatusMessage: "Generating response...",
+    blocksCollapsed: false,
     renderOptions: createDefaultAssistantRenderOptions(),
   };
 }
@@ -79,8 +85,12 @@ export function appendAssistantDelta(
       ? {
           ...message,
           content: `${message.content}${deltaText}`,
-          // Keep provider blocks visible while inspecting their exact streamed shape.
-          // streamBlocks: undefined,
+          blocksCollapsed:
+            !message.blocksAutoCollapsedForAnswer && message.content.length === 0 && message.blocks && message.blocks.length > 0
+              ? true
+              : message.blocksCollapsed,
+          blocksAutoCollapsedForAnswer:
+            message.blocksAutoCollapsedForAnswer || message.content.length === 0,
         }
       : message,
   );
@@ -91,28 +101,30 @@ export function appendAssistantStreamBlock(
   assistantMessageId: number,
   streamBlock: ChatStreamBlock,
 ): TranscriptMessage[] {
+  const eventTimeMs = Date.now();
   return messages.map((message) => {
     if (message.id !== assistantMessageId) {
       return message;
     }
-    // Keep accepting provider blocks after final-answer text has started.
-    // if (message.content.length > 0) {
-    //   return message;
-    // }
 
-    const streamBlocks = [...(message.streamBlocks ?? [])];
-    const matchingBlockIndex = streamBlocks.findIndex((currentBlock) =>
+    const blocks = [...(message.blocks ?? [])];
+    const matchingBlockIndex = blocks.findIndex((currentBlock) =>
       canMergeStreamBlocks(currentBlock, streamBlock),
     );
     if (matchingBlockIndex >= 0) {
-      streamBlocks[matchingBlockIndex] = mergeStreamBlocks(streamBlocks[matchingBlockIndex], streamBlock);
+      blocks[matchingBlockIndex] = mergeStreamBlocks(blocks[matchingBlockIndex], streamBlock);
     } else {
-      streamBlocks.push(streamBlock);
+      blocks.push(streamBlock);
     }
 
+    const blockActivityStartedAtMs = message.blockActivityStartedAtMs ?? eventTimeMs;
     return {
       ...message,
-      streamBlocks,
+      blocks,
+      blocksCollapsed: message.blocksCollapsed,
+      blockActivityStartedAtMs,
+      blockActivityCompletedAtMs: eventTimeMs,
+      blockActivityDurationMs: eventTimeMs - blockActivityStartedAtMs,
     };
   });
 }
@@ -177,8 +189,7 @@ export function completeAssistantMessage(
           completionNote: resultMessage,
           resultCode,
           detail: finishReason ? `finish reason: ${finishReason}` : undefined,
-          // Keep provider blocks visible after the terminal SSE event for inspection.
-          // streamBlocks: undefined,
+          blocksCollapsed: message.blocks && message.blocks.length > 0 ? true : message.blocksCollapsed,
         }
       : message,
   );
@@ -207,7 +218,7 @@ export function failAssistantMessage(
           detail,
           status: "error",
           resultCode,
-          streamBlocks: undefined,
+          blocksCollapsed: message.blocks && message.blocks.length > 0 ? true : message.blocksCollapsed,
           excludedFromRequest: true,
         }
       : message,
@@ -257,6 +268,27 @@ function mapHistoryMessageToTranscriptMessage(
   const requestMeta = message.role === "user" && (message.modelId || message.toolIds.length > 0)
     ? getRequestMeta(message.modelId, message.toolIds, modelOptions)
     : undefined;
+  const blocks = [...message.blocks]
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((block): ChatStreamBlock => {
+      if (block.type === "thinking") {
+        return {
+          type: "thinking",
+          operation: "end",
+          blockId: block.blockId,
+          text: block.text,
+          metadata: block.metadata,
+        };
+      }
+
+      return {
+        type: "tool",
+        operation: "end",
+        blockId: block.blockId,
+        metadata: block.metadata,
+        rawEvents: block.rawEvents,
+      };
+    });
 
   return {
     id,
@@ -267,9 +299,31 @@ function mapHistoryMessageToTranscriptMessage(
     completionNote: message.role === "assistant" && message.status === "done" ? message.resultMessage ?? undefined : undefined,
     detail: message.role === "assistant" && status === "error" ? detail : undefined,
     resultCode: message.resultCode,
+    blocks: message.role === "assistant" ? blocks : undefined,
+    blocksCollapsed: message.role === "assistant" && blocks.length > 0 ? true : undefined,
+    blocksAutoCollapsedForAnswer: message.role === "assistant" && blocks.length > 0 ? true : undefined,
+    blockActivityStartedAtMs: message.blockActivityStartedAt ? Date.parse(message.blockActivityStartedAt) : undefined,
+    blockActivityCompletedAtMs: message.blockActivityCompletedAt ? Date.parse(message.blockActivityCompletedAt) : undefined,
+    blockActivityDurationMs: message.blockActivityDurationMs,
     excludedFromRequest: message.excludedFromContext || message.status === "streaming",
     renderOptions: message.role === "assistant" ? createDefaultAssistantRenderOptions() : undefined,
   };
+}
+
+export function toggleAssistantBlocks(
+  messages: TranscriptMessage[],
+  assistantMessageId: number,
+): TranscriptMessage[] {
+  return messages.map((message) => {
+    if (message.id !== assistantMessageId || message.role !== "assistant" || !message.blocks || message.blocks.length === 0) {
+      return message;
+    }
+
+    return {
+      ...message,
+      blocksCollapsed: !message.blocksCollapsed,
+    };
+  });
 }
 
 export function toggleAssistantMarkdown(

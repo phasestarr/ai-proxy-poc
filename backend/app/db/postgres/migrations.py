@@ -30,6 +30,7 @@ CURRENT_MANAGED_TABLES = {
     "chat_drafts",
     "chat_operations",
     "chat_messages",
+    "chat_message_blocks",
     "chat_history_memories",
     "chat_context_checkpoints",
     "operator_events",

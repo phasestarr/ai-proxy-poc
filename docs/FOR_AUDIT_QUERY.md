@@ -20,9 +20,11 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT NOW();"
    - append-only successful-turn spend and token snapshots
 4. `chat_messages`
    - product transcript rows with provider/result metadata
-5. `chat_histories`
+5. `chat_message_blocks`
+   - completed backend-merged thinking/tool blocks for assistant transcript rows
+6. `chat_histories`
    - owner and active-operation lookup
-6. `alembic_version`
+7. `alembic_version`
 
 ## Whole-Audit Counts
 

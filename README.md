@@ -18,7 +18,7 @@ Internal AI proxy stack behind sibling `root-proxy`.
 - optional Microsoft login through backend-owned OAuth redirect flow
 - `HttpOnly` `session_id` cookie auth
 - protected streaming chat endpoint
-- backend-owned chat history with persisted user/assistant messages
+- backend-owned chat history with persisted user/assistant messages and completed thinking/tool blocks
 - Postgres-token-fenced single in-flight operation per chat history, with internal draft staging only during blank-page file upload validation
 - Redis-backed minute and hourly chat rate limits
 - public model catalog at `/api/v1/models`

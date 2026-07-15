@@ -17,6 +17,7 @@ export type {
   ChatHistoryFilesMutation,
   ChatHistoryIndex,
   ChatHistoryMessage,
+  ChatHistoryMessageBlock,
   ChatHistorySummary,
   ChatRequestMessage,
   ChatRole,

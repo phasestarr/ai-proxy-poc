@@ -7,6 +7,7 @@ type ConversationListProps = {
   messages: TranscriptMessage[];
   conversationRef: RefObject<HTMLDivElement>;
   onScroll: () => void;
+  onToggleBlocks: (messageId: number) => void;
   onToggleMarkdown: (messageId: number) => void;
   onToggleLatex: (messageId: number) => void;
 };
@@ -15,6 +16,7 @@ export default function ConversationList({
   messages,
   conversationRef,
   onScroll,
+  onToggleBlocks,
   onToggleMarkdown,
   onToggleLatex,
 }: ConversationListProps) {
@@ -26,15 +28,30 @@ export default function ConversationList({
         const latexEnabled = renderOptions.markdown && renderOptions.latex;
         const isPlainTextAnswer = message.role === "assistant" && !markdownEnabled;
         const footerStatus = message.role === "assistant" ? buildAssistantFooterStatus(message) : null;
+        const blocks = message.role === "assistant" ? message.blocks ?? [] : [];
+        const hasBlocks = blocks.length > 0;
+        const showBlockToggle =
+          hasBlocks && (message.blocksCollapsed || message.content.length > 0 || message.status !== "streaming");
+        const showBlocks = hasBlocks && !message.blocksCollapsed;
 
         return (
           <article className={`chat-message chat-message--${message.role}`} key={message.id}>
             <div
               className={`chat-content ${message.role === "user" ? "chat-content--question" : "chat-content--answer"} ${isPlainTextAnswer ? "chat-content--plain-answer" : ""}`}
             >
-            {message.role === "assistant" && message.streamBlocks && message.streamBlocks.length > 0 ? (
+            {showBlockToggle ? (
+              <button
+                aria-expanded={!message.blocksCollapsed}
+                className="chat-provider-events-toggle"
+                onClick={() => onToggleBlocks(message.id)}
+                type="button"
+              >
+                {buildThoughtToggleLabel(message)}
+              </button>
+            ) : null}
+            {showBlocks ? (
               <div className="chat-provider-events">
-                {message.streamBlocks.map((block, index) => {
+                {blocks.map((block, index) => {
                   if (block.type === "thinking") {
                     const presentation = parseThinkingText(block.text);
                     return (
@@ -63,7 +80,7 @@ export default function ConversationList({
                 })}
               </div>
             ) : null}
-            {message.role === "assistant" && message.status === "streaming" && message.content.length === 0 && (!message.streamBlocks || message.streamBlocks.length === 0) ? (
+            {message.role === "assistant" && message.status === "streaming" && message.content.length === 0 && !hasBlocks ? (
               <p className={buildLoadingClassName(message.streamStatusCode)}>
                 {message.streamStatusMessage ?? "Generating response..."}
               </p>
@@ -126,7 +143,7 @@ export default function ConversationList({
   );
 }
 
-function buildStreamBlockLabel(block: NonNullable<TranscriptMessage["streamBlocks"]>[number]): string {
+function buildStreamBlockLabel(block: NonNullable<TranscriptMessage["blocks"]>[number]): string {
   const metadata = block.metadata;
   return [
     metadata.provider,
@@ -137,6 +154,21 @@ function buildStreamBlockLabel(block: NonNullable<TranscriptMessage["streamBlock
   ]
     .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
     .join(" / ");
+}
+
+function buildThoughtToggleLabel(message: TranscriptMessage): string {
+  return `Thought for ${formatThoughtDuration(message.blockActivityDurationMs ?? 0)}`;
+}
+
+function formatThoughtDuration(durationMs: number): string {
+  const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
 function parseThinkingText(text: string): { title: string | null; body: string } {

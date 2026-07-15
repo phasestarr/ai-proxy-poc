@@ -52,6 +52,8 @@ Current runtime and code ownership for AI Proxy.
 15. Chat send goes through `frontend/src/chat/api/streamChatApi.ts` to `POST /api/v1/chat/completions` with an optional `chat_history_id`.
 16. The frontend consumes SSE `start`, `block`, `delta`, `status`, `done`, and `error`.
 17. `block` is either a readable thinking block or a provider-native tool event fragment with stable block identity; ordinary answer text remains `delta`.
+18. During live streaming the frontend renders block chunks immediately, but durable block history comes only from backend history reads.
+19. When final-answer text starts, the frontend collapses visible blocks behind a `Thought for X` toggle; persisted history loads blocks collapsed by default.
 
 ## Backend Flow
 1. `backend/app/main.py`
@@ -80,9 +82,10 @@ Current runtime and code ownership for AI Proxy.
    - conditionally resolves exact input-token counts near the soft threshold
    - runs context compaction when needed
 8. `backend/app/services/chat/completions/turn_persistence.py`
-   - persists user message and assistant placeholder
+   - persists user message, assistant placeholder, and completed message blocks
 9. `backend/app/services/chat/completions/provider_execution.py`
    - executes the provider stream
+   - merges live provider block chunks and persists one block row when a block completes
    - persists final success or failure outcomes
 10. `backend/app/services/chat/completions/orchestrator.py`
    - starts backend-owned provider execution
@@ -128,6 +131,7 @@ Session expiry semantics:
   - conflict tickets
   - chat histories
   - chat messages
+  - backend-merged completed chat message blocks in `chat_message_blocks`
   - backend-owned attachment blobs in `stored_files`
   - logical history attachments in `chat_history_files`
   - provider attachment metadata in `stored_file_provider_states`
@@ -152,6 +156,7 @@ Session expiry semantics:
 - backend persists:
   - user message
   - assistant placeholder
+  - completed thinking/tool blocks as merged `chat_message_blocks` rows when each block reaches `operation='end'`
   - resolved route metadata
   - final success or error outcome
   - append-only usage ledger events with normalized usage, provider raw usage, and price snapshot
@@ -162,6 +167,7 @@ Session expiry semantics:
 - the assistant placeholder stores the current operation `deadline_at`; provider event arrival stores `first_response_at` once and refreshes the next-event deadline on the first event, provider-state transitions, and throttled heartbeat intervals
 - if a deadline is exceeded, the backend marks the assistant row `status='error'`, clears `deadline_at`, excludes the turn from future context, clears the active operation token, and writes an `operator_events` timeout row
 - if provider output arrives after timeout handling, it is not authoritative because the operation token no longer matches
+- completed block persistence uses the same operation token fence, so late provider output cannot append durable block rows after timeout handling
 - if provider execution fails, the assistant message is kept renderable but marked `excluded_from_context=true`
 - persisted provider-attempted failures keep provider-specific `result_code`, `result_message`, `finish_reason`, and safe `error_detail`
 - future provider context is rebuilt from:
@@ -264,7 +270,8 @@ Crash and housekeeping semantics:
 - refresh always returns to the local welcome state
 - if an SSE response is interrupted by refresh, the browser stops rendering live output immediately
 - the frontend does not attempt hidden restore or replay
-- later history rendering comes only from explicit backend reads after the message or attachment has been persisted
+- later history rendering comes only from explicit backend reads after the message, attachment, or completed message block has been persisted
+- completed blocks may become visible on history reload before the final answer row is complete, but the frontend does not auto-poll or reconcile interrupted streams
 
 ## Chat History Metadata
 - `chat_histories.title` stores the backend-owned history title text
@@ -285,7 +292,7 @@ Crash and housekeeping semantics:
 - exact input-token count is attempted from `40000` estimated input tokens upward
 - compression currently uses an internal Vertex AI pipeline with `gemini-3-flash-preview`
 - compression does not set a backend output-token cap; the summary size is controlled by the compression instruction target
-- chat history rendering still uses raw `chat_messages`
+- chat history rendering uses raw `chat_messages` plus persisted `chat_message_blocks`; block rows are never used for provider context
 - checkpoint summaries are inference-only and live in a dedicated table
 
 ## Provider Layer

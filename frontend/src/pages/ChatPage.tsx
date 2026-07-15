@@ -37,6 +37,7 @@ import {
   failAssistantMessage,
   getLatestHistorySelection,
   mapHistoryMessagesToTranscript,
+  toggleAssistantBlocks,
   toggleAssistantLatex,
   toggleAssistantMarkdown,
   type TranscriptMessage,
@@ -688,6 +689,9 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
             conversationRef={autoScroll.conversationRef}
             messages={messages}
             onScroll={autoScroll.handleConversationScroll}
+            onToggleBlocks={(messageId) => {
+              setMessages((current) => toggleAssistantBlocks(current, messageId));
+            }}
             onToggleLatex={(messageId) => {
               setMessages((current) => toggleAssistantLatex(current, messageId));
             }}

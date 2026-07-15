@@ -29,7 +29,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -x -c "SELECT version
 - Before any `DELETE`, first run a `SELECT` with the same `WHERE` clause.
 - Prefer deleting cascade roots such as `users`, `auth_sessions`, and
   `chat_histories`.
-- Do not casually delete child rows such as `chat_messages`,
+- Do not casually delete child rows such as `chat_messages`, `chat_message_blocks`,
   `chat_message_attachments`, `auth_provider_sessions`, or
   `guest_identities`.
 - `usage_ledger_events` is append-only audit data. Do not delete it to change
@@ -51,30 +51,31 @@ Product/runtime tables:
 7. `oauth_transactions`
 8. `chat_histories`
 9. `chat_messages`
-10. `stored_files`
-11. `stored_file_provider_states`
-12. `chat_history_files`
-13. `chat_message_attachments`
-14. `chat_context_checkpoints`
-15. `chat_operations`
-16. `chat_drafts`
-17. `chat_draft_files`
+10. `chat_message_blocks`
+11. `stored_files`
+12. `stored_file_provider_states`
+13. `chat_history_files`
+14. `chat_message_attachments`
+15. `chat_context_checkpoints`
+16. `chat_operations`
+17. `chat_drafts`
+18. `chat_draft_files`
 
 Audit/operator tables:
 
-18. `operator_events`
-19. `usage_ledger_events`
-20. `user_usage_caps`
+19. `operator_events`
+20. `usage_ledger_events`
+21. `user_usage_caps`
 
 Legacy/reserved:
 
-21. `chat_history_memories`
+22. `chat_history_memories`
    - current runtime compaction uses `chat_context_checkpoints`
    - leave this table alone unless intentionally removing the legacy model path
 
 Migration metadata:
 
-22. `alembic_version`
+23. `alembic_version`
 
 ## Whole-Database Inspect
 
@@ -87,7 +88,7 @@ docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT table_name
 Row counts:
 
 ```powershell
-docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'stored_files', COUNT(*) FROM stored_files UNION ALL SELECT 'stored_file_provider_states', COUNT(*) FROM stored_file_provider_states UNION ALL SELECT 'chat_history_files', COUNT(*) FROM chat_history_files UNION ALL SELECT 'chat_message_attachments', COUNT(*) FROM chat_message_attachments UNION ALL SELECT 'chat_context_checkpoints', COUNT(*) FROM chat_context_checkpoints UNION ALL SELECT 'chat_operations', COUNT(*) FROM chat_operations UNION ALL SELECT 'chat_drafts', COUNT(*) FROM chat_drafts UNION ALL SELECT 'chat_draft_files', COUNT(*) FROM chat_draft_files UNION ALL SELECT 'operator_events', COUNT(*) FROM operator_events UNION ALL SELECT 'usage_ledger_events', COUNT(*) FROM usage_ledger_events UNION ALL SELECT 'user_usage_caps', COUNT(*) FROM user_usage_caps UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories ORDER BY table_name;"
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT 'users' AS table_name, COUNT(*) FROM users UNION ALL SELECT 'ms_identities', COUNT(*) FROM ms_identities UNION ALL SELECT 'guest_identities', COUNT(*) FROM guest_identities UNION ALL SELECT 'auth_sessions', COUNT(*) FROM auth_sessions UNION ALL SELECT 'auth_provider_sessions', COUNT(*) FROM auth_provider_sessions UNION ALL SELECT 'auth_conflict_tickets', COUNT(*) FROM auth_conflict_tickets UNION ALL SELECT 'oauth_transactions', COUNT(*) FROM oauth_transactions UNION ALL SELECT 'chat_histories', COUNT(*) FROM chat_histories UNION ALL SELECT 'chat_messages', COUNT(*) FROM chat_messages UNION ALL SELECT 'chat_message_blocks', COUNT(*) FROM chat_message_blocks UNION ALL SELECT 'stored_files', COUNT(*) FROM stored_files UNION ALL SELECT 'stored_file_provider_states', COUNT(*) FROM stored_file_provider_states UNION ALL SELECT 'chat_history_files', COUNT(*) FROM chat_history_files UNION ALL SELECT 'chat_message_attachments', COUNT(*) FROM chat_message_attachments UNION ALL SELECT 'chat_context_checkpoints', COUNT(*) FROM chat_context_checkpoints UNION ALL SELECT 'chat_operations', COUNT(*) FROM chat_operations UNION ALL SELECT 'chat_drafts', COUNT(*) FROM chat_drafts UNION ALL SELECT 'chat_draft_files', COUNT(*) FROM chat_draft_files UNION ALL SELECT 'operator_events', COUNT(*) FROM operator_events UNION ALL SELECT 'usage_ledger_events', COUNT(*) FROM usage_ledger_events UNION ALL SELECT 'user_usage_caps', COUNT(*) FROM user_usage_caps UNION ALL SELECT 'chat_history_memories', COUNT(*) FROM chat_history_memories ORDER BY table_name;"
 ```
 
 Foreign-key cascade rules:
@@ -116,6 +117,12 @@ Use the copied `chat_histories.id`:
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT id, sequence, role, status, excluded_from_context, length(content) AS content_length, model_id, provider, tool_ids, finish_reason, result_code, result_message, first_response_at, deadline_at, completed_at, created_at, updated_at FROM chat_messages WHERE chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY sequence;"
+```
+
+Inspect completed thinking/tool blocks for that history:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT cm.sequence AS message_sequence, cmb.sequence AS block_sequence, cmb.type, cmb.provider_block_id, length(cmb.text) AS text_length, jsonb_array_length(cmb.raw_events::jsonb) AS raw_event_count, cmb.started_at, cmb.completed_at FROM chat_message_blocks cmb JOIN chat_messages cm ON cm.id = cmb.chat_message_id WHERE cm.chat_history_id = 'PUT_CHAT_HISTORY_ID_HERE' ORDER BY cm.sequence, cmb.sequence;"
 ```
 
 Inspect real text:
@@ -217,6 +224,20 @@ Error outcome summary:
 
 ```powershell
 docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT provider, result_code, finish_reason, COUNT(*) FROM chat_messages WHERE status = 'error' GROUP BY provider, result_code, finish_reason ORDER BY COUNT(*) DESC, provider, result_code;"
+```
+
+### chat_message_blocks
+
+Role:
+
+- Completed backend-merged thinking/tool blocks for assistant messages.
+- Rows are written only when a provider block reaches `operation='end'`.
+- These rows are render history only; they are not used for future provider context.
+
+Recent blocks:
+
+```powershell
+docker exec ai-proxy-postgres psql -U postgres -d ai_proxy -c "SELECT cmb.id, cm.chat_history_id, cm.sequence AS message_sequence, cmb.sequence AS block_sequence, cmb.type, cmb.provider_block_id, length(cmb.text) AS text_length, jsonb_array_length(cmb.raw_events::jsonb) AS raw_event_count, cmb.started_at, cmb.completed_at, cmb.created_at FROM chat_message_blocks cmb JOIN chat_messages cm ON cm.id = cmb.chat_message_id ORDER BY cmb.created_at DESC LIMIT 100;"
 ```
 
 ### chat_operations

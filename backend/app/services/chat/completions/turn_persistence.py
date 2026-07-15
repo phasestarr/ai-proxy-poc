@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 from app.auth.types import SessionContext
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import ChatMessageAttachment
-from app.db.postgres.models.chat_history import ChatHistory, ChatMessage
+from app.db.postgres.models.chat_history import ChatHistory, ChatMessage, ChatMessageBlock
 from app.providers.types import ProviderRoute, ProviderUsageMetadata
 from app.schemas.chat import ChatCompletionRequest
+from app.services.chat.completions.blocks import CompletedProviderBlock
 from app.services.chat.errors import ChatHistoryNotFoundError
 from app.services.chat.histories.service import load_user_history
 from app.services.chat.histories.titles import build_title_from_prompt
@@ -190,6 +191,43 @@ def persist_chat_turn_success(
     return True
 
 
+def persist_chat_message_block(
+    db: Session,
+    *,
+    operation: OperationHandle,
+    assistant_message_id: str,
+    block: CompletedProviderBlock,
+) -> bool:
+    now = utc_now()
+    assert_operation_current(db, operation)
+    assistant_message = db.get(ChatMessage, assistant_message_id)
+    if assistant_message is None or assistant_message.status != "streaming":
+        return False
+
+    next_sequence = _get_next_message_block_sequence(
+        db,
+        assistant_message_id=assistant_message_id,
+    )
+    db.add(
+        ChatMessageBlock(
+            id=str(uuid4()),
+            chat_message_id=assistant_message_id,
+            sequence=next_sequence,
+            type=block.type,
+            provider_block_id=block.provider_block_id,
+            text=block.text,
+            block_metadata=block.metadata,
+            raw_events=block.raw_events,
+            started_at=block.started_at,
+            completed_at=block.completed_at,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    db.commit()
+    return True
+
+
 def persist_chat_turn_provider_event(
     db: Session,
     *,
@@ -280,6 +318,17 @@ def _get_next_message_sequence(
 ) -> int:
     current_max = db.execute(
         select(func.max(ChatMessage.sequence)).where(ChatMessage.chat_history_id == history_id)
+    ).scalar_one_or_none()
+    return int(current_max or 0) + 1
+
+
+def _get_next_message_block_sequence(
+    db: Session,
+    *,
+    assistant_message_id: str,
+) -> int:
+    current_max = db.execute(
+        select(func.max(ChatMessageBlock.sequence)).where(ChatMessageBlock.chat_message_id == assistant_message_id)
     ).scalar_one_or_none()
     return int(current_max or 0) + 1
 

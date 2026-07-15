@@ -109,6 +109,20 @@ class ChatStreamToolUsageBlock(BaseModel):
     raw: object
 
 
+class ChatHistoryMessageBlockView(BaseModel):
+    id: str
+    type: Literal["thinking", "tool"]
+    sequence: int
+    block_id: str
+    text: str
+    metadata: dict[str, object]
+    raw_events: list[object]
+    started_at: datetime
+    completed_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
 class ChatStreamDoneEvent(BaseModel):
     model: str | None = None
     provider: str | None = None
@@ -196,6 +210,10 @@ class ChatHistoryMessageView(BaseModel):
     result_code: str | None = None
     result_message: str | None = None
     error_detail: str | None = None
+    blocks: list[ChatHistoryMessageBlockView]
+    block_activity_started_at: datetime | None = None
+    block_activity_completed_at: datetime | None = None
+    block_activity_duration_ms: int | None = None
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

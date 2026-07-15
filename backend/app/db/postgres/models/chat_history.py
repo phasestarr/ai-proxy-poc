@@ -249,6 +249,50 @@ class ChatMessage(Base):
         cascade="all, delete-orphan",
         order_by="ChatMessageAttachment.attachment_index",
     )
+    blocks: Mapped[list["ChatMessageBlock"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+        order_by="ChatMessageBlock.sequence",
+    )
+
+
+class ChatMessageBlock(Base):
+    __tablename__ = "chat_message_blocks"
+    __table_args__ = (
+        CheckConstraint("type IN ('thinking', 'tool')", name="ck_chat_message_blocks_type"),
+        UniqueConstraint("chat_message_id", "sequence", name="uq_chat_message_blocks_message_sequence"),
+        UniqueConstraint(
+            "chat_message_id",
+            "type",
+            "provider_block_id",
+            name="uq_chat_message_blocks_message_provider_block",
+        ),
+        Index("ix_chat_message_blocks_message_sequence", "chat_message_id", "sequence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    chat_message_id: Mapped[str] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sequence: Mapped[int] = mapped_column(nullable=False)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_block_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    block_metadata: Mapped[dict[str, object]] = mapped_column("metadata", JSON, nullable=False, default=dict)
+    raw_events: Mapped[list[object]] = mapped_column(JSON, nullable=False, default=list)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    message: Mapped["ChatMessage"] = relationship(back_populates="blocks")
 
 
 class ChatHistoryMemory(Base):

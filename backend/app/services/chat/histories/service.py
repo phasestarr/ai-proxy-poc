@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.postgres.models.chat_attachment import ChatHistoryFile
 from app.db.postgres.models.chat_history import ChatHistory, ChatMessage
@@ -71,6 +71,7 @@ def get_chat_history(
 
     messages = db.execute(
         select(ChatMessage)
+        .options(selectinload(ChatMessage.blocks))
         .where(ChatMessage.chat_history_id == history.id)
         .order_by(ChatMessage.sequence.asc())
     ).scalars().all()

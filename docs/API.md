@@ -46,6 +46,7 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 - `GET /api/v1/chat/histories/{history_id}`
   - authenticated
   - returns one history plus persisted messages
+  - assistant messages include backend-merged completed thinking/tool blocks from `chat_message_blocks`
 - `PATCH /api/v1/chat/histories/{history_id}/title`
   - authenticated
   - updates one owned history title
@@ -170,8 +171,10 @@ Important:
 Notes:
 - thinking blocks never contain signatures, encrypted reasoning, tool arguments, or answer text
 - tool blocks are classified structurally and keep provider-native JSON instead of mapping each tool schema
-- related tool block events share `block_id`, so clients can merge multiple raw provider pieces into one visible tool usage block
-- block events are live-rendering only; the current persistence model stores the final assistant answer, not block history
+- related tool block events share `block_id`
+- live `block` events are still sent as SSE chunks for first-time rendering
+- the backend also merges related block chunks by `block_id` and persists one `chat_message_blocks` row only when that block reaches `operation="end"`
+- persisted block rows are not replayed over the active SSE stream; they are returned by `GET /api/v1/chat/histories/{history_id}`
 - `status_code` values are provider-specific progress codes
 - internal proxy status codes may also appear, including:
   - `context_input_tokens_estimated`
@@ -217,9 +220,33 @@ Persisted assistant failures keep:
 - `error_detail`
 - `provider`
 - `model_id`
+- any completed thinking/tool blocks that reached `operation="end"` before the failure
 
 Usage and pricing are not stored on `chat_messages`; use `usage_ledger_events`
 for spend and token audit.
+
+## Persisted Message Blocks
+
+`GET /api/v1/chat/histories/{history_id}` returns `blocks` on every message.
+User messages normally have an empty list. Assistant messages contain completed
+thinking/tool blocks in backend order.
+
+Each block includes:
+
+- `type`: `thinking` or `tool`
+- `sequence`
+- `block_id`: provider-neutral stable block identity from the live stream
+- `text`: merged readable thinking text for thinking blocks, empty for tool blocks
+- `metadata`: latest provider-neutral block metadata
+- `raw_events`: merged provider-native raw events for tool blocks, empty for thinking blocks
+- `started_at`
+- `completed_at`
+
+Assistant messages also include:
+
+- `block_activity_started_at`: earliest persisted block start time
+- `block_activity_completed_at`: latest persisted block completion time
+- `block_activity_duration_ms`: elapsed persisted block activity duration
 
 ## Public Model Surface
 

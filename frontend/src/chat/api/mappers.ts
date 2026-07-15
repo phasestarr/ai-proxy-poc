@@ -1,6 +1,7 @@
 import type {
   ChatAttachmentLimitsApiPayload,
   ChatHistoryFileApiPayload,
+  ChatHistoryMessageBlockApiPayload,
   ChatHistoryMessageApiPayload,
   ChatHistorySummaryApiPayload,
   ChatStreamDoneApiEvent,
@@ -11,6 +12,7 @@ import type {
 import type {
   ChatAttachmentLimits,
   ChatHistoryFile,
+  ChatHistoryMessageBlock,
   ChatHistoryMessage,
   ChatHistorySummary,
   ChatStreamBlock,
@@ -111,7 +113,27 @@ export function mapHistoryMessage(payload: ChatHistoryMessageApiPayload): ChatHi
     resultCode: payload.result_code ?? null,
     resultMessage: payload.result_message ?? null,
     errorDetail: payload.error_detail ?? null,
+    blocks: payload.blocks.map(mapHistoryMessageBlock),
+    blockActivityStartedAt: payload.block_activity_started_at,
+    blockActivityCompletedAt: payload.block_activity_completed_at,
+    blockActivityDurationMs: payload.block_activity_duration_ms,
     completedAt: payload.completed_at ?? null,
+    createdAt: payload.created_at,
+    updatedAt: payload.updated_at,
+  };
+}
+
+export function mapHistoryMessageBlock(payload: ChatHistoryMessageBlockApiPayload): ChatHistoryMessageBlock {
+  return {
+    id: payload.id,
+    type: payload.type,
+    sequence: payload.sequence,
+    blockId: payload.block_id,
+    text: payload.text,
+    metadata: payload.metadata,
+    rawEvents: payload.raw_events,
+    startedAt: payload.started_at,
+    completedAt: payload.completed_at,
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
   };

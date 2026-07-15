@@ -49,6 +49,20 @@ export type ChatToolUsageBlock = {
 
 export type ChatStreamBlock = ChatThinkingBlock | ChatToolUsageBlock;
 
+export type ChatHistoryMessageBlock = {
+  id: string;
+  type: "thinking" | "tool";
+  sequence: number;
+  blockId: string;
+  text: string;
+  metadata: Record<string, unknown>;
+  rawEvents: unknown[];
+  startedAt: string;
+  completedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ChatHistorySummary = {
   id: string;
   title: string;
@@ -92,6 +106,10 @@ export type ChatHistoryMessage = {
   resultCode: string | null;
   resultMessage: string | null;
   errorDetail: string | null;
+  blocks: ChatHistoryMessageBlock[];
+  blockActivityStartedAt: string | null;
+  blockActivityCompletedAt: string | null;
+  blockActivityDurationMs: number | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;

@@ -36,6 +36,20 @@ export type ChatStreamToolUsageBlockApiEvent = {
 
 export type ChatStreamBlockApiEvent = ChatStreamThinkingBlockApiEvent | ChatStreamToolUsageBlockApiEvent;
 
+export type ChatHistoryMessageBlockApiPayload = {
+  id: string;
+  type: "thinking" | "tool";
+  sequence: number;
+  block_id: string;
+  text: string;
+  metadata: Record<string, unknown>;
+  raw_events: unknown[];
+  started_at: string;
+  completed_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ChatStreamDoneApiEvent = {
   model?: string | null;
   provider?: string | null;
@@ -99,6 +113,10 @@ export type ChatHistoryMessageApiPayload = {
   result_code?: string | null;
   result_message?: string | null;
   error_detail?: string | null;
+  blocks: ChatHistoryMessageBlockApiPayload[];
+  block_activity_started_at: string | null;
+  block_activity_completed_at: string | null;
+  block_activity_duration_ms: number | null;
   completed_at?: string | null;
   created_at: string;
   updated_at: string;
