@@ -57,7 +57,7 @@ export default function LoginPage({
               </button>
             </div>
 
-            <p className="login-hint">ver. 0.7.2-pre-Procyon</p>
+            <p className="login-hint">ver. 1.0.0-stable-Zephyr</p>
             {authError ? <p className="login-error">{authError}</p> : null}
           </section>
         )}

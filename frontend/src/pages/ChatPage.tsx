@@ -57,7 +57,7 @@ type QueuedUpload = {
   file: File;
 };
 
-const APP_NAME = "ver. 0.7.2-pre-Procyon";
+const APP_NAME = "ver. 1.0.0-stable-Zephyr";
 const PASTED_ATTACHMENT_MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
 
 export default function ChatPage({ session, onLogout, onSessionExpired, onSessionConflict }: ChatPageProps) {
