@@ -171,7 +171,7 @@ Not env-driven:
 - `OPENAI_API_KEY`
   - required to use OpenAI
 - `OPENAI_VECTOR_STORE_IDS`
-  - optional blank value unless using retrieval
+  - optional blank value unless using `file_search`
 - `OPENAI_FILE_SEARCH_MAX_NUM_RESULTS`
 - `OPENAI_FILE_SEARCH_SCORE_THRESHOLD`
   - optional blank value
@@ -225,4 +225,4 @@ Not env-driven:
 - Optional blank env values must still be present as blank assignments
 - Provider model catalogs are code-defined, not env-selected
 - Provider output caps are preset-defined in provider config files
-- `VERTEX_AI_RAG_CORPORA` and `OPENAI_VECTOR_STORE_IDS` are the retrieval-related envs
+- `VERTEX_AI_RAG_CORPORA` and `OPENAI_VECTOR_STORE_IDS` configure Vertex retrieval and OpenAI file search respectively

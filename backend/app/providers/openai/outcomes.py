@@ -37,7 +37,8 @@ OPENAI_STATUS_MESSAGES: dict[str, str] = {
     "openai_reasoning": "OpenAI is thinking.",
     "openai_web_search": "OpenAI is searching the web.",
     "openai_file_search": "OpenAI is searching files.",
-    "openai_code_execution": "OpenAI is running code.",
+    "openai_code_interpreter": "OpenAI is running code.",
+    "openai_shell": "OpenAI is running a shell command.",
     "openai_image_generation": "OpenAI is generating an image.",
     "openai_mcp_call": "OpenAI is calling a tool server.",
 }

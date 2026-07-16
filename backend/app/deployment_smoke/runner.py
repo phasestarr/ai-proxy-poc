@@ -20,7 +20,7 @@ from app.providers.vertex.provider import VERTEX_PROVIDER_ID, list_vertex_models
 from app.schemas.chat import ChatMessage
 
 PROVIDERS = (ANTHROPIC_PROVIDER_ID, OPENAI_PROVIDER_ID, VERTEX_PROVIDER_ID)
-PREFERRED_TEXT_SMOKE_MODELS = {
+TEXT_SMOKE_HELPER_MODELS = {
     ANTHROPIC_PROVIDER_ID: ANTHROPIC_ATTACHMENT_COUNT_MODEL_ID,
     OPENAI_PROVIDER_ID: OPENAI_ATTACHMENT_COUNT_MODEL_ID,
     VERTEX_PROVIDER_ID: VERTEX_ATTACHMENT_COUNT_MODEL_ID,
@@ -56,15 +56,15 @@ def select_provider_models() -> dict[str, ProviderModelDefinition]:
     selected: dict[str, ProviderModelDefinition] = {}
     for provider in PROVIDERS:
         models = list(list_models_for_provider(provider))
-        preferred_model_id = PREFERRED_TEXT_SMOKE_MODELS[provider]
+        helper_model_id = TEXT_SMOKE_HELPER_MODELS[provider]
         match = next(
-            (model for model in models if model.public_id == preferred_model_id and model.available),
+            (model for model in models if model.public_id == helper_model_id and model.available),
             None,
         )
         if match is None:
-            match = next((model for model in models if model.available), None)
-        if match is None:
-            raise RuntimeError(f"no available smoke model for provider {provider}")
+            raise RuntimeError(
+                f"deployment smoke helper model {helper_model_id} is not available for provider {provider}"
+            )
         selected[provider] = match
     return selected
 

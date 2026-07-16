@@ -382,7 +382,9 @@ def _tool_status_code(item_type: str) -> str | None:
     if item_type == "file_search_call":
         return "openai_file_search"
     if item_type == "code_interpreter_call":
-        return "openai_code_execution"
+        return "openai_code_interpreter"
+    if item_type == "shell_call":
+        return "openai_shell"
     if item_type == "image_generation_call":
         return "openai_image_generation"
     if item_type == "mcp_call":

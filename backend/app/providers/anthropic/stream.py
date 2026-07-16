@@ -337,6 +337,8 @@ def _extract_selected_tool_ids(payload: dict[str, object]) -> tuple[str, ...]:
         tool_type = str(tool.get("type") or "").strip()
         if tool_name == "web_search" or tool_type.startswith("web_search"):
             selected_tool_ids.append("web_search")
+        elif tool_name == "web_fetch" or tool_type.startswith("web_fetch"):
+            selected_tool_ids.append("web_fetch")
         elif tool_name == "code_execution" or tool_type.startswith("code_execution"):
             selected_tool_ids.append("code_execution")
     return tuple(selected_tool_ids)

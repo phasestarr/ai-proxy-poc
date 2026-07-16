@@ -9,9 +9,9 @@ COMPRESSION_SYSTEM_INSTRUCTION = (
     "code context, and action items.\n"
     "Do not add new facts. Do not speculate. Do not rewrite into a response to the user.\n"
     "Favor dense factual notes over prose.\n"
-    "Target roughly 5,000 to 10,000 tokens worth of content. The input is roughly 50,000 tokens, so it's 10%~20% of the input size.\n"
+    "Target roughly 5,000 to 10,000 tokens worth of content. The input is roughly 100,000 tokens, so it's 5%~10% of the input size.\n"
     "You may copy full original sentences if you think it's important."
-    "Remember, 5,000 to 10,000 token is larger than you think. You don't have to drop too many information to compact it."
+    "Remember, 5,000 to 10,000 token is larger than you think. Try to write as long as you can. You don't have to drop too many information to compact it."
 )
 
 

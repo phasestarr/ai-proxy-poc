@@ -345,9 +345,9 @@ Provider package shape:
 
 Vertex:
 - public models:
+  - `gemini-3.5-flash`
   - `gemini-3.1-pro-preview`
   - `gemini-3-flash-preview`
-  - `gemini-3.1-flash-lite-preview`
 - preset config:
   - `none`
   - `low`
@@ -360,9 +360,10 @@ Vertex:
 
 OpenAI:
 - public models:
-  - `gpt-5.4`
+  - `gpt-5.6-sol`
+  - `gpt-5.6-terra`
+  - `gpt-5.6-luna`
   - `gpt-5.4-mini`
-  - `gpt-5.4-nano`
 - preset config:
   - `none`
   - `low`
@@ -378,8 +379,8 @@ OpenAI:
 
 Anthropic:
 - public models:
-  - `claude-opus-4-7`
-  - `claude-sonnet-4-6`
+  - `claude-opus-4-8`
+  - `claude-sonnet-5`
   - `claude-haiku-4-5`
 - preset config:
   - `none`

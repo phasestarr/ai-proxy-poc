@@ -17,10 +17,10 @@ from app.providers.vertex.tools import build_vertex_hosted_tools
 # Gemini 3 thinking shape:
 # - `thinking_config.thinking_level`: `MINIMAL` | `LOW` | `MEDIUM` | `HIGH`
 # - `thinking_config.include_thoughts`: `True` | `False`
-# - Gemini 3 Pro currently allows only `LOW` and `HIGH`.
+# - Requested Gemini 3 models accept the levels assigned below.
 # - `maxOutputTokens`: generated output cap. Keep this output-only; don't manage thinking separately.
 VERTEX_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
-    "none": {
+    "minimal": {
         "thinking_config": {
             "thinking_level": "MINIMAL",
             "include_thoughts": False,
@@ -47,21 +47,21 @@ VERTEX_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
 }
 
 # Change only the preset string on the right.
-# - `gemini-3.1-pro-preview`: current Gemini 3 Pro docs allow `LOW` or `HIGH` only.
-# - `gemini-3-flash-preview`: `normal` maps to `MEDIUM`.
-# - `gemini-3.1-flash-lite-preview`: `low` is the default here.
+# - Gemini 3.5 Flash supports: `minimal` | `low` | `normal` | `high`.
+# - Gemini 3.1 Pro Preview supports: `low` | `normal` | `high`.
+# - Gemini 3 Flash Preview supports: `none` (MINIMAL) | `low` | `normal` | `high`.
 VERTEX_MODEL_RESPONSE_PRESET: dict[str, str] = {
+    "gemini-3.5-flash": "high",
     "gemini-3.1-pro-preview": "high",
-    "gemini-3-flash-preview": "normal",
-    "gemini-3.1-flash-lite-preview": "low",
+    "gemini-3-flash-preview": "high",
 }
 
-# Provider max output caps from Vertex AI model docs (checked 2026-04-28).
+# Provider max output caps from Vertex AI model docs (checked 2026-07-16).
 # To clamp lower later, change only the numeric value on the right.
 VERTEX_MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "gemini-3.5-flash": 65_535,
     "gemini-3.1-pro-preview": 65_536,
     "gemini-3-flash-preview": 65_536,
-    "gemini-3.1-flash-lite-preview": 65_535,
 }
 
 
@@ -107,8 +107,8 @@ def _apply_vertex_response_preset(
     if preset_name not in VERTEX_RESPONSE_PRESETS:
         raise ValueError(f"unknown vertex response preset: {preset_name}")
 
-    if model == "gemini-3.1-pro-preview" and preset_name not in {"low", "high"}:
-        raise ValueError("gemini-3.1-pro-preview must use vertex preset 'low' or 'high'")
+    if model == "gemini-3.1-pro-preview" and preset_name not in {"low", "normal", "high"}:
+        raise ValueError("gemini-3.1-pro-preview must use vertex preset 'low', 'normal', or 'high'")
 
     request_patch = deepcopy(VERTEX_RESPONSE_PRESETS[preset_name])
     try:

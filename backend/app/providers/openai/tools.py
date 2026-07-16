@@ -13,23 +13,28 @@ from collections.abc import Iterable
 from copy import deepcopy
 
 from app.config.providers.openai import openai_settings
-from app.providers.types import ProviderToolDefinition
+from app.providers.types import ProviderToolDefinition, provider_identifier_display_name
 
 # `models.py` decides what model to use what tool.
 OPENAI_TOOL_DEFINITIONS_BY_ID: dict[str, ProviderToolDefinition] = {
     "web_search": ProviderToolDefinition(
         public_id="web_search",
-        display_name="Web Search",
+        display_name=provider_identifier_display_name("web_search"),
         available=True,
     ),
-    "retrieval": ProviderToolDefinition(
-        public_id="retrieval",
-        display_name="File Search",
+    "file_search": ProviderToolDefinition(
+        public_id="file_search",
+        display_name=provider_identifier_display_name("file_search"),
         available=True,
     ),
-    "code_execution": ProviderToolDefinition(
-        public_id="code_execution",
-        display_name="Code Interpreter",
+    "code_interpreter": ProviderToolDefinition(
+        public_id="code_interpreter",
+        display_name=provider_identifier_display_name("code_interpreter"),
+        available=True,
+    ),
+    "shell": ProviderToolDefinition(
+        public_id="shell",
+        display_name=provider_identifier_display_name("shell"),
         available=True,
     ),
 }
@@ -68,8 +73,9 @@ def build_openai_hosted_tools(
     configured_tools: list[dict[str, object]] = []
     tool_builders: dict[str, object] = {
         "web_search": _build_openai_web_search_tool,
-        "retrieval": _build_openai_file_search_tool,
-        "code_execution": _build_openai_code_interpreter_tool,
+        "file_search": _build_openai_file_search_tool,
+        "code_interpreter": _build_openai_code_interpreter_tool,
+        "shell": _build_openai_shell_tool,
     }
     normalized_tool_options = deepcopy(_OPENAI_TOOL_OPTION_DEFAULTS)
 
@@ -163,9 +169,17 @@ def _build_openai_code_interpreter_tool(tool_options: dict[str, object]) -> dict
     return tool_payload
 
 
+def _build_openai_shell_tool(tool_options: dict[str, object]) -> dict[str, object]:
+    del tool_options
+    return {
+        "type": "shell",
+        "environment": {"type": "container_auto"},
+    }
+
+
 def _ensure_openai_file_search_tool_ready() -> None:
     if not openai_settings.vector_store_ids:
-        raise OpenAIToolConfigurationError("openai retrieval tool is selected but no vector store ids are configured")
+        raise OpenAIToolConfigurationError("openai file_search tool is selected but no vector store ids are configured")
 
     if any(not vector_store_id.strip() for vector_store_id in openai_settings.vector_store_ids):
         raise OpenAIToolConfigurationError("openai vector store ids must not be blank")

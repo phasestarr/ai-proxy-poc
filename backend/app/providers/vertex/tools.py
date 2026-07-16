@@ -16,28 +16,33 @@ from collections.abc import Iterable
 from copy import deepcopy
 
 from app.config.providers.vertex import vertex_settings
-from app.providers.types import ProviderToolDefinition
+from app.providers.types import ProviderToolDefinition, provider_identifier_display_name
 
 # `models.py` decides what model to use what tool.
 VERTEX_TOOL_DEFINITIONS_BY_ID: dict[str, ProviderToolDefinition] = {
-    "web_search": ProviderToolDefinition(
-        public_id="web_search",
-        display_name="Google Search",
+    "google_search": ProviderToolDefinition(
+        public_id="google_search",
+        display_name=provider_identifier_display_name("google_search"),
         available=True,
     ),
     "retrieval": ProviderToolDefinition(
         public_id="retrieval",
-        display_name="Vertex RAG",
+        display_name=provider_identifier_display_name("retrieval"),
         available=True,
     ),
     "code_execution": ProviderToolDefinition(
         public_id="code_execution",
-        display_name="Code Execution",
+        display_name=provider_identifier_display_name("code_execution"),
         available=True,
     ),
     "url_context": ProviderToolDefinition(
         public_id="url_context",
-        display_name="URL Context",
+        display_name=provider_identifier_display_name("url_context"),
+        available=True,
+    ),
+    "google_maps": ProviderToolDefinition(
+        public_id="google_maps",
+        display_name=provider_identifier_display_name("google_maps"),
         available=True,
     ),
 }
@@ -62,10 +67,11 @@ def build_vertex_hosted_tools(
 ) -> list[object]:
     configured_tools: list[object] = []
     tool_builders: dict[str, object] = {
-        "web_search": _build_vertex_web_search_tool,
+        "google_search": _build_vertex_google_search_tool,
         "retrieval": _build_vertex_retrieval_tool,
         "code_execution": _build_vertex_code_execution_tool,
         "url_context": _build_vertex_url_context_tool,
+        "google_maps": _build_vertex_google_maps_tool,
     }
     normalized_tool_options = deepcopy(_VERTEX_TOOL_OPTION_DEFAULTS)
 
@@ -91,7 +97,7 @@ def get_vertex_tool_definitions(*tool_ids: str) -> tuple[ProviderToolDefinition,
     )
 
 
-def _build_vertex_web_search_tool(*, types_module=None, tool_options: dict[str, object]) -> object:
+def _build_vertex_google_search_tool(*, types_module=None, tool_options: dict[str, object]) -> object:
     del tool_options
     tool_payload = {
         "google_search": {},
@@ -104,7 +110,7 @@ def _build_vertex_web_search_tool(*, types_module=None, tool_options: dict[str, 
     try:
         return tool_type(**tool_payload)
     except Exception as exc:
-        raise VertexToolConfigurationError("vertex web search tool payload could not be constructed") from exc
+        raise VertexToolConfigurationError("vertex google_search tool payload could not be constructed") from exc
 
 
 def _build_vertex_retrieval_tool(*, types_module=None, tool_options: dict[str, object]) -> object:
@@ -175,6 +181,22 @@ def _build_vertex_url_context_tool(*, types_module=None, tool_options: dict[str,
         return tool_type(**tool_payload)
     except Exception as exc:
         raise VertexToolConfigurationError("vertex url context tool payload could not be constructed") from exc
+
+
+def _build_vertex_google_maps_tool(*, types_module=None, tool_options: dict[str, object]) -> object:
+    del tool_options
+    tool_payload = {
+        "google_maps": {},
+    }
+
+    tool_type = getattr(types_module, "Tool", None) if types_module is not None else None
+    if tool_type is None:
+        return tool_payload
+
+    try:
+        return tool_type(**tool_payload)
+    except Exception as exc:
+        raise VertexToolConfigurationError("vertex google_maps tool payload could not be constructed") from exc
 
 
 def _ensure_vertex_retrieval_tool_ready() -> None:

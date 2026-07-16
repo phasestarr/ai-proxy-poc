@@ -253,35 +253,34 @@ Assistant messages also include:
 Current public model ids:
 
 - Vertex:
+  - `gemini-3.5-flash`
   - `gemini-3.1-pro-preview`
   - `gemini-3-flash-preview`
-  - `gemini-3.1-flash-lite-preview`
 - OpenAI:
-  - `gpt-5.4`
+  - `gpt-5.6-sol`
+  - `gpt-5.6-terra`
+  - `gpt-5.6-luna`
   - `gpt-5.4-mini`
-  - `gpt-5.4-nano`
 - Anthropic:
-  - `claude-opus-4-7`
-  - `claude-sonnet-4-6`
+  - `claude-opus-4-8`
+  - `claude-sonnet-5`
   - `claude-haiku-4-5`
 
 Notes:
-- `claude-opus-4-7` is intentionally exposed as unavailable
+- `claude-opus-4-8` and `gpt-5.6-sol` are intentionally exposed as unavailable
 - final availability and tool exposure come from backend provider model definitions, not the frontend
 
 ## Public Tool Surface
 
-Current backend-owned public tool ids:
+Current provider-native public tool ids:
 
-- `web_search`
-- `retrieval`
-- `code_execution`
-- `url_context`
+- Vertex: `google_search`, `url_context`, `code_execution`, `google_maps`, `retrieval`
+- OpenAI: `web_search`, `file_search`, `code_interpreter`, `shell`
+- Anthropic: `web_search`, `web_fetch`, `code_execution`
 
 Provider notes:
-- Vertex can expose all four tool ids
-- OpenAI exposes `web_search`, `retrieval`, and `code_execution`
-- Anthropic exposes `web_search` and `code_execution`
+- Vertex `retrieval` is Vertex RAG Engine backed by `retrieval.vertex_rag_store`
+- tool display names are formatted from provider ids, for example `google_search` becomes `Google Search`
 - actual tool availability is model-specific and must be read from `GET /api/v1/models`
 
 Internal generic-helper defaults:

@@ -46,8 +46,11 @@ class ProviderUsageMetadata:
     reasoning_token_count: int | None = None
     tool_result_prompt_token_count: int | None = None
     web_search_request_count: int | None = None
+    web_fetch_request_count: int | None = None
     file_search_request_count: int | None = None
     code_execution_request_count: int | None = None
+    code_interpreter_request_count: int | None = None
+    shell_request_count: int | None = None
     provider_raw_usage: dict[str, object] | None = None
     price_estimate: ProviderPriceEstimate | None = None
 
@@ -100,6 +103,16 @@ class ProviderToolDefinition:
     public_id: str
     display_name: str
     available: bool = True
+
+
+def provider_identifier_display_name(identifier: str) -> str:
+    """Format a provider-owned snake_case identifier for catalog display."""
+    acronyms = {"api": "API", "url": "URL"}
+    return " ".join(
+        acronyms.get(part.lower(), part.capitalize())
+        for part in identifier.split("_")
+        if part
+    )
 
 
 @dataclass(slots=True, frozen=True)

@@ -13,22 +13,28 @@ from collections.abc import Iterable
 from copy import deepcopy
 
 from app.config.providers.anthropic import anthropic_settings
-from app.providers.types import ProviderToolDefinition
+from app.providers.types import ProviderToolDefinition, provider_identifier_display_name
 
 ANTHROPIC_WEB_SEARCH_TOOL_VERSION = "web_search_20260318"
+ANTHROPIC_WEB_FETCH_TOOL_VERSION = "web_fetch_20260318"
 ANTHROPIC_CODE_EXECUTION_TOOL_VERSION = "code_execution_20260521"
-_ANTHROPIC_DIRECT_WEB_SEARCH_MODELS = {"claude-haiku-4-5"}
+_ANTHROPIC_DIRECT_WEB_TOOL_MODELS = {"claude-haiku-4-5"}
 
 # `models.py` decides what model to use what tool.
 ANTHROPIC_TOOL_DEFINITIONS_BY_ID: dict[str, ProviderToolDefinition] = {
     "web_search": ProviderToolDefinition(
         public_id="web_search",
-        display_name="Web Search",
+        display_name=provider_identifier_display_name("web_search"),
+        available=True,
+    ),
+    "web_fetch": ProviderToolDefinition(
+        public_id="web_fetch",
+        display_name=provider_identifier_display_name("web_fetch"),
         available=True,
     ),
     "code_execution": ProviderToolDefinition(
         public_id="code_execution",
-        display_name="Code Execution",
+        display_name=provider_identifier_display_name("code_execution"),
         available=True,
     ),
 }
@@ -40,6 +46,11 @@ _ANTHROPIC_TOOL_OPTION_DEFAULTS: dict[str, object] = {
         "allowed_domains": {"enabled": False, "value": []},
         "blocked_domains": {"enabled": False, "value": []},
         "max_uses": {"enabled": False, "value": 5},
+    },
+    "web_fetch": {
+        "max_uses": {"enabled": True, "value": 5},
+        "max_content_tokens": {"enabled": True, "value": 50_000},
+        "citations": {"enabled": True, "value": {"enabled": True}},
     },
 }
 
@@ -56,6 +67,7 @@ def build_anthropic_hosted_tools(
     configured_tools: list[dict[str, object]] = []
     tool_builders: dict[str, object] = {
         "web_search": _build_anthropic_web_search_tool,
+        "web_fetch": _build_anthropic_web_fetch_tool,
         "code_execution": _build_anthropic_code_execution_tool,
     }
     normalized_tool_options = deepcopy(_ANTHROPIC_TOOL_OPTION_DEFAULTS)
@@ -92,7 +104,7 @@ def _build_anthropic_web_search_tool(tool_options: dict[str, object], *, model: 
             fallback=anthropic_settings.web_search_max_uses,
         ),
     }
-    if model in _ANTHROPIC_DIRECT_WEB_SEARCH_MODELS:
+    if model in _ANTHROPIC_DIRECT_WEB_TOOL_MODELS:
         tool_payload["allowed_callers"] = ["direct"]
 
     allowed_domains = _get_enabled_scalar_value(
@@ -112,6 +124,21 @@ def _build_anthropic_web_search_tool(tool_options: dict[str, object], *, model: 
     if blocked_domains:
         tool_payload["blocked_domains"] = blocked_domains
 
+    return tool_payload
+
+
+def _build_anthropic_web_fetch_tool(tool_options: dict[str, object], *, model: str | None = None) -> dict[str, object]:
+    web_fetch_options = tool_options.get("web_fetch", {})
+    tool_payload: dict[str, object] = {
+        "type": ANTHROPIC_WEB_FETCH_TOOL_VERSION,
+        "name": "web_fetch",
+    }
+    for option_name in ("max_uses", "max_content_tokens", "citations"):
+        option_value = _get_enabled_scalar_value(web_fetch_options.get(option_name))
+        if option_value is not None:
+            tool_payload[option_name] = option_value
+    if model in _ANTHROPIC_DIRECT_WEB_TOOL_MODELS:
+        tool_payload["allowed_callers"] = ["direct"]
     return tool_payload
 
 

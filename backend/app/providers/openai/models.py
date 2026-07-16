@@ -32,36 +32,51 @@ class OpenAIModelRuntimeDefinition:
 
 _OPENAI_MODELS: tuple[OpenAIModelRuntimeDefinition, ...] = (
     OpenAIModelRuntimeDefinition(
-        public_id="gpt-5.4",
-        provider_model="gpt-5.4",
-        display_name="GPT 5.4",
+        public_id="gpt-5.6-sol",
+        provider_model="gpt-5.6-sol",
+        display_name="GPT-5.6 Sol",
+        available=False,
+        supported_tools=get_openai_tool_definitions(
+            "web_search",
+            "code_interpreter",
+            "shell",
+            "file_search",
+        ),
+    ),
+    OpenAIModelRuntimeDefinition(
+        public_id="gpt-5.6-terra",
+        provider_model="gpt-5.6-terra",
+        display_name="GPT-5.6 Terra",
         available=True,
         supported_tools=get_openai_tool_definitions(
             "web_search",
-            "retrieval",
-            "code_execution",
+            "code_interpreter",
+            "shell",
+            "file_search",
+        ),
+    ),
+    OpenAIModelRuntimeDefinition(
+        public_id="gpt-5.6-luna",
+        provider_model="gpt-5.6-luna",
+        display_name="GPT-5.6 Luna",
+        available=True,
+        supported_tools=get_openai_tool_definitions(
+            "web_search",
+            "code_interpreter",
+            "shell",
+            "file_search",
         ),
     ),
     OpenAIModelRuntimeDefinition(
         public_id="gpt-5.4-mini",
         provider_model="gpt-5.4-mini",
-        display_name="GPT 5.4 Mini",
+        display_name="GPT-5.4 Mini",
         available=True,
         supported_tools=get_openai_tool_definitions(
             "web_search",
-            "retrieval",
-            "code_execution",
-        ),
-    ),
-    OpenAIModelRuntimeDefinition(
-        public_id="gpt-5.4-nano",
-        provider_model="gpt-5.4-nano",
-        display_name="GPT 5.4 Nano",
-        available=True,
-        supported_tools=get_openai_tool_definitions(
-            "web_search",
-            "retrieval",
-            "code_execution",
+            "code_interpreter",
+            "shell",
+            "file_search",
         ),
     ),
 )

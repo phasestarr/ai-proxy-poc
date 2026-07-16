@@ -33,22 +33,24 @@ class AnthropicModelRuntimeDefinition:
 
 _ANTHROPIC_MODELS: tuple[AnthropicModelRuntimeDefinition, ...] = (
     AnthropicModelRuntimeDefinition(
-        public_id="claude-opus-4-7",
-        provider_model="claude-opus-4-7",
-        display_name="Claude Opus 4.7",
+        public_id="claude-opus-4-8",
+        provider_model="claude-opus-4-8",
+        display_name="Claude Opus 4.8",
         available=False,
         supported_tools=get_anthropic_tool_definitions(
             "web_search",
+            "web_fetch",
             "code_execution",
         ),
     ),
     AnthropicModelRuntimeDefinition(
-        public_id="claude-sonnet-4-6",
-        provider_model="claude-sonnet-4-6",
-        display_name="Claude Sonnet 4.6",
+        public_id="claude-sonnet-5",
+        provider_model="claude-sonnet-5",
+        display_name="Claude Sonnet 5",
         available=True,
         supported_tools=get_anthropic_tool_definitions(
             "web_search",
+            "web_fetch",
             "code_execution",
         ),
     ),
@@ -59,6 +61,7 @@ _ANTHROPIC_MODELS: tuple[AnthropicModelRuntimeDefinition, ...] = (
         available=True,
         supported_tools=get_anthropic_tool_definitions(
             "web_search",
+            "web_fetch",
             "code_execution",
         ),
     ),

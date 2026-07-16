@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from app.providers.types import ProviderPriceEstimate, ProviderUsageMetadata
 
-VERTEX_PRICING_VERSION = "vertex-2026-05-11"
+VERTEX_PRICING_VERSION = "vertex-2026-07-16"
 _VERTEX_GOOGLE_SEARCH_COST_PER_1K_QUERIES = 14.0
 _VERTEX_RETRIEVAL_COST_PER_1K_PROMPTS = 2.5
 
@@ -21,6 +21,14 @@ class _VertexPriceCard:
 
 
 _VERTEX_PRICE_CARDS: dict[str, _VertexPriceCard] = {
+    "gemini-3.5-flash": _VertexPriceCard(
+        input_per_million_usd=1.5,
+        input_per_million_long_context_usd=1.5,
+        cached_input_per_million_usd=0.15,
+        cached_input_per_million_long_context_usd=0.15,
+        output_per_million_usd=9.0,
+        output_per_million_long_context_usd=9.0,
+    ),
     "gemini-3.1-pro-preview": _VertexPriceCard(
         input_per_million_usd=2.0,
         input_per_million_long_context_usd=4.0,
@@ -36,14 +44,6 @@ _VERTEX_PRICE_CARDS: dict[str, _VertexPriceCard] = {
         cached_input_per_million_long_context_usd=0.05,
         output_per_million_usd=3.0,
         output_per_million_long_context_usd=3.0,
-    ),
-    "gemini-3.1-flash-lite-preview": _VertexPriceCard(
-        input_per_million_usd=0.25,
-        input_per_million_long_context_usd=0.5,
-        cached_input_per_million_usd=0.025,
-        cached_input_per_million_long_context_usd=0.05,
-        output_per_million_usd=1.5,
-        output_per_million_long_context_usd=1.5,
     ),
 }
 
@@ -130,7 +130,7 @@ def estimate_vertex_price(
     tool_cost = 0.0
     if "retrieval" in selected_tool_ids_set:
         tool_cost += _VERTEX_RETRIEVAL_COST_PER_1K_PROMPTS / 1000.0
-    if "web_search" in selected_tool_ids_set:
+    if "google_search" in selected_tool_ids_set:
         completeness = "partial"
         notes.append("Vertex Google Search billing depends on query counts that are not exposed in response usage.")
     if "code_execution" in selected_tool_ids_set:
@@ -139,6 +139,9 @@ def estimate_vertex_price(
     if "url_context" in selected_tool_ids_set:
         completeness = "partial"
         notes.append("Vertex URL context billing is not modeled in the current price estimator.")
+    if "google_maps" in selected_tool_ids_set:
+        completeness = "partial"
+        notes.append("Vertex Google Maps billing depends on query counts that are not exposed in response usage.")
 
     total_cost = input_cost + cached_input_cost + output_cost + tool_cost
     return ProviderPriceEstimate(

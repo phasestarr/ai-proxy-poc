@@ -18,7 +18,7 @@ from app.providers.anthropic.tools import build_anthropic_hosted_tools
 # - `thinking.type`: "adaptive"
 # - `thinking.display`: "summarized" | "omitted"
 # - `output_config.effort`: "low" | "medium" | "high" | "xhigh" | "max"
-#   (`xhigh` is Opus 4.7 only)
+#   (`xhigh` and `max` availability depends on the selected model.)
 # - `max_tokens` is required on Messages API requests.
 # - Thinking tokens count toward `max_tokens`.
 ANTHROPIC_REASONING_PRESETS: dict[str, dict[str, object]] = {
@@ -74,20 +74,21 @@ ANTHROPIC_REASONING_PRESETS: dict[str, dict[str, object]] = {
 }
 
 # Change only the preset string on the right.
-# - Opus 4.7: `xhigh` is useful for long agentic/coding runs.
-# - Sonnet 4.6: `high` (`high`) is a decent default.
-# - Haiku 4.5: keep `none`. In this codebase we treat Haiku as no-thinking/no-effort.
+# - Opus 4.8 supports: `none` | `low` | `normal` | `high` | `xhigh` | `max`.
+# - Sonnet 5 supports: `none` | `low` | `normal` | `high` | `xhigh` | `max`.
+# - Haiku 4.5 supports only `none` in this adaptive-thinking/effort preset system.
+#   The model's manual extended-thinking budget is intentionally not represented here.
 ANTHROPIC_MODEL_REASONING_PRESET: dict[str, str] = {
-    "claude-opus-4-7": "xhigh",
-    "claude-sonnet-4-6": "high",
+    "claude-opus-4-8": "max",
+    "claude-sonnet-5": "xhigh",
     "claude-haiku-4-5": "none",
 }
 
-# Provider max output caps from Anthropic model docs (checked 2026-04-28).
+# Provider max output caps from Anthropic model docs (checked 2026-07-16).
 # To clamp lower later, change only the numeric value on the right.
 ANTHROPIC_MODEL_MAX_TOKENS: dict[str, int] = {
-    "claude-opus-4-7": 128_000,
-    "claude-sonnet-4-6": 64_000,
+    "claude-opus-4-8": 128_000,
+    "claude-sonnet-5": 128_000,
     "claude-haiku-4-5": 64_000,
 }
 
@@ -137,6 +138,8 @@ def _apply_anthropic_reasoning_preset(
         raise ValueError("claude-haiku-4-5 must use anthropic reasoning preset 'none'")
 
     request_patch = deepcopy(ANTHROPIC_REASONING_PRESETS[preset_name])
+    if model == "claude-sonnet-5" and preset_name == "none":
+        request_patch["thinking"] = {"type": "disabled"}
     try:
         request_kwargs["max_tokens"] = ANTHROPIC_MODEL_MAX_TOKENS[model]
     except KeyError as exc:

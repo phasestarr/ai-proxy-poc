@@ -77,35 +77,39 @@ For an existing provider, tool changes should usually touch:
 ## Current Public Models
 
 Vertex:
+- `gemini-3.5-flash`
 - `gemini-3.1-pro-preview`
 - `gemini-3-flash-preview`
-- `gemini-3.1-flash-lite-preview`
 
 OpenAI:
-- `gpt-5.4`
+- `gpt-5.6-sol`
+- `gpt-5.6-terra`
+- `gpt-5.6-luna`
 - `gpt-5.4-mini`
-- `gpt-5.4-nano`
 
 Anthropic:
-- `claude-opus-4-7`
-- `claude-sonnet-4-6`
+- `claude-opus-4-8`
+- `claude-sonnet-5`
 - `claude-haiku-4-5`
 
 ## Current Public Tools
 
 Vertex:
-- `web_search`
-- `retrieval`
-- `code_execution`
+- `google_search`
 - `url_context`
+- `code_execution`
+- `google_maps`
+- `retrieval`
 
 OpenAI:
 - `web_search`
-- `retrieval`
-- `code_execution`
+- `file_search`
+- `code_interpreter`
+- `shell`
 
 Anthropic:
 - `web_search`
+- `web_fetch`
 - `code_execution`
 
 ## Output Cap Rule
@@ -118,19 +122,22 @@ Anthropic:
 ## Current Tool Mapping
 
 Vertex:
-- `web_search` -> `google_search`
+- `google_search` -> `google_search`
 - `retrieval` -> `retrieval.vertex_rag_store`
 - `code_execution` -> `code_execution`
 - `url_context` -> `url_context`
+- `google_maps` -> `google_maps`
 
 OpenAI:
 - `web_search` -> Responses API `web_search`
-- `retrieval` -> Responses API `file_search`
-- `code_execution` -> Responses API `code_interpreter`
+- `file_search` -> Responses API `file_search`
+- `code_interpreter` -> Responses API `code_interpreter`
+- `shell` -> Responses API `shell`
 
 Anthropic:
-- `web_search` -> Messages API `web_search_20250305`
-- `code_execution` -> Messages API `code_execution_20250825`
+- `web_search` -> Messages API `web_search_20260318`
+- `web_fetch` -> Messages API `web_fetch_20260318`
+- `code_execution` -> Messages API `code_execution_20260521`
 
 ## Payload Assembly And Chat Execution Path
 1. request schema validation

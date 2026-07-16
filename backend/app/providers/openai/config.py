@@ -19,10 +19,10 @@ _OPENAI_REQUEST_DEFAULTS: dict[str, object] = {
 }
 
 # OpenAI latest Responses shape:
-# - `reasoning.effort`: "none" | "low" | "medium" | "high" | "xhigh"
+# - `reasoning.effort`: "none" | "low" | "medium" | "high" | "xhigh" | "max"
+#   (`max` availability depends on the selected model.)
 # - `reasoning.summary`: "auto" | "concise" | "detailed"
 # - `text.verbosity`: "low" | "medium" | "high"
-# - `tool_choice`: usually "none" | "auto" | "required"
 # - `max_output_tokens`: total generated output cap, including reasoning tokens.
 OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
     "none": {
@@ -33,8 +33,6 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "text": {
             "verbosity": "low",
         },
-        "tool_choice": "auto",
-        "parallel_tool_calls": True,
     },
     "low": {
         "reasoning": {
@@ -44,8 +42,6 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "text": {
             "verbosity": "low",
         },
-        "tool_choice": "auto",
-        "parallel_tool_calls": True,
     },
     "normal": {
         "reasoning": {
@@ -55,8 +51,6 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "text": {
             "verbosity": "medium",
         },
-        "tool_choice": "auto",
-        "parallel_tool_calls": True,
     },
     "high": {
         "reasoning": {
@@ -66,8 +60,6 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "text": {
             "verbosity": "medium",
         },
-        "tool_choice": "auto",
-        "parallel_tool_calls": True,
     },
     "xhigh": {
         "reasoning": {
@@ -77,27 +69,37 @@ OPENAI_RESPONSE_PRESETS: dict[str, dict[str, object]] = {
         "text": {
             "verbosity": "high",
         },
-        "tool_choice": "auto",
-        "parallel_tool_calls": True,
+    },
+    "max": {
+        "reasoning": {
+            "effort": "max",
+            "summary": "detailed",
+        },
+        "text": {
+            "verbosity": "high",
+        },
     },
 }
 
 # Change only the preset string on the right.
-# - `gpt-5.4`: higher effort for deeper agentic/coding work.
-# - `gpt-5.4-mini`: normal is a reasonable default.
-# - `gpt-5.4-nano`: low keeps cost/latency down.
+# - GPT-5.6 Sol supports: `none` | `low` | `normal` | `high` | `xhigh` | `max`.
+# - GPT-5.6 Terra supports: `none` | `low` | `normal` | `high` | `xhigh` | `max`.
+# - GPT-5.6 Luna supports: `none` | `low` | `normal` | `high` | `xhigh` | `max`.
+# - GPT-5.4 Mini supports: `none` | `low` | `normal` | `high` | `xhigh`.
 OPENAI_MODEL_RESPONSE_PRESET: dict[str, str] = {
-    "gpt-5.4": "high",
-    "gpt-5.4-mini": "normal",
-    "gpt-5.4-nano": "low",
+    "gpt-5.6-sol": "max",
+    "gpt-5.6-terra": "xhigh",
+    "gpt-5.6-luna": "high",
+    "gpt-5.4-mini": "high",
 }
 
-# Provider max output caps from OpenAI model docs (checked 2026-04-28).
+# Provider max output caps from OpenAI model docs (checked 2026-07-16).
 # To clamp lower later, change only the numeric value on the right.
 OPENAI_MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
-    "gpt-5.4": 128_000,
+    "gpt-5.6-sol": 128_000,
+    "gpt-5.6-terra": 128_000,
+    "gpt-5.6-luna": 128_000,
     "gpt-5.4-mini": 128_000,
-    "gpt-5.4-nano": 128_000,
 }
 
 

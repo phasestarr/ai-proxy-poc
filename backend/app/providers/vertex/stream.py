@@ -345,11 +345,13 @@ def _extract_selected_tool_ids(config: object) -> tuple[str, ...]:
     selected_tool_ids: list[str] = []
     for tool in tools:
         if getattr(tool, "google_search", None) is not None:
-            selected_tool_ids.append("web_search")
+            selected_tool_ids.append("google_search")
         if getattr(tool, "retrieval", None) is not None:
             selected_tool_ids.append("retrieval")
         if getattr(tool, "code_execution", None) is not None:
             selected_tool_ids.append("code_execution")
         if getattr(tool, "url_context", None) is not None:
             selected_tool_ids.append("url_context")
+        if getattr(tool, "google_maps", None) is not None:
+            selected_tool_ids.append("google_maps")
     return tuple(selected_tool_ids)

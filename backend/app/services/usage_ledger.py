@@ -22,8 +22,11 @@ _NORMALIZED_USAGE_KEYS: tuple[str, ...] = (
     "reasoning_tokens",
     "tool_result_input_tokens",
     "web_search_requests",
+    "web_fetch_requests",
     "file_search_requests",
     "code_execution_requests",
+    "code_interpreter_requests",
+    "shell_requests",
 )
 
 
@@ -41,8 +44,11 @@ def serialize_provider_usage(usage: ProviderUsageMetadata | None) -> dict[str, o
             "reasoning_tokens": usage.reasoning_token_count,
             "tool_result_input_tokens": usage.tool_result_prompt_token_count,
             "web_search_requests": usage.web_search_request_count,
+            "web_fetch_requests": usage.web_fetch_request_count,
             "file_search_requests": usage.file_search_request_count,
             "code_execution_requests": usage.code_execution_request_count,
+            "code_interpreter_requests": usage.code_interpreter_request_count,
+            "shell_requests": usage.shell_request_count,
         }
     }
 
@@ -146,8 +152,11 @@ def append_chat_usage_ledger_event(
         reasoning_tokens=normalized_usage["reasoning_tokens"],
         tool_result_input_tokens=normalized_usage["tool_result_input_tokens"],
         web_search_requests=normalized_usage["web_search_requests"],
+        web_fetch_requests=normalized_usage["web_fetch_requests"],
         file_search_requests=normalized_usage["file_search_requests"],
         code_execution_requests=normalized_usage["code_execution_requests"],
+        code_interpreter_requests=normalized_usage["code_interpreter_requests"],
+        shell_requests=normalized_usage["shell_requests"],
         price_estimate=price_estimate or None,
         provider_raw_usage=provider_raw_usage,
         total_cost_usd=total_cost_usd,

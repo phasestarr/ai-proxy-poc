@@ -316,11 +316,13 @@ def _extract_selected_tool_ids(payload: dict[str, object]) -> tuple[str, ...]:
             continue
         tool_type = str(tool.get("type") or "").strip()
         if tool_type == "file_search":
-            selected_tool_ids.append("retrieval")
+            selected_tool_ids.append("file_search")
         elif tool_type == "code_interpreter":
-            selected_tool_ids.append("code_execution")
+            selected_tool_ids.append("code_interpreter")
         elif tool_type == "web_search":
             selected_tool_ids.append("web_search")
+        elif tool_type == "shell":
+            selected_tool_ids.append("shell")
     return tuple(selected_tool_ids)
 
 

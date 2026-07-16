@@ -34,16 +34,31 @@ class VertexModelRuntimeDefinition:
 
 _VERTEX_MODELS: tuple[VertexModelRuntimeDefinition, ...] = (
     VertexModelRuntimeDefinition(
+        public_id="gemini-3.5-flash",
+        provider_model="gemini-3.5-flash",
+        display_name="Gemini 3.5 Flash",
+        location="global",
+        available=True,
+        supported_tools=get_vertex_tool_definitions(
+            "google_search",
+            "url_context",
+            "code_execution",
+            "google_maps",
+            "retrieval",
+        ),
+    ),
+    VertexModelRuntimeDefinition(
         public_id="gemini-3.1-pro-preview",
         provider_model="gemini-3.1-pro-preview",
         display_name="Gemini 3.1 Pro Preview",
         location="global",
         available=True,
         supported_tools=get_vertex_tool_definitions(
-            "web_search",
-            "retrieval",
-            "code_execution",
+            "google_search",
             "url_context",
+            "code_execution",
+            "google_maps",
+            "retrieval",
         ),
     ),
     VertexModelRuntimeDefinition(
@@ -53,23 +68,11 @@ _VERTEX_MODELS: tuple[VertexModelRuntimeDefinition, ...] = (
         location="global",
         available=True,
         supported_tools=get_vertex_tool_definitions(
-            "web_search",
-            "retrieval",
-            "code_execution",
+            "google_search",
             "url_context",
-        ),
-    ),
-    VertexModelRuntimeDefinition(
-        public_id="gemini-3.1-flash-lite-preview",
-        provider_model="gemini-3.1-flash-lite-preview",
-        display_name="Gemini 3.1 Flash-Lite Preview",
-        location="global",
-        available=True,
-        supported_tools=get_vertex_tool_definitions(
-            "web_search",
-            "retrieval",
             "code_execution",
-            "url_context",
+            "google_maps",
+            "retrieval",
         ),
     ),
 )

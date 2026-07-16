@@ -25,7 +25,7 @@ Internal AI proxy stack behind sibling `root-proxy`.
 - Vertex-backed public Gemini model variants
 - OpenAI-backed public GPT model variants
 - Anthropic-backed public Claude model variants
-- optional provider-neutral tools exposed per model, including `web_search`, `retrieval`, `code_execution`, and `url_context`
+- optional provider-native tools exposed per model, including search, retrieval, code execution, shell, URL context, and maps tools
 
 ## In Repo
 

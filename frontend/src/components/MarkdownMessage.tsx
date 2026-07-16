@@ -3,6 +3,7 @@ import rehypeKatex from "rehype-katex";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { normalizeMathDelimiters } from "../utils/normalizeMathDelimiters";
 
 type MarkdownMessageProps = {
   content: string;
@@ -28,6 +29,9 @@ export default function MarkdownMessage({
   const remarkPlugins = enableLatex
     ? [remarkGfm, remarkBreaks, remarkMath]
     : [remarkGfm, remarkBreaks];
+  const renderedContent = enableLatex
+    ? normalizeMathDelimiters(content)
+    : content;
 
   return (
     <div className={className}>
@@ -44,7 +48,7 @@ export default function MarkdownMessage({
         rehypePlugins={enableLatex ? [rehypeKatex] : undefined}
         remarkPlugins={remarkPlugins}
       >
-        {content}
+        {renderedContent}
       </ReactMarkdown>
     </div>
   );

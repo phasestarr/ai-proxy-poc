@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from app.providers.types import ProviderPriceEstimate, ProviderUsageMetadata
 
-ANTHROPIC_PRICING_VERSION = "anthropic-2026-05-11"
+ANTHROPIC_PRICING_VERSION = "anthropic-2026-07-16"
 _ANTHROPIC_WEB_SEARCH_COST_PER_1K_CALLS = 10.0
 
 
@@ -17,8 +17,8 @@ class _AnthropicPriceCard:
 
 
 _ANTHROPIC_PRICE_CARDS: dict[str, _AnthropicPriceCard] = {
-    "claude-opus-4-7": _AnthropicPriceCard(input_per_million_usd=15.0, cache_read_per_million_usd=1.5, output_per_million_usd=75.0),
-    "claude-sonnet-4-6": _AnthropicPriceCard(input_per_million_usd=3.0, cache_read_per_million_usd=0.3, output_per_million_usd=15.0),
+    "claude-opus-4-8": _AnthropicPriceCard(input_per_million_usd=5.0, cache_read_per_million_usd=0.5, output_per_million_usd=25.0),
+    "claude-sonnet-5": _AnthropicPriceCard(input_per_million_usd=2.0, cache_read_per_million_usd=0.2, output_per_million_usd=10.0),
     "claude-haiku-4-5": _AnthropicPriceCard(input_per_million_usd=1.0, cache_read_per_million_usd=0.1, output_per_million_usd=5.0),
 }
 
@@ -38,6 +38,7 @@ def map_anthropic_usage(
     cache_write_input_tokens = _optional_int(getattr(usage, "cache_creation_input_tokens", None))
     server_tool_use = getattr(usage, "server_tool_use", None)
     web_search_request_count = _optional_int(getattr(server_tool_use, "web_search_requests", None))
+    web_fetch_request_count = _optional_int(getattr(server_tool_use, "web_fetch_requests", None))
     if input_tokens is None and output_tokens is None and cache_read_input_tokens is None and cache_write_input_tokens is None:
         return None
 
@@ -52,6 +53,7 @@ def map_anthropic_usage(
         cache_read_input_tokens=cache_read_input_tokens,
         cache_write_input_tokens=cache_write_input_tokens,
         web_search_request_count=web_search_request_count,
+        web_fetch_request_count=web_fetch_request_count,
         provider_raw_usage=_serialize_raw_usage(usage),
         price_estimate=estimate_anthropic_price(
             public_model_id=public_model_id,

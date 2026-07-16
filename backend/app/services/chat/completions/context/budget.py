@@ -3,8 +3,8 @@ from __future__ import annotations
 from app.providers.types import PreparedProviderChatRequest
 
 
-SOFT_CONTEXT_COMPACTION_THRESHOLD = 50_000
-EXACT_INPUT_TOKEN_COUNT_TRIGGER = 40_000
+SOFT_CONTEXT_COMPACTION_THRESHOLD = 100_000
+EXACT_INPUT_TOKEN_COUNT_TRIGGER = 80_000
 
 
 def needs_context_compaction(prepared_request: PreparedProviderChatRequest) -> bool:
