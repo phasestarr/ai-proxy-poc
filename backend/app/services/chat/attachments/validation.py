@@ -94,7 +94,7 @@ def build_attachment_display_name(filename: str | None, *, mime_type: str) -> st
     candidate = " ".join(candidate.split())
     if not candidate:
         return default_attachment_filename(mime_type)
-    return candidate[:255]
+    return candidate[:CHAT_HISTORY_TITLE_MAX_CHARS]
 
 
 def normalize_attachment_mime_type(content_type: str | None) -> str:
@@ -108,7 +108,7 @@ def build_history_title_from_filename(display_name: str) -> str:
     title = normalize_history_title(display_name)
     if not title:
         return "New chat"
-    return title[:80]
+    return title[:GENERATED_CHAT_HISTORY_TITLE_MAX_CHARS]
 
 
 def default_attachment_filename(mime_type: str) -> str:
@@ -117,3 +117,4 @@ def default_attachment_filename(mime_type: str) -> str:
     if mime_type == "image/jpeg":
         return "attachment.jpg"
     return "attachment.pdf"
+from app.config.chat import CHAT_HISTORY_TITLE_MAX_CHARS, GENERATED_CHAT_HISTORY_TITLE_MAX_CHARS

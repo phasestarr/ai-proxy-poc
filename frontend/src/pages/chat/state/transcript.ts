@@ -1,4 +1,4 @@
-import type { ChatHistoryMessage, ChatRequestMessage, ChatStreamBlock } from "../../../chat/api";
+import type { ChatHistoryMessage, ChatStreamBlock } from "../../../chat/api";
 import type { ChatModelOption } from "../../../chat/api/modelApi";
 
 export type MessageRole = "user" | "assistant";
@@ -61,18 +61,6 @@ export function createStreamingAssistantMessage(id: number): TranscriptMessage {
     blocksCollapsed: false,
     renderOptions: createDefaultAssistantRenderOptions(),
   };
-}
-
-export function buildRequestMessages(
-  _messages: TranscriptMessage[],
-  nextUserMessage: TranscriptMessage,
-): ChatRequestMessage[] {
-  return [
-    {
-      role: nextUserMessage.role,
-      content: nextUserMessage.content,
-    },
-  ];
 }
 
 export function appendAssistantDelta(

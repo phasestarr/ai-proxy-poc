@@ -110,15 +110,15 @@ Current runtime and code ownership for AI Proxy.
 - session conflict resolution is backend-owned and supports evicting the oldest active session
 
 Important runtime values from `.env`:
-- session TTL: `6 hours`
-- guest max active sessions: `2`
-- Microsoft max active sessions: `4`
-- session-limit strategy default: `reject`
-- conflict ticket TTL default: `5 minutes`
+- session TTL: `AUTH_SESSION_TTL_MINUTES`
+- guest max active sessions: `AUTH_GUEST_MAX_SESSIONS`
+- Microsoft max active sessions: `AUTH_MICROSOFT_MAX_SESSIONS`
+- session-limit strategy: `AUTH_SESSION_LIMIT_STRATEGY`
+- conflict ticket TTL: `AUTH_CONFLICT_TICKET_MINUTES`
 
 Session expiry semantics:
 - active sessions are kept alive by `last_seen_at`
-- idle timeout is `last_seen_at + 6 hours`
+- idle timeout is `last_seen_at + AUTH_SESSION_TTL_MINUTES`
 - session-limit eviction also marks the older session as `expired`
 - expired sessions are cleaned up by the background housekeeping loop
 - Interrupted internal upload staging drafts are deleted by housekeeping after `CHAT_DRAFT_TTL_SECONDS`
@@ -275,7 +275,7 @@ Crash and housekeeping semantics:
 
 ## Chat History Metadata
 - `chat_histories.title` stores the backend-owned history title text
-- first-prompt auto-titles are normalized and capped to `80` characters without backend-added ellipsis
+- first-prompt auto-titles are normalized and capped by `GENERATED_CHAT_HISTORY_TITLE_MAX_CHARS`
 - manually renamed titles are capped to the DB column limit and rendered with frontend truncation when needed
 - `chat_histories.pin_order`
   - `NULL` means unpinned
@@ -288,9 +288,11 @@ Crash and housekeeping semantics:
 
 ## Context Compaction
 - context compaction is backend-owned
-- soft compaction threshold: `50000` estimated input tokens
-- exact input-token count is attempted from `40000` estimated input tokens upward
-- compression currently uses an internal Vertex AI pipeline with `gemini-3-flash-preview`
+- `LATEST_PROMPT_MAX_TOKENS` hard-rejects an oversized latest prompt
+- `TEXT_CONTEXT_COMPACTION_TRIGGER` controls compaction of instructions, persisted text, and the latest prompt
+- provider-native exact text counting starts at `EXACT_TEXT_TOKEN_COUNT_TRIGGER`
+- attachment token metadata is budgeted separately and never triggers text compaction
+- compression provider/model selection lives in `compression/vertex/config.py`
 - compression does not set a backend output-token cap; the summary size is controlled by the compression instruction target
 - chat history rendering uses raw `chat_messages` plus persisted `chat_message_blocks`; block rows are never used for provider context
 - checkpoint summaries are inference-only and live in a dedicated table
@@ -303,22 +305,22 @@ Shared provider layer:
 - `backend/app/providers/dispatcher.py`
 
 ## Generic Model Defaults
-- backend-owned generic helper work stays pinned to these lighter tiers unless a call site explicitly overrides it:
-  - Vertex: `gemini-3-flash-preview`
-  - OpenAI: `gpt-5.4-mini`
-  - Anthropic: `claude-haiku-4-5`
+- backend-owned generic helper model ids live in each provider's `config.py`
 - current uses:
   - internal context compression uses the Vertex generic model
   - attachment token counting uses the OpenAI and Anthropic generic models
 
 Provider package shape:
-- `models.py`
-  - public model ids
-  - provider runtime model ids
-  - supported tool ids
 - `config.py`
-  - provider request preset mapping
-  - model to preset mapping
+  - operator-facing model/tool catalog, capabilities, versions, helper model ids, and pricing
+- `options.py`
+  - request defaults, response selections, output caps, and hosted-tool options
+- `settings.py`
+  - provider credentials and external resource binding
+- `provider.py`
+  - provider request coordination and prepared-request construction
+- `models.py`
+  - runtime model definitions derived from `config.py`
 - `tools.py`
   - tool metadata
   - provider-native hosted tool payloads
@@ -333,66 +335,20 @@ Provider package shape:
 - `count_tokens.py`
   - provider-native exact input token counting
 - `outcomes.py`
-  - provider-specific success messages
   - provider-specific terminal outcome messages
   - provider-specific live status messages
 - `stream.py`
   - actual SDK streaming call
   - provider-specific error mapping
-  - stream-lifetime validation that a terminal response and visible final answer were received
+  - raw transport only; mapper finalization validates terminal response and visible final answer
 
 ## Current Provider Shape
-
-Vertex:
-- public models:
-  - `gemini-3.5-flash`
-  - `gemini-3.1-pro-preview`
-  - `gemini-3-flash-preview`
-- preset config:
-  - `none`
-  - `low`
-  - `normal`
-  - `high`
-- current preset knobs:
-  - `thinking_config.thinking_level`
-  - `thinking_config.include_thoughts`
-  - `maxOutputTokens`
-
-OpenAI:
-- public models:
-  - `gpt-5.6-sol`
-  - `gpt-5.6-terra`
-  - `gpt-5.6-luna`
-  - `gpt-5.4-mini`
-- preset config:
-  - `none`
-  - `low`
-  - `normal`
-  - `high`
-  - `xhigh`
-- current preset knobs:
-  - `max_output_tokens`
-  - `reasoning`
-  - `text.verbosity`
-  - `tool_choice`
-  - `parallel_tool_calls`
-
-Anthropic:
-- public models:
-  - `claude-opus-4-8`
-  - `claude-sonnet-5`
-  - `claude-haiku-4-5`
-- preset config:
-  - `none`
-  - `low`
-  - `normal`
-  - `high`
-  - `xhigh`
-  - `max`
-- current preset knobs:
-  - `max_tokens`
-  - `thinking`
-  - `output_config.effort`
+- all three providers use the same `config.py`, `options.py`, `settings.py`,
+  `provider.py`, `models.py`, `tools.py`, `mapper.py`, and `stream.py` ownership pattern
+- provider-specific model ids, capabilities, versions, helper ids, and price cards
+  live in `config.py`; request-facing values live in `options.py`
+- `compression/vertex` uses the same reduced `config.py` plus `options.py` pattern,
+  with SDK request construction in `request.py`
 
 ## Model and Tool Source Of Truth
 - backend is the source of truth for public model and tool exposure
@@ -402,11 +358,13 @@ Anthropic:
 
 ## Change Points
 - add/remove/reorder models:
-  - `backend/app/providers/<provider>/models.py`
   - `backend/app/providers/<provider>/config.py`
 - change tool exposure or display names:
+  - `backend/app/providers/<provider>/config.py`
+- change thinking, output caps, or hosted-tool request options:
+  - `backend/app/providers/<provider>/options.py`
+- change provider-native tool payload construction:
   - `backend/app/providers/<provider>/tools.py`
-  - `backend/app/providers/<provider>/models.py`
 - change shared provider routing:
   - `backend/app/providers/catalog.py`
   - `backend/app/providers/dispatcher.py`

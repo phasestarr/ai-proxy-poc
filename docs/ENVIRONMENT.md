@@ -76,7 +76,7 @@ Compose derives:
 - `AUTH_CONFLICT_TICKET_MINUTES`
 - `HOUSEKEEPING_INTERVAL_MINUTES`
   - runs auth cleanup, stale send cleanup, attachment remote reconciliation, attachment remote TTL cleanup, and attachment blob delete retry
-  - keep this greater than `CHAT_VALIDATING_OPERATION_TIMEOUT_SECONDS / 60` unless `delete_stale_empty_histories` is changed to skip active operations
+  - empty-history cleanup skips histories with active operations
 
 ### Microsoft Auth
 
@@ -113,7 +113,6 @@ client ID and secret blank only when Microsoft login is intentionally disabled.
 
 - `USAGE_DEFAULT_CAP_USD`
   - default per-user effective usage cap when no `user_usage_caps` override exists
-  - template default: `100`
   - cap enforcement is intentionally post-paid: it checks existing ledger spend before dispatch and records actual estimated spend after success
 
 ### Deployment Readiness
@@ -134,6 +133,8 @@ client ID and secret blank only when Microsoft login is intentionally disabled.
 - `CHAT_ATTACHMENT_MAX_FILE_BYTES`
 - `CHAT_ATTACHMENT_MAX_TOTAL_BYTES_PER_HISTORY`
 - `CHAT_ATTACHMENT_MAX_TOTAL_TOKENS_PER_PROVIDER`
+  - hard-rejects a send when active files in one history exceed the selected provider's attachment-token total
+  - this budget is independent from text compaction
 - `CHAT_ATTACHMENT_REMOTE_TTL_HOURS`
   - deletes provider-side remote attachment copies after this many hours without use
 
@@ -149,22 +150,18 @@ Not env-driven:
   - container path, usually `/run/secrets/gcp-service-account.json`
 - `GOOGLE_CLOUD_PROJECT`
   - required to use Vertex
-- `VERTEX_AI_API_VERSION`
 - `VERTEX_AI_ATTACHMENT_GCS_BUCKET`
   - required for Gemini file attachments
   - value is the bucket name only, for example `your-ai-proxy-attachments-bucket`
 - `VERTEX_AI_ATTACHMENT_GCS_PREFIX`
 - `VERTEX_AI_RAG_CORPORA`
   - optional blank value
-- `VERTEX_AI_RAG_SIMILARITY_TOP_K`
-- `VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD`
-  - optional blank value
 
 Not env-driven:
 
 - public Gemini model ids
 - Vertex locations
-- Vertex per-model response presets
+- Vertex API version, per-model response presets, output caps, and RAG request options
 
 ### OpenAI
 
@@ -172,32 +169,21 @@ Not env-driven:
   - required to use OpenAI
 - `OPENAI_VECTOR_STORE_IDS`
   - optional blank value unless using `file_search`
-- `OPENAI_FILE_SEARCH_MAX_NUM_RESULTS`
-- `OPENAI_FILE_SEARCH_SCORE_THRESHOLD`
-  - optional blank value
-- `OPENAI_CODE_INTERPRETER_MEMORY_LIMIT`
 
 Not env-driven:
 
 - public GPT model ids
-- OpenAI per-model response presets
+- OpenAI per-model response presets, output caps, and hosted-tool request options
 
 ### Anthropic
 
 - `ANTHROPIC_API_KEY`
   - required to use Anthropic
-- `ANTHROPIC_VERSION`
-- `ANTHROPIC_WEB_SEARCH_MAX_USES`
-- `ANTHROPIC_WEB_SEARCH_ALLOWED_DOMAINS`
-  - optional blank value
-- `ANTHROPIC_WEB_SEARCH_BLOCKED_DOMAINS`
-  - optional blank value
 
 Not env-driven:
 
 - public Claude model ids
-- Anthropic per-model response presets
-- output token caps
+- Anthropic API/tool versions, per-model response presets, output caps, and hosted-tool request options
 
 ## Compose Overrides
 
@@ -216,7 +202,7 @@ Not env-driven:
 - `VERTEX_AI_MODEL`
   - removed from Compose because model selection is backend-owned in provider model catalogs
 - `ANTHROPIC_MAX_TOKENS`
-  - removed from env wiring because output caps now live in provider preset config
+  - removed from env wiring because output caps live in provider `options.py`
 
 ## Current Notes
 
@@ -224,5 +210,5 @@ Not env-driven:
 - Compose uses required interpolation, so missing env keys fail before startup
 - Optional blank env values must still be present as blank assignments
 - Provider model catalogs are code-defined, not env-selected
-- Provider output caps are preset-defined in provider config files
+- Provider output caps and request behavior are defined in provider `options.py` files
 - `VERTEX_AI_RAG_CORPORA` and `OPENAI_VECTOR_STORE_IDS` configure Vertex retrieval and OpenAI file search respectively

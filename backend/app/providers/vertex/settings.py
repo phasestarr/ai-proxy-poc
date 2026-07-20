@@ -4,7 +4,7 @@ Purpose:
 
 Responsibilities:
 - Keep Vertex-specific runtime configuration out of generic app settings
-- Hold future Vertex tool configuration in the same provider namespace
+- Bind credentials and external Vertex resource identifiers
 """
 
 from __future__ import annotations
@@ -18,18 +18,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class VertexProviderSettings(BaseSettings):
     project: str = Field(validation_alias="GOOGLE_CLOUD_PROJECT")
-    api_version: str = Field(validation_alias="VERTEX_AI_API_VERSION")
     attachment_gcs_bucket: str = Field(validation_alias="VERTEX_AI_ATTACHMENT_GCS_BUCKET")
     attachment_gcs_prefix: str = Field(validation_alias="VERTEX_AI_ATTACHMENT_GCS_PREFIX")
     rag_corpora_value: str = Field(validation_alias="VERTEX_AI_RAG_CORPORA", exclude=True)
-    rag_similarity_top_k: int = Field(validation_alias="VERTEX_AI_RAG_SIMILARITY_TOP_K")
-    rag_vector_distance_threshold: float | None = Field(
-        validation_alias="VERTEX_AI_RAG_VECTOR_DISTANCE_THRESHOLD",
-    )
 
     model_config = SettingsConfigDict(
         extra="ignore",
     )
+
+    @field_validator("project", "attachment_gcs_bucket", "attachment_gcs_prefix")
+    @classmethod
+    def normalize_optional_strings(cls, value: str) -> str:
+        return value.strip()
 
     @field_validator("rag_corpora_value", mode="before")
     @classmethod
@@ -44,15 +44,6 @@ class VertexProviderSettings(BaseSettings):
             return ",".join(str(item).strip() for item in value if str(item).strip())
 
         raise ValueError("VERTEX_AI_RAG_CORPORA must be a comma-separated string or list")
-
-    @field_validator("rag_vector_distance_threshold", mode="before")
-    @classmethod
-    def parse_rag_vector_distance_threshold(cls, value: object) -> float | None:
-        if value is None:
-            return None
-        if isinstance(value, str) and not value.strip():
-            return None
-        return float(value)
 
     @property
     def rag_corpora(self) -> list[str]:

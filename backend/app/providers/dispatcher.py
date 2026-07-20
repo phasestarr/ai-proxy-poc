@@ -16,28 +16,26 @@ from app.providers.anthropic.provider import (
     ANTHROPIC_PROVIDER_ID,
     AnthropicProviderConfigurationError,
     AnthropicProviderError,
-    ensure_anthropic_provider_ready,
-)
-from app.providers.anthropic.count_tokens import count_anthropic_input_tokens
-from app.providers.anthropic.mapper import AnthropicStreamState
-from app.providers.anthropic.stream import prepare_anthropic_chat_completion_request
-from app.providers.anthropic.stream import (
+    AnthropicStreamState,
     build_anthropic_prepared_chat_completion_request,
+    count_anthropic_input_tokens,
+    ensure_anthropic_provider_ready,
+    finalize_anthropic_stream,
     map_prepared_anthropic_raw_stream_event,
+    prepare_anthropic_chat_completion_request,
     stream_prepared_anthropic_raw_chat_completion,
 )
 from app.providers.openai.provider import (
     OPENAI_PROVIDER_ID,
     OpenAIProviderConfigurationError,
     OpenAIProviderError,
-    ensure_openai_provider_ready,
-)
-from app.providers.openai.count_tokens import count_openai_input_tokens
-from app.providers.openai.mapper import OpenAIStreamState
-from app.providers.openai.stream import prepare_openai_chat_completion_request
-from app.providers.openai.stream import (
+    OpenAIStreamState,
     build_openai_prepared_chat_completion_request,
+    count_openai_input_tokens,
+    ensure_openai_provider_ready,
+    finalize_openai_stream,
     map_prepared_openai_raw_stream_event,
+    prepare_openai_chat_completion_request,
     stream_prepared_openai_raw_chat_completion,
 )
 from app.providers.types import (
@@ -45,19 +43,19 @@ from app.providers.types import (
     ProviderRawStreamChunk,
     ProviderRoute,
     ProviderStreamEvent,
+    ProviderStreamValidationError,
 )
 from app.providers.vertex.provider import (
     VERTEX_PROVIDER_ID,
     VertexProviderConfigurationError,
     VertexProviderError,
-    ensure_vertex_provider_ready,
-)
-from app.providers.vertex.count_tokens import count_vertex_input_tokens
-from app.providers.vertex.mapper import VertexStreamState
-from app.providers.vertex.stream import prepare_vertex_chat_completion_request
-from app.providers.vertex.stream import (
+    VertexStreamState,
     build_vertex_prepared_chat_completion_request,
+    count_vertex_input_tokens,
+    ensure_vertex_provider_ready,
+    finalize_vertex_stream,
     map_prepared_vertex_raw_stream_event,
+    prepare_vertex_chat_completion_request,
     stream_prepared_vertex_raw_chat_completion,
 )
 from app.schemas.chat import ChatMessage
@@ -136,6 +134,27 @@ class ProviderStreamMapper:
             f"provider is not configured: {provider}",
             provider=provider,
         )
+
+    def finalize(self) -> None:
+        provider = self.prepared_request.provider
+        try:
+            if provider == VERTEX_PROVIDER_ID:
+                finalize_vertex_stream(self.state)
+                return
+            if provider == OPENAI_PROVIDER_ID:
+                finalize_openai_stream(self.state)
+                return
+            if provider == ANTHROPIC_PROVIDER_ID:
+                finalize_anthropic_stream(self.state)
+                return
+        except ProviderStreamValidationError as exc:
+            raise ProviderExecutionError(
+                str(exc),
+                provider=provider,
+                result_code=exc.result_code,
+                result_message=exc.result_message,
+            ) from exc
+        raise ProviderExecutionError(f"provider is not configured: {provider}", provider=provider)
 
 
 def ensure_provider_ready(*, provider: str) -> None:
@@ -224,6 +243,7 @@ async def stream_provider_chat_completion(
     async for raw_chunk in stream_provider_raw_chat_completion(prepared_request=prepared_request):
         for stream_event in mapper.map(raw_chunk):
             yield stream_event
+    mapper.finalize()
 
 
 async def stream_provider_raw_chat_completion(
@@ -277,11 +297,11 @@ async def stream_provider_raw_chat_completion(
     )
 
 
-async def count_provider_chat_input_tokens(
+async def count_provider_chat_text_tokens(
     *,
     prepared_request: PreparedProviderChatRequest,
 ) -> int | None:
-    payload = prepared_request.input_token_count_payload
+    payload = prepared_request.text_token_count_payload
     if payload is None:
         return None
 

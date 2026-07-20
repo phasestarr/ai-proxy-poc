@@ -1,26 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 
+from app.providers.anthropic.config import (
+    ANTHROPIC_PRICE_CARDS as _ANTHROPIC_PRICE_CARDS,
+    ANTHROPIC_PRICING_VERSION,
+    ANTHROPIC_WEB_SEARCH_COST_PER_1K_CALLS as _ANTHROPIC_WEB_SEARCH_COST_PER_1K_CALLS,
+)
 from app.providers.types import ProviderPriceEstimate, ProviderUsageMetadata
-
-ANTHROPIC_PRICING_VERSION = "anthropic-2026-07-16"
-_ANTHROPIC_WEB_SEARCH_COST_PER_1K_CALLS = 10.0
-
-
-@dataclass(slots=True, frozen=True)
-class _AnthropicPriceCard:
-    input_per_million_usd: float
-    cache_read_per_million_usd: float
-    output_per_million_usd: float
-
-
-_ANTHROPIC_PRICE_CARDS: dict[str, _AnthropicPriceCard] = {
-    "claude-opus-4-8": _AnthropicPriceCard(input_per_million_usd=5.0, cache_read_per_million_usd=0.5, output_per_million_usd=25.0),
-    "claude-sonnet-5": _AnthropicPriceCard(input_per_million_usd=2.0, cache_read_per_million_usd=0.2, output_per_million_usd=10.0),
-    "claude-haiku-4-5": _AnthropicPriceCard(input_per_million_usd=1.0, cache_read_per_million_usd=0.1, output_per_million_usd=5.0),
-}
 
 
 def map_anthropic_usage(

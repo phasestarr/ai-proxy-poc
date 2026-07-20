@@ -4,14 +4,14 @@ import hashlib
 from copy import deepcopy
 
 from app.providers.openai.client import build_openai_client
-from app.providers.openai.count_tokens import OPENAI_ATTACHMENT_COUNT_MODEL_ID
+from app.providers.openai.config import OPENAI_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.openai.models import list_openai_models, resolve_openai_model_runtime
+from app.providers.openai.options import OPENAI_IMAGE_DETAIL
 
 _OPENAI_ATTACHMENT_CONTEXT_TEXT = (
     "The following files are attached to this chat history. "
     "Treat them as persistent reference context for every turn in this conversation."
 )
-_OPENAI_IMAGE_DETAIL = "high"
 
 
 def resolve_openai_attachment_count_model() -> str:
@@ -159,7 +159,7 @@ def build_openai_file_reference_block(*, mime_type: str, provider_file_id: str) 
     if mime_type.startswith("image/"):
         return {
             "type": "input_image",
-            "detail": _OPENAI_IMAGE_DETAIL,
+            "detail": OPENAI_IMAGE_DETAIL,
             "file_id": provider_file_id,
         }
     return {

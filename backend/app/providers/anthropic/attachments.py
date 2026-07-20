@@ -4,10 +4,9 @@ import base64
 from copy import deepcopy
 
 from app.providers.anthropic.client import build_anthropic_client
-from app.providers.anthropic.count_tokens import ANTHROPIC_ATTACHMENT_COUNT_MODEL_ID
+from app.providers.anthropic.config import ANTHROPIC_ATTACHMENT_COUNT_MODEL_ID, ANTHROPIC_FILES_BETA
 from app.providers.anthropic.models import list_anthropic_models, resolve_anthropic_model_runtime
 
-ANTHROPIC_FILES_BETA = "files-api-2025-04-14"
 _ANTHROPIC_ATTACHMENT_CONTEXT_TEXT = (
     "The following files are attached to this chat history. "
     "Treat them as persistent reference context for every turn in this conversation."

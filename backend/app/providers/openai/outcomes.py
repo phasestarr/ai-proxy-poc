@@ -1,22 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-import random
-
-
-@dataclass(slots=True, frozen=True)
-class WeightedOutcomeMessage:
-    text: str
-    weight: int
-
-
 OPENAI_SUCCESS_RESULT_CODE = "openai_response_completed"
-
-OPENAI_SUCCESS_MESSAGES: tuple[WeightedOutcomeMessage, ...] = (
-    WeightedOutcomeMessage("Done! You got more questions?", 10),
-    WeightedOutcomeMessage("Text generation completed.", 10),
-    WeightedOutcomeMessage("Response ready.", 10),
-)
 
 OPENAI_RESULT_MESSAGES: dict[str, str] = {
     OPENAI_SUCCESS_RESULT_CODE: "Response ready.",
@@ -42,19 +26,6 @@ OPENAI_STATUS_MESSAGES: dict[str, str] = {
     "openai_image_generation": "OpenAI is generating an image.",
     "openai_mcp_call": "OpenAI is calling a tool server.",
 }
-
-
-def pick_openai_success_message() -> str:
-    total_weight = sum(item.weight for item in OPENAI_SUCCESS_MESSAGES)
-    random_value = random.random() * total_weight
-
-    cumulative_weight = 0
-    for item in OPENAI_SUCCESS_MESSAGES:
-        cumulative_weight += item.weight
-        if random_value <= cumulative_weight:
-            return item.text
-
-    return OPENAI_SUCCESS_MESSAGES[-1].text
 
 
 def get_openai_result_message(code: str) -> str:

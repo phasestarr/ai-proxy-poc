@@ -6,7 +6,11 @@ from typing import Any
 
 import tiktoken
 
-DEFAULT_TIKTOKEN_ENCODING = "o200k_base"
+from app.config.chat import DEFAULT_TEXT_TOKEN_ENCODING
+
+
+def estimate_token_count_from_text(value: str) -> int:
+    return max(1, len(_get_default_encoding().encode(value)))
 
 def estimate_token_count_from_object(
     value: Any,
@@ -21,7 +25,7 @@ def estimate_token_count_from_object(
 
 @lru_cache(maxsize=1)
 def _get_default_encoding():
-    return tiktoken.get_encoding(DEFAULT_TIKTOKEN_ENCODING)
+    return tiktoken.get_encoding(DEFAULT_TEXT_TOKEN_ENCODING)
 
 
 def _safe_serialize(value: Any) -> str:

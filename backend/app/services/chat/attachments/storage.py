@@ -8,6 +8,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from app.config.attachments import (
+    STORED_FILE_CLEANUP_BATCH_SIZE,
+    STORED_FILE_DELETE_ERROR_MAX_CHARS,
+    STORED_FILE_DELETE_RETRY_BASE_SECONDS,
+    STORED_FILE_DELETE_RETRY_MAX_EXPONENT,
+    STORED_FILE_DELETE_RETRY_MAX_SECONDS,
+)
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import ChatDraftFile, ChatHistoryFile, StoredFile, StoredFileProviderState
 from app.db.postgres.models.chat_history import ChatMessage
@@ -18,8 +25,6 @@ from app.services.chat.completions.request_audit import persist_operator_event
 STORED_FILE_ACTIVE = "active"
 STORED_FILE_PENDING_DELETE = "pending_delete"
 STORED_FILE_DELETE_FAILED = "delete_failed"
-DELETE_RETRY_BASE_SECONDS = 60
-DELETE_RETRY_MAX_SECONDS = 86_400
 
 
 @dataclass(frozen=True)
@@ -197,7 +202,7 @@ async def cleanup_due_orphan_stored_files(
     db: Session,
     *,
     now: datetime | None = None,
-    limit: int = 50,
+    limit: int = STORED_FILE_CLEANUP_BATCH_SIZE,
 ) -> int:
     current_time = now or utc_now()
     stored_file_ids = db.execute(
@@ -235,7 +240,7 @@ def mark_stored_file_delete_failed(
     now: datetime,
 ) -> None:
     stored_file.lifecycle_state = STORED_FILE_DELETE_FAILED
-    stored_file.delete_error = detail[:4000]
+    stored_file.delete_error = detail[:STORED_FILE_DELETE_ERROR_MAX_CHARS]
     stored_file.delete_attempt_count = int(stored_file.delete_attempt_count or 0) + 1
     stored_file.delete_last_attempt_at = now
     stored_file.delete_next_attempt_at = now + timedelta(
@@ -245,8 +250,11 @@ def mark_stored_file_delete_failed(
 
 
 def _delete_retry_delay_seconds(attempt_count: int) -> int:
-    exponent = max(0, min(10, attempt_count - 1))
-    return min(DELETE_RETRY_MAX_SECONDS, DELETE_RETRY_BASE_SECONDS * (2 ** exponent))
+    exponent = max(0, min(STORED_FILE_DELETE_RETRY_MAX_EXPONENT, attempt_count - 1))
+    return min(
+        STORED_FILE_DELETE_RETRY_MAX_SECONDS,
+        STORED_FILE_DELETE_RETRY_BASE_SECONDS * (2 ** exponent),
+    )
 
 
 def count_stored_file_references(

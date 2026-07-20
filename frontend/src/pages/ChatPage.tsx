@@ -30,7 +30,6 @@ import { useConversationAutoScroll } from "./chat/hooks/useConversationAutoScrol
 import {
   appendAssistantDelta,
   appendAssistantStreamBlock,
-  buildRequestMessages,
   completeAssistantMessage,
   createPendingUserMessage,
   createStreamingAssistantMessage,
@@ -554,8 +553,6 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
     );
     const assistantMessage = createStreamingAssistantMessage(assistantMessageId);
 
-    const requestMessages = buildRequestMessages(messages, userMessage);
-
     let didStart = false;
     let streamErrorHandled = false;
     let targetHistoryId = activeChatHistoryId;
@@ -573,7 +570,7 @@ export default function ChatPage({ session, onLogout, onSessionExpired, onSessio
     try {
       await streamChatReply({
         chatHistoryId: targetHistoryId,
-        messages: requestMessages,
+        prompt: trimmedPrompt,
         selection: chatSelection,
         onStart: (start) => {
           didStart = true;

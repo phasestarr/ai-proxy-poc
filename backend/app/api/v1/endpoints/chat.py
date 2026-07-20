@@ -25,6 +25,7 @@ from app.api.v1.presenters.chat import (
     build_chat_history_message_view,
     build_chat_history_summary,
 )
+from app.config.attachments import ATTACHMENT_CONTENT_CACHE_MAX_AGE_SECONDS
 from app.schemas.chat import (
     ChatCompletionRequest,
     ChatHistoryEnvelope,
@@ -411,7 +412,7 @@ def get_history_file_content(
         media_type=history_file.mime_type,
         headers={
             "Content-Disposition": f'inline; filename="{safe_filename}"',
-            "Cache-Control": "private, max-age=300",
+            "Cache-Control": f"private, max-age={ATTACHMENT_CONTENT_CACHE_MAX_AGE_SECONDS}",
         },
     )
 

@@ -170,9 +170,10 @@ async def prepare_history_attachments_for_provider(
         provider=prepared_request.provider,
         public_model_id=prepared_request.public_model_id,
         payload=next_payload,
-        estimated_input_tokens=prepared_request.estimated_input_tokens,
-        input_token_count_payload=prepared_request.input_token_count_payload,
-        resolved_input_tokens=prepared_request.resolved_input_tokens,
+        estimated_text_tokens=prepared_request.estimated_text_tokens,
+        selected_tool_ids=prepared_request.selected_tool_ids,
+        text_token_count_payload=prepared_request.text_token_count_payload,
+        resolved_text_tokens=prepared_request.resolved_text_tokens,
     ), snapshots
 
 

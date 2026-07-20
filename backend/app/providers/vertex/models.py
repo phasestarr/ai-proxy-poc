@@ -1,17 +1,15 @@
-"""
-Vertex-owned Gemini model catalog and runtime metadata.
-"""
+"""Vertex runtime model definitions derived from operator configuration."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from app.providers.types import ProviderModelDefinition, ProviderToolDefinition
+from app.providers.vertex.config import VERTEX_MODELS
 from app.providers.vertex.tools import get_vertex_tool_definitions
 
 VERTEX_PROVIDER_ID = "vertex_ai"
 
-# To change Vertex model list, change `here` and `config.py` preset-mapping.
 
 @dataclass(slots=True, frozen=True)
 class VertexModelRuntimeDefinition:
@@ -23,58 +21,19 @@ class VertexModelRuntimeDefinition:
     supported_tools: tuple[ProviderToolDefinition, ...] = ()
 
     def to_provider_model_definition(self) -> ProviderModelDefinition:
-        return ProviderModelDefinition(
-            public_id=self.public_id,
-            provider=VERTEX_PROVIDER_ID,
-            display_name=self.display_name,
-            available=self.available,
-            supported_tools=self.supported_tools,
-        )
+        return ProviderModelDefinition(self.public_id, VERTEX_PROVIDER_ID, self.display_name, self.available, self.supported_tools)
 
 
-_VERTEX_MODELS: tuple[VertexModelRuntimeDefinition, ...] = (
+_VERTEX_MODELS = tuple(
     VertexModelRuntimeDefinition(
-        public_id="gemini-3.5-flash",
-        provider_model="gemini-3.5-flash",
-        display_name="Gemini 3.5 Flash",
-        location="global",
-        available=True,
-        supported_tools=get_vertex_tool_definitions(
-            "google_search",
-            "url_context",
-            "code_execution",
-            "google_maps",
-            "retrieval",
-        ),
-    ),
-    VertexModelRuntimeDefinition(
-        public_id="gemini-3.1-pro-preview",
-        provider_model="gemini-3.1-pro-preview",
-        display_name="Gemini 3.1 Pro Preview",
-        location="global",
-        available=True,
-        supported_tools=get_vertex_tool_definitions(
-            "google_search",
-            "url_context",
-            "code_execution",
-            "google_maps",
-            "retrieval",
-        ),
-    ),
-    VertexModelRuntimeDefinition(
-        public_id="gemini-3-flash-preview",
-        provider_model="gemini-3-flash-preview",
-        display_name="Gemini 3 Flash Preview",
-        location="global",
-        available=True,
-        supported_tools=get_vertex_tool_definitions(
-            "google_search",
-            "url_context",
-            "code_execution",
-            "google_maps",
-            "retrieval",
-        ),
-    ),
+        public_id=model.public_id,
+        provider_model=model.provider_model,
+        display_name=model.display_name,
+        location=model.location,
+        available=model.available,
+        supported_tools=get_vertex_tool_definitions(*model.supported_tool_ids),
+    )
+    for model in VERTEX_MODELS
 )
 
 
@@ -86,5 +45,4 @@ def resolve_vertex_model_runtime(*, public_model_id: str) -> VertexModelRuntimeD
     for model in _VERTEX_MODELS:
         if model.public_id == public_model_id:
             return model
-
     raise ValueError(f"unsupported vertex model: {public_model_id}")

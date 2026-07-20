@@ -1,51 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 
 from app.providers.types import ProviderPriceEstimate, ProviderUsageMetadata
-
-VERTEX_PRICING_VERSION = "vertex-2026-07-16"
-_VERTEX_GOOGLE_SEARCH_COST_PER_1K_QUERIES = 14.0
-_VERTEX_RETRIEVAL_COST_PER_1K_PROMPTS = 2.5
-
-
-@dataclass(slots=True, frozen=True)
-class _VertexPriceCard:
-    input_per_million_usd: float
-    input_per_million_long_context_usd: float | None
-    cached_input_per_million_usd: float | None
-    cached_input_per_million_long_context_usd: float | None
-    output_per_million_usd: float
-    output_per_million_long_context_usd: float | None
-
-
-_VERTEX_PRICE_CARDS: dict[str, _VertexPriceCard] = {
-    "gemini-3.5-flash": _VertexPriceCard(
-        input_per_million_usd=1.5,
-        input_per_million_long_context_usd=1.5,
-        cached_input_per_million_usd=0.15,
-        cached_input_per_million_long_context_usd=0.15,
-        output_per_million_usd=9.0,
-        output_per_million_long_context_usd=9.0,
-    ),
-    "gemini-3.1-pro-preview": _VertexPriceCard(
-        input_per_million_usd=2.0,
-        input_per_million_long_context_usd=4.0,
-        cached_input_per_million_usd=0.2,
-        cached_input_per_million_long_context_usd=0.4,
-        output_per_million_usd=12.0,
-        output_per_million_long_context_usd=18.0,
-    ),
-    "gemini-3-flash-preview": _VertexPriceCard(
-        input_per_million_usd=0.5,
-        input_per_million_long_context_usd=0.5,
-        cached_input_per_million_usd=0.05,
-        cached_input_per_million_long_context_usd=0.05,
-        output_per_million_usd=3.0,
-        output_per_million_long_context_usd=3.0,
-    ),
-}
+from app.providers.vertex.config import (
+    VERTEX_GOOGLE_SEARCH_COST_PER_1K_QUERIES as _VERTEX_GOOGLE_SEARCH_COST_PER_1K_QUERIES,
+    VERTEX_LONG_CONTEXT_PRICE_THRESHOLD,
+    VERTEX_PRICE_CARDS as _VERTEX_PRICE_CARDS,
+    VERTEX_PRICING_VERSION,
+    VERTEX_RETRIEVAL_COST_PER_1K_PROMPTS as _VERTEX_RETRIEVAL_COST_PER_1K_PROMPTS,
+)
 
 
 def map_vertex_usage(
@@ -110,7 +74,7 @@ def estimate_vertex_price(
         prompt_tokens = max(int(prompt_token_count or 0), 0)
         cached_tokens = max(int(cached_content_token_count or 0), 0)
         regular_prompt_tokens = max(prompt_tokens - cached_tokens, 0)
-        use_long_context_rates = prompt_tokens > 200_000
+        use_long_context_rates = prompt_tokens > VERTEX_LONG_CONTEXT_PRICE_THRESHOLD
         input_rate = price_card.input_per_million_long_context_usd if use_long_context_rates else price_card.input_per_million_usd
         cached_rate = (
             price_card.cached_input_per_million_long_context_usd

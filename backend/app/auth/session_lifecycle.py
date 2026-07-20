@@ -135,7 +135,7 @@ def resolve_session(
             auth_session,
             now=now,
             reason_code="idle_timeout",
-            reason="Session expired after 6 hours of inactivity.",
+            reason="Session expired after the configured inactivity period.",
         )
         db.commit()
         return SessionLookupResult(context=None, reason="expired_session", should_clear_cookie=True)
@@ -308,7 +308,7 @@ def _load_active_sessions_for_user(
                 auth_session,
                 now=now,
                 reason_code="idle_timeout",
-                reason="Session expired after 6 hours of inactivity.",
+                reason="Session expired after the configured inactivity period.",
             )
             continue
         active_sessions.append(auth_session)

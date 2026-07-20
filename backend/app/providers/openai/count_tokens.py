@@ -3,10 +3,6 @@ from __future__ import annotations
 from app.providers.openai.client import build_openai_client
 
 
-OPENAI_CHAT_COUNT_MODEL_SOURCE = "payload.model"
-OPENAI_ATTACHMENT_COUNT_MODEL_ID = "gpt-5.4-mini"
-
-
 async def count_openai_input_tokens(*, payload: dict[str, object]) -> int | None:
     # Chat text counting follows the exact model already embedded in the provider payload.
     client = build_openai_client()

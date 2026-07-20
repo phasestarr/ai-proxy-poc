@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.types import SessionContext
+from app.config.runtime import PROVIDER_HEARTBEAT_MAX_INTERVAL_SECONDS
 from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import ChatDraftFile, ChatHistoryFile
@@ -386,7 +387,10 @@ def provider_max_runtime_seconds() -> int:
 
 
 def provider_heartbeat_interval_seconds() -> int:
-    return max(1, min(30, provider_event_idle_timeout_seconds() // 3 or 1))
+    return max(
+        1,
+        min(PROVIDER_HEARTBEAT_MAX_INTERVAL_SECONDS, provider_event_idle_timeout_seconds() // 3 or 1),
+    )
 
 
 def draft_ttl_seconds() -> int:

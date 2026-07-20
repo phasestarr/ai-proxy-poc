@@ -5,10 +5,15 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from app.providers.openai.outcomes import get_openai_status_message
+from app.providers.openai.outcomes import (
+    build_openai_empty_output_detail,
+    get_openai_result_message,
+    get_openai_status_message,
+)
 from app.providers.openai.usage import map_openai_usage
 from app.providers.types import (
     ProviderStreamEvent,
+    ProviderStreamValidationError,
     ThinkingDeltaBlock,
     ToolBlockOperation,
     ToolUsageBlock,
@@ -29,6 +34,8 @@ class OpenAIStreamState:
     thinking_blocks: dict[tuple[str, int], _OpenAIThinkingBlockState] = field(default_factory=dict)
     tool_item_types: dict[str, str] = field(default_factory=dict)
     message_phases: dict[str, str] = field(default_factory=dict)
+    saw_visible_answer_text: bool = False
+    saw_terminal_completion: bool = False
 
 
 def map_chat_messages_to_openai_input(
@@ -117,6 +124,7 @@ def map_openai_stream_event(
         text = _field(event, "delta")
         if not isinstance(text, str) or not text:
             return ()
+        state.saw_visible_answer_text = True
         return (
             ProviderStreamEvent(
                 kind="answer_delta",
@@ -127,6 +135,7 @@ def map_openai_stream_event(
         )
 
     if event_type == "response.completed":
+        state.saw_terminal_completion = True
         response = _field(event, "response")
         return (
             ProviderStreamEvent(
@@ -146,6 +155,7 @@ def map_openai_stream_event(
         )
 
     if event_type == "response.incomplete":
+        state.saw_terminal_completion = True
         response = _field(event, "response")
         incomplete_details = _field(response, "incomplete_details")
         reason = _string_or_none(_field(incomplete_details, "reason"))
@@ -169,6 +179,23 @@ def map_openai_stream_event(
     # Done snapshots and annotations repeat text or carry answer metadata. They
     # are deliberately not converted into thinking/tool blocks.
     return ()
+
+
+def finalize_openai_stream(state: OpenAIStreamState) -> None:
+    if not state.saw_terminal_completion:
+        result_code = "openai_response_failed"
+        raise ProviderStreamValidationError(
+            "OpenAI stream ended without a terminal completion event.",
+            result_code=result_code,
+            result_message=get_openai_result_message(result_code),
+        )
+    if not state.saw_visible_answer_text:
+        result_code = "openai_response_empty_output"
+        raise ProviderStreamValidationError(
+            build_openai_empty_output_detail(),
+            result_code=result_code,
+            result_message=get_openai_result_message(result_code),
+        )
 
 
 def _map_output_item_event(

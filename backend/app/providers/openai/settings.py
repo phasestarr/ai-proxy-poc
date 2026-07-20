@@ -4,7 +4,7 @@ Purpose:
 
 Responsibilities:
 - Keep OpenAI-specific runtime configuration out of generic app settings
-- Hold Responses API hosted tool configuration in the provider namespace
+- Bind credentials and external OpenAI resource identifiers
 """
 
 from __future__ import annotations
@@ -22,15 +22,14 @@ class OpenAIProviderSettings(BaseSettings):
         validation_alias="OPENAI_VECTOR_STORE_IDS",
         exclude=True,
     )
-    file_search_max_num_results: int = Field(validation_alias="OPENAI_FILE_SEARCH_MAX_NUM_RESULTS")
-    file_search_score_threshold: float | None = Field(
-        validation_alias="OPENAI_FILE_SEARCH_SCORE_THRESHOLD",
-    )
-    code_interpreter_memory_limit: str = Field(validation_alias="OPENAI_CODE_INTERPRETER_MEMORY_LIMIT")
-
     model_config = SettingsConfigDict(
         extra="ignore",
     )
+
+    @field_validator("api_key")
+    @classmethod
+    def normalize_api_key(cls, value: str) -> str:
+        return value.strip()
 
     @field_validator("vector_store_ids_value", mode="before")
     @classmethod
@@ -45,34 +44,6 @@ class OpenAIProviderSettings(BaseSettings):
             return ",".join(str(item).strip() for item in value if str(item).strip())
 
         raise ValueError("OPENAI_VECTOR_STORE_IDS must be a comma-separated string or list")
-
-    @field_validator("file_search_max_num_results")
-    @classmethod
-    def validate_file_search_max_num_results(cls, value: int) -> int:
-        if value < 1 or value > 50:
-            raise ValueError("OPENAI_FILE_SEARCH_MAX_NUM_RESULTS must be between 1 and 50")
-        return value
-
-    @field_validator("file_search_score_threshold", mode="before")
-    @classmethod
-    def parse_file_search_score_threshold(cls, value: object) -> float | None:
-        if value is None:
-            return None
-        if isinstance(value, str) and not value.strip():
-            return None
-        parsed = float(value)
-        if parsed < 0 or parsed > 1:
-            raise ValueError("OPENAI_FILE_SEARCH_SCORE_THRESHOLD must be between 0 and 1")
-        return parsed
-
-    @field_validator("code_interpreter_memory_limit")
-    @classmethod
-    def validate_code_interpreter_memory_limit(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        allowed_values = {"1g", "4g", "16g", "64g"}
-        if normalized not in allowed_values:
-            raise ValueError("OPENAI_CODE_INTERPRETER_MEMORY_LIMIT must be one of 1g, 4g, 16g, or 64g")
-        return normalized
 
     @property
     def vector_store_ids(self) -> list[str]:

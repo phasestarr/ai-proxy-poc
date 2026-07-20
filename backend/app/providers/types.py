@@ -22,6 +22,15 @@ ThinkingBlockOperation = ProviderBlockOperation
 ToolBlockOperation = ProviderBlockOperation
 
 
+class ProviderStreamValidationError(RuntimeError):
+    """Raised by a provider mapper when a completed raw stream is semantically invalid."""
+
+    def __init__(self, message: str, *, result_code: str, result_message: str) -> None:
+        self.result_code = result_code
+        self.result_message = result_message
+        super().__init__(message)
+
+
 @dataclass(slots=True, frozen=True)
 class ProviderPriceEstimate:
     input_cost_usd: float = 0.0
@@ -139,13 +148,16 @@ class PreparedProviderChatRequest:
     provider: str
     public_model_id: str
     payload: object
-    estimated_input_tokens: int
-    input_token_count_payload: object | None = None
-    resolved_input_tokens: int | None = None
+    estimated_text_tokens: int
+    selected_tool_ids: tuple[str, ...] = ()
+    text_token_count_payload: object | None = None
+    resolved_text_tokens: int | None = None
 
     @property
-    def budget_input_tokens(self) -> int:
-        return self.resolved_input_tokens or self.estimated_input_tokens
+    def budget_text_tokens(self) -> int:
+        if self.resolved_text_tokens is not None:
+            return self.resolved_text_tokens
+        return self.estimated_text_tokens
 
 
 def dump_provider_value(value: object) -> object:

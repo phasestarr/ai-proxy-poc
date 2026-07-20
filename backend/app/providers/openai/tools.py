@@ -12,58 +12,20 @@ from __future__ import annotations
 from collections.abc import Iterable
 from copy import deepcopy
 
-from app.config.providers.openai import openai_settings
+from app.providers.openai.config import OPENAI_TOOLS
+from app.providers.openai.options import OPENAI_TOOL_OPTIONS
+from app.providers.openai.settings import openai_settings
 from app.providers.types import ProviderToolDefinition, provider_identifier_display_name
 
 # `models.py` decides what model to use what tool.
-OPENAI_TOOL_DEFINITIONS_BY_ID: dict[str, ProviderToolDefinition] = {
-    "web_search": ProviderToolDefinition(
-        public_id="web_search",
-        display_name=provider_identifier_display_name("web_search"),
-        available=True,
-    ),
-    "file_search": ProviderToolDefinition(
-        public_id="file_search",
-        display_name=provider_identifier_display_name("file_search"),
-        available=True,
-    ),
-    "code_interpreter": ProviderToolDefinition(
-        public_id="code_interpreter",
-        display_name=provider_identifier_display_name("code_interpreter"),
-        available=True,
-    ),
-    "shell": ProviderToolDefinition(
-        public_id="shell",
-        display_name=provider_identifier_display_name("shell"),
-        available=True,
-    ),
+OPENAI_TOOL_DEFINITIONS_BY_ID = {
+    tool_id: ProviderToolDefinition(tool_id, provider_identifier_display_name(tool_id), available)
+    for tool_id, available in OPENAI_TOOLS
 }
 
 
 class OpenAIToolConfigurationError(RuntimeError):
     """Raised when a selected OpenAI tool cannot be configured."""
-
-
-_OPENAI_TOOL_OPTION_DEFAULTS: dict[str, object] = {
-    "web_search": {
-        "filters": {"enabled": False, "value": {}},
-        "search_context_size": {"enabled": False, "value": "medium"},
-        "type": {"enabled": False, "value": "web_search"},
-        "user_location": {"enabled": False, "value": {}},
-    },
-    "file_search": {
-        "filters": {"enabled": False, "value": {}},
-        "max_num_results": {"enabled": False, "value": 5},
-        "ranking_options": {
-            "enabled": False,
-            "score_threshold": None,
-            "ranker": None,
-        },
-    },
-    "code_interpreter": {
-        "container": {"enabled": False, "value": {}},
-    },
-}
 
 
 def build_openai_hosted_tools(
@@ -77,7 +39,7 @@ def build_openai_hosted_tools(
         "code_interpreter": _build_openai_code_interpreter_tool,
         "shell": _build_openai_shell_tool,
     }
-    normalized_tool_options = deepcopy(_OPENAI_TOOL_OPTION_DEFAULTS)
+    normalized_tool_options = deepcopy(OPENAI_TOOL_OPTIONS)
 
     for tool_id in _normalize_selected_tool_ids(selected_tool_ids):
         builder = tool_builders.get(tool_id)
@@ -98,83 +60,37 @@ def get_openai_tool_definitions(*tool_ids: str) -> tuple[ProviderToolDefinition,
 
 def _build_openai_web_search_tool(tool_options: dict[str, object]) -> dict[str, object]:
     web_search_options = tool_options.get("web_search", {})
-    tool_payload: dict[str, object] = {
-        "type": _get_enabled_scalar_value(
-            web_search_options.get("type"),
-            fallback="web_search",
-        ),
-    }
-
-    filters = _get_enabled_scalar_value(web_search_options.get("filters"))
-    if filters:
-        tool_payload["filters"] = filters
-
-    search_context_size = _get_enabled_scalar_value(web_search_options.get("search_context_size"))
-    if search_context_size:
-        tool_payload["search_context_size"] = search_context_size
-
-    user_location = _get_enabled_scalar_value(web_search_options.get("user_location"))
-    if user_location:
-        tool_payload["user_location"] = user_location
-
-    return tool_payload
+    if not isinstance(web_search_options, dict):
+        raise OpenAIToolConfigurationError("openai web_search options must be a mapping")
+    return _prune_none_values({"type": "web_search", **web_search_options})
 
 
 def _build_openai_file_search_tool(tool_options: dict[str, object]) -> dict[str, object]:
     _ensure_openai_file_search_tool_ready()
     file_search_options = tool_options.get("file_search", {})
+    if not isinstance(file_search_options, dict):
+        raise OpenAIToolConfigurationError("openai file_search options must be a mapping")
 
     tool_payload: dict[str, object] = {
         "type": "file_search",
         "vector_store_ids": openai_settings.vector_store_ids,
-        "max_num_results": _get_enabled_scalar_value(
-            file_search_options.get("max_num_results"),
-            fallback=openai_settings.file_search_max_num_results,
-        ),
+        **file_search_options,
     }
-
-    filters = _get_enabled_scalar_value(file_search_options.get("filters"))
-    if filters:
-        tool_payload["filters"] = filters
-
-    ranking_options_config = file_search_options.get("ranking_options")
-    ranking_options: dict[str, object] = {}
-    if openai_settings.file_search_score_threshold is not None:
-        ranking_options["score_threshold"] = openai_settings.file_search_score_threshold
-    if isinstance(ranking_options_config, dict) and ranking_options_config.get("enabled"):
-        if ranking_options_config.get("score_threshold") is not None:
-            ranking_options["score_threshold"] = ranking_options_config.get("score_threshold")
-        if ranking_options_config.get("ranker"):
-            ranking_options["ranker"] = ranking_options_config.get("ranker")
-    if ranking_options:
-        tool_payload["ranking_options"] = ranking_options
-
-    return tool_payload
+    return _prune_none_values(tool_payload)
 
 
 def _build_openai_code_interpreter_tool(tool_options: dict[str, object]) -> dict[str, object]:
-    tool_payload = {
-        "type": "code_interpreter",
-        "container": {
-            "type": "auto",
-            "memory_limit": openai_settings.code_interpreter_memory_limit,
-        },
-    }
-
     code_interpreter_options = tool_options.get("code_interpreter", {})
-    container_override = _get_enabled_scalar_value(code_interpreter_options.get("container"))
-    if container_override:
-        tool_payload["container"] = container_override
-
-    return tool_payload
+    if not isinstance(code_interpreter_options, dict):
+        raise OpenAIToolConfigurationError("openai code_interpreter options must be a mapping")
+    return _prune_none_values({"type": "code_interpreter", **code_interpreter_options})
 
 
 def _build_openai_shell_tool(tool_options: dict[str, object]) -> dict[str, object]:
-    del tool_options
-    return {
-        "type": "shell",
-        "environment": {"type": "container_auto"},
-    }
+    shell_options = tool_options.get("shell", {})
+    if not isinstance(shell_options, dict):
+        raise OpenAIToolConfigurationError("openai shell options must be a mapping")
+    return _prune_none_values({"type": "shell", **shell_options})
 
 
 def _ensure_openai_file_search_tool_ready() -> None:
@@ -197,7 +113,15 @@ def _normalize_selected_tool_ids(selected_tool_ids: Iterable[str]) -> list[str]:
     return normalized_tool_ids
 
 
-def _get_enabled_scalar_value(option_config: object, *, fallback: object = None) -> object:
-    if not isinstance(option_config, dict) or not option_config.get("enabled"):
-        return fallback
-    return option_config.get("value")
+def _prune_none_values(value: dict[str, object]) -> dict[str, object]:
+    cleaned: dict[str, object] = {}
+    for key, item in value.items():
+        if item is None:
+            continue
+        if isinstance(item, dict):
+            nested = _prune_none_values(item)
+            if nested:
+                cleaned[key] = nested
+            continue
+        cleaned[key] = item
+    return cleaned

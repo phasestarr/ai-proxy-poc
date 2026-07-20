@@ -5,10 +5,15 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from app.providers.anthropic.outcomes import get_anthropic_status_message
+from app.providers.anthropic.outcomes import (
+    build_anthropic_empty_output_detail,
+    get_anthropic_result_message,
+    get_anthropic_status_message,
+)
 from app.providers.anthropic.usage import map_anthropic_usage
 from app.providers.types import (
     ProviderStreamEvent,
+    ProviderStreamValidationError,
     ThinkingDeltaBlock,
     ToolBlockOperation,
     ToolUsageBlock,
@@ -31,6 +36,9 @@ class AnthropicStreamState:
     message_id: str | None = None
     model: str | None = None
     blocks: dict[int, _AnthropicContentBlockState] = field(default_factory=dict)
+    saw_visible_answer_text: bool = False
+    saw_terminal_stop_reason: bool = False
+    last_stop_reason: str | None = None
 
 
 def map_chat_messages_to_anthropic_messages(
@@ -80,6 +88,9 @@ def map_anthropic_stream_event(
         delta = _field(event, "delta")
         usage = _field(event, "usage")
         stop_reason = _string_or_none(_field(delta, "stop_reason"))
+        if stop_reason is not None:
+            state.saw_terminal_stop_reason = True
+            state.last_stop_reason = stop_reason
         status_code = "anthropic_message_delta"
         return (
             ProviderStreamEvent(
@@ -152,6 +163,7 @@ def _map_content_block_start(
     if content_type == "text":
         text = _field(content_block, "text")
         if isinstance(text, str) and text:
+            state.saw_visible_answer_text = True
             return (
                 ProviderStreamEvent(
                     kind="answer_delta",
@@ -226,6 +238,7 @@ def _map_content_block_delta(
     if block_state.content_type == "text" and delta_type == "text_delta":
         text = _field(delta, "text")
         if isinstance(text, str) and text:
+            state.saw_visible_answer_text = True
             return (
                 ProviderStreamEvent(
                     kind="answer_delta",
@@ -237,6 +250,23 @@ def _map_content_block_delta(
                 ),
             )
     return ()
+
+
+def finalize_anthropic_stream(state: AnthropicStreamState) -> None:
+    if not state.saw_terminal_stop_reason:
+        result_code = "anthropic_stream_error"
+        raise ProviderStreamValidationError(
+            "Claude stream ended without a terminal stop_reason.",
+            result_code=result_code,
+            result_message=get_anthropic_result_message(result_code),
+        )
+    if not state.saw_visible_answer_text:
+        result_code = "anthropic_empty_output"
+        raise ProviderStreamValidationError(
+            build_anthropic_empty_output_detail(stop_reason=state.last_stop_reason),
+            result_code=result_code,
+            result_message=get_anthropic_result_message(result_code),
+        )
 
 
 def _map_content_block_stop(

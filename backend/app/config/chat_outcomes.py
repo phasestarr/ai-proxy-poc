@@ -34,6 +34,7 @@ ERROR_MESSAGES: dict[str, str] = {
     "context_still_too_large": "Conversation context is still too large to send.",
     "model_required": "Select a model before sending.",
     "model_unsupported": "The selected model is not supported.",
+    "prompt_too_large": "The latest prompt exceeds the text token limit.",
     "tool_unsupported": "The selected tool is not supported by this model.",
     "provider_auth_failed": "The selected provider rejected the proxy credentials.",
     "provider_bad_request": "The selected provider rejected the request.",

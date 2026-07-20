@@ -1,10 +1,3 @@
-export type ChatRole = "system" | "user" | "assistant";
-
-export type ChatRequestMessage = {
-  role: ChatRole;
-  content: string;
-};
-
 export type ChatSelection = {
   modelId?: string | null;
   toolIds?: string[];
@@ -149,7 +142,7 @@ export type ChatStreamDone = {
 
 export type StreamChatReplyOptions = {
   chatHistoryId?: string | null;
-  messages: ChatRequestMessage[];
+  prompt: string;
   selection?: ChatSelection;
   signal?: AbortSignal;
   onStart?: (event: ChatStreamStart) => void;

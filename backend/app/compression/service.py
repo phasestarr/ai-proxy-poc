@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.compression.prompts import COMPRESSION_SYSTEM_INSTRUCTION, build_compression_user_prompt
+from app.compression.prompts import build_compression_system_instruction, build_compression_user_prompt
 from app.compression.types import CompressionResult, ContextCompressionError
 from app.compression.vertex.config import COMPRESSION_VERTEX_MODEL
 from app.compression.vertex.stream import compress_with_vertex_flash
@@ -17,7 +17,7 @@ async def compress_chat_history_context(*, source_text: str) -> CompressionResul
 
     try:
         return await compress_with_vertex_flash(
-            system_instruction=COMPRESSION_SYSTEM_INSTRUCTION,
+            system_instruction=build_compression_system_instruction(),
             user_prompt=build_compression_user_prompt(source_text=trimmed_source),
         )
     except ContextCompressionError:

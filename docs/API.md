@@ -11,7 +11,7 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
   - `session_conflict_id`
 - session lifetime:
   - one rolling backend-owned `expires_at`
-  - default TTL: `6 hours`
+  - TTL: `AUTH_SESSION_TTL_MINUTES`
   - idle expiry is determined from `last_seen_at`
   - session-limit eviction also moves the older session into `expired`
 
@@ -43,6 +43,10 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 - `GET /api/v1/chat/histories`
   - authenticated
   - lists current user's chat histories
+- `POST /api/v1/chat/completions`
+  - accepts the latest user input as scalar `prompt`
+  - persisted chat history is loaded and assembled by the backend
+  - `tool_ids`, `model_id`, and `chat_history_id` remain optional request selections
 - `GET /api/v1/chat/histories/{history_id}`
   - authenticated
   - returns one history plus persisted messages
@@ -94,25 +98,25 @@ Current HTTP surface exposed by frontend NGINX and backend FastAPI.
 - `tool_ids`
   - optional
   - each tool must be exposed by the selected model
-- `messages`
+- `prompt`
   - required
-  - at least one `user` message is required
-  - last message must be `user`
-  - backend validates request shape, message count, tool count, and message content length
-- backend uses only the request's last user message and rebuilds the earlier context from backend-owned storage
+  - contains only the latest user input
+  - blank input and input over the configured token limit are rejected
+- backend rebuilds all earlier context from backend-owned storage
 
 Important:
-- those validation limits are request-schema limits, not provider token-window limits
-- when `chat_history_id` is present, backend rebuilds provider context from persisted non-error messages and treats the request's last user message as the new turn
-- backend may run an internal context-compaction step before the main provider request when estimated provider input is above the soft threshold
+- the latest prompt has its own hard text-token limit
+- when `chat_history_id` is present, backend rebuilds provider context from persisted non-error messages and treats `prompt` as the new turn
+- instructions, persisted text context, and the latest prompt share the text-compaction budget
+- attachments use an independent per-history/provider token limit and do not trigger text compaction
 - local validation or coordination rejects do not create a persisted turn
 - on the first text-only send from a brand-new local conversation, the frontend calls `POST /api/v1/chat/completions` with neither id
 - once a chat turn is created, provider execution continues in the backend even if the browser SSE connection closes
 
 ## Chat History Metadata
 
-- chat history auto-titles are normalized from the first prompt and stored up to `80` characters without backend-added ellipsis
-- manually renamed titles are stored up to `255` characters
+- chat history auto-titles are normalized and capped by `GENERATED_CHAT_HISTORY_TITLE_MAX_CHARS`
+- manually renamed titles are capped by `CHAT_HISTORY_TITLE_MAX_CHARS`
 - frontend display truncation is a presentation concern; backend stores the title text
 - chat history list order is:
   - pinned histories first by `pin_order ASC`
@@ -177,20 +181,20 @@ Notes:
 - persisted block rows are not replayed over the active SSE stream; they are returned by `GET /api/v1/chat/histories/{history_id}`
 - `status_code` values are provider-specific progress codes
 - internal proxy status codes may also appear, including:
-  - `context_input_tokens_estimated`
-  - `context_input_tokens_exact`
+  - `context_text_tokens_estimated`
+  - `context_text_tokens_exact`
   - `context_compaction_started`
 - `result_code` values are provider-specific terminal outcome codes
 - `detail` is currently part of the product error contract and can include provider-aware diagnostic text
 - user/operator formatting for provider details is tracked separately in `docs/TO-DO.md`
 
 Current internal pre-provider status semantics:
-- `context_input_tokens_estimated`
+- `context_text_tokens_estimated`
   - emitted before provider execution
-  - uses the backend heuristic request-size estimate
-- `context_input_tokens_exact`
+  - uses the backend heuristic for instructions, persisted text, and the latest prompt
+- `context_text_tokens_exact`
   - emitted only when the backend called the provider-native count-tokens API
-  - uses the provider-returned exact request size
+  - excludes tools and attachments from the count payload
 - `context_compaction_started`
   - emitted when the request is still above threshold and the backend starts checkpoint compression
   - includes the token count that triggered compaction in the message text
@@ -250,40 +254,13 @@ Assistant messages also include:
 
 ## Public Model Surface
 
-Current public model ids:
-
-- Vertex:
-  - `gemini-3.5-flash`
-  - `gemini-3.1-pro-preview`
-  - `gemini-3-flash-preview`
-- OpenAI:
-  - `gpt-5.6-sol`
-  - `gpt-5.6-terra`
-  - `gpt-5.6-luna`
-  - `gpt-5.4-mini`
-- Anthropic:
-  - `claude-opus-4-8`
-  - `claude-sonnet-5`
-  - `claude-haiku-4-5`
-
-Notes:
-- `claude-opus-4-8` and `gpt-5.6-sol` are intentionally exposed as unavailable
-- final availability and tool exposure come from backend provider model definitions, not the frontend
+`GET /api/v1/models` is the runtime source of truth. Model ids, availability,
+tool exposure, helper model ids, and price cards are declared in each provider's
+`config.py`; they are intentionally not duplicated in this document.
 
 ## Public Tool Surface
-
-Current provider-native public tool ids:
-
-- Vertex: `google_search`, `url_context`, `code_execution`, `google_maps`, `retrieval`
-- OpenAI: `web_search`, `file_search`, `code_interpreter`, `shell`
-- Anthropic: `web_search`, `web_fetch`, `code_execution`
 
 Provider notes:
 - Vertex `retrieval` is Vertex RAG Engine backed by `retrieval.vertex_rag_store`
 - tool display names are formatted from provider ids, for example `google_search` becomes `Google Search`
 - actual tool availability is model-specific and must be read from `GET /api/v1/models`
-
-Internal generic-helper defaults:
-- Vertex helper work such as context compression uses `gemini-3-flash-preview`
-- OpenAI helper work such as attachment token counting uses `gpt-5.4-mini`
-- Anthropic helper work such as attachment token counting uses `claude-haiku-4-5`

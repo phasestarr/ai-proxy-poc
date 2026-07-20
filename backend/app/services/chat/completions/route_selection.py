@@ -18,14 +18,13 @@ from dataclasses import dataclass
 
 from app.providers.catalog import resolve_provider_route
 from app.providers.types import ProviderRoute
-from app.schemas.chat import ChatCompletionRequest, ChatMessage
+from app.schemas.chat import ChatCompletionRequest
 from app.auth.types import SessionContext
 
 
 @dataclass(slots=True, frozen=True)
 class PreparedChatCompletionRequest:
     route: ProviderRoute
-    messages: list[ChatMessage]
 
 
 def prepare_chat_completion_request(
@@ -35,15 +34,11 @@ def prepare_chat_completion_request(
 ) -> PreparedChatCompletionRequest:
     del session
 
-    if not payload.messages:
-        raise ValueError("messages must not be empty")
-
     return PreparedChatCompletionRequest(
         route=resolve_provider_route(
             model_id=payload.model_id,
             tool_ids=payload.tool_ids,
         ),
-        messages=list(payload.messages),
     )
 
 

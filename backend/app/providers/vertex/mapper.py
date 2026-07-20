@@ -7,12 +7,17 @@ from dataclasses import dataclass, field
 
 from app.providers.types import (
     ProviderStreamEvent,
+    ProviderStreamValidationError,
     ThinkingDeltaBlock,
     ToolBlockOperation,
     ToolUsageBlock,
     dump_provider_value,
 )
-from app.providers.vertex.outcomes import get_vertex_status_message
+from app.providers.vertex.outcomes import (
+    build_vertex_empty_output_detail,
+    get_vertex_result_message,
+    get_vertex_status_message,
+)
 from app.providers.vertex.usage import map_vertex_usage
 from app.schemas.chat import ChatMessage
 
@@ -21,6 +26,9 @@ from app.schemas.chat import ChatMessage
 class VertexStreamState:
     chunk_ordinal: int = 0
     tool_blocks_started: set[str] = field(default_factory=set)
+    saw_visible_answer_text: bool = False
+    saw_terminal_finish_reason: bool = False
+    last_finish_reason: str | None = None
 
 
 def map_chat_messages_to_vertex_contents(
@@ -71,6 +79,8 @@ def map_vertex_stream_chunk(
         candidate_finish_reason = _finish_reason(candidate)
         if candidate_finish_reason is not None:
             finish_reason = candidate_finish_reason
+            state.saw_terminal_finish_reason = True
+            state.last_finish_reason = candidate_finish_reason
         parts = _field(_field(candidate, "content"), "parts") or []
 
         for part_index, part in enumerate(parts):
@@ -111,6 +121,7 @@ def map_vertex_stream_chunk(
                     )
                     status_code = status_code or "vertex_thinking"
                 else:
+                    state.saw_visible_answer_text = True
                     events.append(
                         ProviderStreamEvent(
                             kind="answer_delta",
@@ -199,6 +210,23 @@ def map_vertex_stream_chunk(
             raw_event_type="generateContent.chunk",
         ),
     )
+
+
+def finalize_vertex_stream(state: VertexStreamState) -> None:
+    if not state.saw_terminal_finish_reason:
+        result_code = "vertex_stream_error"
+        raise ProviderStreamValidationError(
+            "Gemini stream ended without a terminal finishReason.",
+            result_code=result_code,
+            result_message=get_vertex_result_message(result_code),
+        )
+    if not state.saw_visible_answer_text:
+        result_code = "vertex_empty_output"
+        raise ProviderStreamValidationError(
+            build_vertex_empty_output_detail(finish_reason=state.last_finish_reason),
+            result_code=result_code,
+            result_message=get_vertex_result_message(result_code),
+        )
 
 
 def _vertex_thinking_metadata(

@@ -12,46 +12,20 @@ from __future__ import annotations
 from collections.abc import Iterable
 from copy import deepcopy
 
-from app.config.providers.anthropic import anthropic_settings
+from app.providers.anthropic.config import (
+    ANTHROPIC_CODE_EXECUTION_TOOL_VERSION,
+    ANTHROPIC_DIRECT_WEB_TOOL_MODELS,
+    ANTHROPIC_TOOLS,
+    ANTHROPIC_WEB_FETCH_TOOL_VERSION,
+    ANTHROPIC_WEB_SEARCH_TOOL_VERSION,
+)
+from app.providers.anthropic.options import ANTHROPIC_TOOL_OPTIONS
 from app.providers.types import ProviderToolDefinition, provider_identifier_display_name
 
-ANTHROPIC_WEB_SEARCH_TOOL_VERSION = "web_search_20260318"
-ANTHROPIC_WEB_FETCH_TOOL_VERSION = "web_fetch_20260318"
-ANTHROPIC_CODE_EXECUTION_TOOL_VERSION = "code_execution_20260521"
-_ANTHROPIC_DIRECT_WEB_TOOL_MODELS = {"claude-haiku-4-5"}
-
 # `models.py` decides what model to use what tool.
-ANTHROPIC_TOOL_DEFINITIONS_BY_ID: dict[str, ProviderToolDefinition] = {
-    "web_search": ProviderToolDefinition(
-        public_id="web_search",
-        display_name=provider_identifier_display_name("web_search"),
-        available=True,
-    ),
-    "web_fetch": ProviderToolDefinition(
-        public_id="web_fetch",
-        display_name=provider_identifier_display_name("web_fetch"),
-        available=True,
-    ),
-    "code_execution": ProviderToolDefinition(
-        public_id="code_execution",
-        display_name=provider_identifier_display_name("code_execution"),
-        available=True,
-    ),
-}
-
-_ANTHROPIC_TOOL_OPTION_DEFAULTS: dict[str, object] = {
-    "web_search": {
-        "enabled": False,
-        "version": ANTHROPIC_WEB_SEARCH_TOOL_VERSION,
-        "allowed_domains": {"enabled": False, "value": []},
-        "blocked_domains": {"enabled": False, "value": []},
-        "max_uses": {"enabled": False, "value": 5},
-    },
-    "web_fetch": {
-        "max_uses": {"enabled": True, "value": 5},
-        "max_content_tokens": {"enabled": True, "value": 50_000},
-        "citations": {"enabled": True, "value": {"enabled": True}},
-    },
+ANTHROPIC_TOOL_DEFINITIONS_BY_ID = {
+    tool_id: ProviderToolDefinition(tool_id, provider_identifier_display_name(tool_id), available)
+    for tool_id, available in ANTHROPIC_TOOLS
 }
 
 
@@ -70,7 +44,7 @@ def build_anthropic_hosted_tools(
         "web_fetch": _build_anthropic_web_fetch_tool,
         "code_execution": _build_anthropic_code_execution_tool,
     }
-    normalized_tool_options = deepcopy(_ANTHROPIC_TOOL_OPTION_DEFAULTS)
+    normalized_tool_options = deepcopy(ANTHROPIC_TOOL_OPTIONS)
 
     for tool_id in _normalize_selected_tool_ids(selected_tool_ids):
         builder = tool_builders.get(tool_id)
@@ -96,25 +70,18 @@ def get_anthropic_tool_definitions(*tool_ids: str) -> tuple[ProviderToolDefiniti
 
 def _build_anthropic_web_search_tool(tool_options: dict[str, object], *, model: str | None = None) -> dict[str, object]:
     web_search_options = tool_options.get("web_search", {})
+    if not isinstance(web_search_options, dict):
+        raise AnthropicToolConfigurationError("anthropic web_search options must be a mapping")
     tool_payload: dict[str, object] = {
         "type": ANTHROPIC_WEB_SEARCH_TOOL_VERSION,
         "name": "web_search",
-        "max_uses": _get_enabled_scalar_value(
-            web_search_options.get("max_uses"),
-            fallback=anthropic_settings.web_search_max_uses,
-        ),
+        **_prune_none_values(web_search_options),
     }
-    if model in _ANTHROPIC_DIRECT_WEB_TOOL_MODELS:
+    if model in ANTHROPIC_DIRECT_WEB_TOOL_MODELS:
         tool_payload["allowed_callers"] = ["direct"]
 
-    allowed_domains = _get_enabled_scalar_value(
-        web_search_options.get("allowed_domains"),
-        fallback=anthropic_settings.web_search_allowed_domains,
-    )
-    blocked_domains = _get_enabled_scalar_value(
-        web_search_options.get("blocked_domains"),
-        fallback=anthropic_settings.web_search_blocked_domains,
-    )
+    allowed_domains = web_search_options.get("allowed_domains")
+    blocked_domains = web_search_options.get("blocked_domains")
     if allowed_domains and blocked_domains:
         raise AnthropicToolConfigurationError(
             "anthropic web search cannot use allowed and blocked domains at the same time"
@@ -129,15 +96,14 @@ def _build_anthropic_web_search_tool(tool_options: dict[str, object], *, model: 
 
 def _build_anthropic_web_fetch_tool(tool_options: dict[str, object], *, model: str | None = None) -> dict[str, object]:
     web_fetch_options = tool_options.get("web_fetch", {})
+    if not isinstance(web_fetch_options, dict):
+        raise AnthropicToolConfigurationError("anthropic web_fetch options must be a mapping")
     tool_payload: dict[str, object] = {
         "type": ANTHROPIC_WEB_FETCH_TOOL_VERSION,
         "name": "web_fetch",
+        **_prune_none_values(web_fetch_options),
     }
-    for option_name in ("max_uses", "max_content_tokens", "citations"):
-        option_value = _get_enabled_scalar_value(web_fetch_options.get(option_name))
-        if option_value is not None:
-            tool_payload[option_name] = option_value
-    if model in _ANTHROPIC_DIRECT_WEB_TOOL_MODELS:
+    if model in ANTHROPIC_DIRECT_WEB_TOOL_MODELS:
         tool_payload["allowed_callers"] = ["direct"]
     return tool_payload
 
@@ -163,7 +129,15 @@ def _normalize_selected_tool_ids(selected_tool_ids: Iterable[str]) -> list[str]:
     return normalized_tool_ids
 
 
-def _get_enabled_scalar_value(option_config: object, *, fallback: object = None) -> object:
-    if not isinstance(option_config, dict) or not option_config.get("enabled"):
-        return fallback
-    return option_config.get("value")
+def _prune_none_values(value: dict[str, object]) -> dict[str, object]:
+    cleaned: dict[str, object] = {}
+    for key, item in value.items():
+        if item is None:
+            continue
+        if isinstance(item, dict):
+            nested = _prune_none_values(item)
+            if nested:
+                cleaned[key] = nested
+            continue
+        cleaned[key] = item
+    return cleaned

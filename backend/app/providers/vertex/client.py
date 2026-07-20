@@ -14,7 +14,8 @@ Notes:
 
 from __future__ import annotations
 
-from app.config.providers.vertex import vertex_settings
+from app.providers.vertex.config import VERTEX_API_VERSION
+from app.providers.vertex.settings import vertex_settings
 
 
 class VertexProviderConfigurationError(RuntimeError):
@@ -42,7 +43,7 @@ def build_vertex_client(*, location: str):
         vertexai=True,
         project=vertex_settings.project,
         location=location,
-        http_options=types.HttpOptions(api_version=vertex_settings.api_version),
+        http_options=types.HttpOptions(api_version=VERTEX_API_VERSION),
     )
 
 

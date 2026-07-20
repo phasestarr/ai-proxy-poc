@@ -43,7 +43,7 @@ def mark_expired_sessions(
             auth_session,
             now=now,
             reason_code="idle_timeout",
-            reason="Session expired after 6 hours of inactivity.",
+            reason="Session expired after the configured inactivity period.",
         )
         expired_count += 1
     return expired_count

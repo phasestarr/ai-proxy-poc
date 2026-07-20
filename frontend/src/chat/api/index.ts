@@ -19,8 +19,6 @@ export type {
   ChatHistoryMessage,
   ChatHistoryMessageBlock,
   ChatHistorySummary,
-  ChatRequestMessage,
-  ChatRole,
   ChatSelection,
   ChatStreamBlock,
   ChatStreamDone,

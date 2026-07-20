@@ -25,7 +25,7 @@ export async function streamChatReply(options: StreamChatReplyOptions): Promise<
       chat_history_id: options.chatHistoryId ?? null,
       model_id: options.selection?.modelId ?? null,
       tool_ids: options.selection?.toolIds ?? [],
-      messages: options.messages,
+      prompt: options.prompt,
     }),
     signal: options.signal,
   });

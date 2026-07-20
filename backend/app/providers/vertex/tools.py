@@ -15,49 +15,19 @@ from __future__ import annotations
 from collections.abc import Iterable
 from copy import deepcopy
 
-from app.config.providers.vertex import vertex_settings
+from app.providers.vertex.config import VERTEX_TOOLS
+from app.providers.vertex.options import VERTEX_TOOL_OPTIONS
+from app.providers.vertex.settings import vertex_settings
 from app.providers.types import ProviderToolDefinition, provider_identifier_display_name
 
 # `models.py` decides what model to use what tool.
-VERTEX_TOOL_DEFINITIONS_BY_ID: dict[str, ProviderToolDefinition] = {
-    "google_search": ProviderToolDefinition(
-        public_id="google_search",
-        display_name=provider_identifier_display_name("google_search"),
-        available=True,
-    ),
-    "retrieval": ProviderToolDefinition(
-        public_id="retrieval",
-        display_name=provider_identifier_display_name("retrieval"),
-        available=True,
-    ),
-    "code_execution": ProviderToolDefinition(
-        public_id="code_execution",
-        display_name=provider_identifier_display_name("code_execution"),
-        available=True,
-    ),
-    "url_context": ProviderToolDefinition(
-        public_id="url_context",
-        display_name=provider_identifier_display_name("url_context"),
-        available=True,
-    ),
-    "google_maps": ProviderToolDefinition(
-        public_id="google_maps",
-        display_name=provider_identifier_display_name("google_maps"),
-        available=True,
-    ),
+VERTEX_TOOL_DEFINITIONS_BY_ID = {
+    tool_id: ProviderToolDefinition(tool_id, provider_identifier_display_name(tool_id), available)
+    for tool_id, available in VERTEX_TOOLS
 }
 
 class VertexToolConfigurationError(RuntimeError):
     """Raised when a selected Vertex tool cannot be configured."""
-
-
-_VERTEX_TOOL_OPTION_DEFAULTS: dict[str, object] = {
-    "retrieval": {
-        "rag_resources": {"enabled": False, "value": []},
-        "similarity_top_k": {"enabled": False, "value": 5},
-        "vector_distance_threshold": {"enabled": False, "value": None},
-    },
-}
 
 
 def build_vertex_hosted_tools(
@@ -73,7 +43,7 @@ def build_vertex_hosted_tools(
         "url_context": _build_vertex_url_context_tool,
         "google_maps": _build_vertex_google_maps_tool,
     }
-    normalized_tool_options = deepcopy(_VERTEX_TOOL_OPTION_DEFAULTS)
+    normalized_tool_options = deepcopy(VERTEX_TOOL_OPTIONS)
 
     for tool_id in _normalize_selected_tool_ids(selected_tool_ids):
         builder = tool_builders.get(tool_id)
@@ -116,22 +86,15 @@ def _build_vertex_google_search_tool(*, types_module=None, tool_options: dict[st
 def _build_vertex_retrieval_tool(*, types_module=None, tool_options: dict[str, object]) -> object:
     _ensure_vertex_retrieval_tool_ready()
     retrieval_options = tool_options.get("retrieval", {})
+    if not isinstance(retrieval_options, dict):
+        raise VertexToolConfigurationError("vertex retrieval options must be a mapping")
 
     rag_store: dict[str, object] = {
-        "rag_resources": _get_enabled_scalar_value(
-            retrieval_options.get("rag_resources"),
-            fallback=[{"rag_corpus": corpus} for corpus in vertex_settings.rag_corpora],
-        ),
-        "similarity_top_k": _get_enabled_scalar_value(
-            retrieval_options.get("similarity_top_k"),
-            fallback=vertex_settings.rag_similarity_top_k,
-        ),
+        "rag_resources": [{"rag_corpus": corpus} for corpus in vertex_settings.rag_corpora],
+        "similarity_top_k": retrieval_options["similarity_top_k"],
     }
 
-    vector_distance_threshold = _get_enabled_scalar_value(
-        retrieval_options.get("vector_distance_threshold"),
-        fallback=vertex_settings.rag_vector_distance_threshold,
-    )
+    vector_distance_threshold = retrieval_options.get("vector_distance_threshold")
     if vector_distance_threshold is not None:
         rag_store["vector_distance_threshold"] = vector_distance_threshold
 
@@ -206,13 +169,6 @@ def _ensure_vertex_retrieval_tool_ready() -> None:
     if any(not corpus.strip() for corpus in vertex_settings.rag_corpora):
         raise VertexToolConfigurationError("vertex retrieval corpus resource names must not be blank")
 
-    if vertex_settings.rag_similarity_top_k < 1:
-        raise VertexToolConfigurationError("vertex retrieval similarity_top_k must be at least 1")
-
-    threshold = vertex_settings.rag_vector_distance_threshold
-    if threshold is not None and threshold < 0:
-        raise VertexToolConfigurationError("vertex retrieval vector distance threshold must be non-negative")
-
 
 def _normalize_selected_tool_ids(selected_tool_ids: Iterable[str]) -> list[str]:
     normalized_tool_ids: list[str] = []
@@ -224,9 +180,3 @@ def _normalize_selected_tool_ids(selected_tool_ids: Iterable[str]) -> list[str]:
         normalized_tool_ids.append(normalized_tool_id)
         seen_tool_ids.add(normalized_tool_id)
     return normalized_tool_ids
-
-
-def _get_enabled_scalar_value(option_config: object, *, fallback: object = None) -> object:
-    if not isinstance(option_config, dict) or not option_config.get("enabled"):
-        return fallback
-    return option_config.get("value")

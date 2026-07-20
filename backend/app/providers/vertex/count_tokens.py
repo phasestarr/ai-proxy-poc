@@ -5,10 +5,6 @@ from dataclasses import dataclass
 from app.providers.vertex.client import build_vertex_client
 
 
-VERTEX_CHAT_COUNT_MODEL_SOURCE = "payload.provider_model"
-VERTEX_ATTACHMENT_COUNT_MODEL_ID = "gemini-3-flash-preview"
-
-
 @dataclass(slots=True, frozen=True)
 class VertexCountTokensPayload:
     provider_model: str

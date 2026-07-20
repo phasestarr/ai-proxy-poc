@@ -10,7 +10,7 @@ Responsibilities:
 
 from __future__ import annotations
 
-from app.config.providers.openai import openai_settings
+from app.providers.openai.settings import openai_settings
 
 
 class OpenAIProviderConfigurationError(RuntimeError):
@@ -33,4 +33,3 @@ def build_openai_client():
     from openai import AsyncOpenAI
 
     return AsyncOpenAI(api_key=openai_settings.api_key)
-

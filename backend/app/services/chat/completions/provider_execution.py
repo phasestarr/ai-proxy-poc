@@ -8,7 +8,6 @@ from app.db.postgres.session import SessionLocal
 from app.providers.anthropic.outcomes import (
     ANTHROPIC_SUCCESS_RESULT_CODE,
     get_anthropic_result_message,
-    pick_anthropic_success_message,
 )
 from app.providers.dispatcher import (
     ProviderExecutionError,
@@ -18,7 +17,6 @@ from app.providers.dispatcher import (
 from app.providers.openai.outcomes import (
     OPENAI_SUCCESS_RESULT_CODE,
     get_openai_result_message,
-    pick_openai_success_message,
 )
 from app.providers.types import (
     PreparedProviderChatRequest,
@@ -31,7 +29,6 @@ from app.providers.types import (
 from app.providers.vertex.outcomes import (
     VERTEX_SUCCESS_RESULT_CODE,
     get_vertex_result_message,
-    pick_vertex_success_message,
 )
 from app.schemas.chat import (
     ChatStreamDeltaEvent,
@@ -153,6 +150,7 @@ async def run_chat_completion_turn(
                     route.model.provider,
                     stream_event,
                 )
+        stream_mapper.finalize()
     except ProviderExecutionError as exc:
         error = map_provider_execution_error(exc)
         persist_turn_failure(
@@ -422,16 +420,16 @@ def build_success_outcome(*, route: ProviderRoute, finish_reason: str | None) ->
         if finish_reason and finish_reason != "completed":
             result_code = "openai_response_incomplete"
             return result_code, get_openai_result_message(result_code)
-        return OPENAI_SUCCESS_RESULT_CODE, pick_openai_success_message()
+        return OPENAI_SUCCESS_RESULT_CODE, pick_success_message()
     if route.model.provider == "anthropic":
         result_code = map_anthropic_finish_result_code(finish_reason)
         if result_code in {ANTHROPIC_SUCCESS_RESULT_CODE, "anthropic_stop_stop_sequence"}:
-            return result_code, pick_anthropic_success_message()
+            return result_code, pick_success_message()
         return result_code, get_anthropic_result_message(result_code)
     if route.model.provider == "vertex_ai":
         result_code = map_vertex_finish_result_code(finish_reason)
         if result_code == VERTEX_SUCCESS_RESULT_CODE:
-            return result_code, pick_vertex_success_message()
+            return result_code, pick_success_message()
         return result_code, get_vertex_result_message(result_code)
     return SUCCESS_RESULT_CODE, pick_success_message()
 

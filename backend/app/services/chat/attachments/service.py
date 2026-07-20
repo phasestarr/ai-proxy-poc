@@ -8,6 +8,7 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.config.attachments import UPLOAD_READ_CHUNK_BYTES
 from app.config.settings import settings
 from app.config.time import utc_now
 from app.db.postgres.models.chat_attachment import ChatDraftFile, ChatHistoryFile, StoredFile
@@ -33,9 +34,6 @@ from app.services.chat.attachments.validation import (
 from app.services.chat.errors import ChatHistoryNotFoundError
 from app.services.chat.histories.service import load_user_history
 from app.services.chat.operations import OperationHandle, assert_operation_current, draft_ttl_seconds
-
-UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
-
 
 def get_history_file(
     db: Session,

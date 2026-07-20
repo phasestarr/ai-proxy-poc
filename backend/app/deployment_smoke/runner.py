@@ -7,15 +7,15 @@ from collections.abc import Iterable
 import uuid
 
 from app.providers.anthropic.attachments import delete_anthropic_file, upload_anthropic_file
-from app.providers.anthropic.count_tokens import ANTHROPIC_ATTACHMENT_COUNT_MODEL_ID
+from app.providers.anthropic.config import ANTHROPIC_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.anthropic.provider import ANTHROPIC_PROVIDER_ID, list_anthropic_models
 from app.providers.dispatcher import ensure_provider_ready, prepare_provider_chat_completion, stream_provider_chat_completion
 from app.providers.openai.attachments import delete_openai_file, upload_openai_file
-from app.providers.openai.count_tokens import OPENAI_ATTACHMENT_COUNT_MODEL_ID
+from app.providers.openai.config import OPENAI_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.openai.provider import OPENAI_PROVIDER_ID, list_openai_models
 from app.providers.types import ProviderModelDefinition, ProviderRoute, ProviderStreamEvent
 from app.providers.vertex.attachments import delete_vertex_file, upload_vertex_file
-from app.providers.vertex.count_tokens import VERTEX_ATTACHMENT_COUNT_MODEL_ID
+from app.providers.vertex.config import VERTEX_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.vertex.provider import VERTEX_PROVIDER_ID, list_vertex_models
 from app.schemas.chat import ChatMessage
 

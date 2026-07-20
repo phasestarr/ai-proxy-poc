@@ -1,22 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-import random
-
-
-@dataclass(slots=True, frozen=True)
-class WeightedOutcomeMessage:
-    text: str
-    weight: int
-
-
 VERTEX_SUCCESS_RESULT_CODE = "vertex_finish_stop"
-
-VERTEX_SUCCESS_MESSAGES: tuple[WeightedOutcomeMessage, ...] = (
-    WeightedOutcomeMessage("Done! You got more questions?", 10),
-    WeightedOutcomeMessage("Text generation completed.", 10),
-    WeightedOutcomeMessage("Response ready.", 10),
-)
 
 VERTEX_RESULT_MESSAGES: dict[str, str] = {
     VERTEX_SUCCESS_RESULT_CODE: "Response ready.",
@@ -49,19 +33,6 @@ VERTEX_STATUS_MESSAGES: dict[str, str] = {
     "vertex_thinking": "Gemini is thinking.",
     "vertex_safety_review": "Gemini is evaluating safety constraints.",
 }
-
-
-def pick_vertex_success_message() -> str:
-    total_weight = sum(item.weight for item in VERTEX_SUCCESS_MESSAGES)
-    random_value = random.random() * total_weight
-
-    cumulative_weight = 0
-    for item in VERTEX_SUCCESS_MESSAGES:
-        cumulative_weight += item.weight
-        if random_value <= cumulative_weight:
-            return item.text
-
-    return VERTEX_SUCCESS_MESSAGES[-1].text
 
 
 def get_vertex_result_message(code: str) -> str:

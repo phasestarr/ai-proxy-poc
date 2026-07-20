@@ -12,13 +12,16 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import load_only, selectinload
 
-from app.config.providers.vertex import vertex_settings
 from app.db.postgres.models.chat_attachment import ChatHistoryFile, StoredFile, StoredFileProviderState
 from app.db.postgres.session import SessionLocal
 from app.providers.anthropic.attachments import ANTHROPIC_FILES_BETA
 from app.providers.anthropic.client import build_anthropic_client
 from app.providers.openai.client import build_openai_client
-from app.providers.vertex.attachments import build_storage_client, delete_vertex_file
+from app.providers.vertex.attachments import (
+    build_storage_client,
+    delete_vertex_file,
+    get_vertex_attachment_storage_config,
+)
 from app.services.chat.attachments.remote_files import mark_provider_state_not_uploaded
 
 SUPPORTED_PROVIDERS = ("openai", "anthropic", "vertex_ai")
@@ -1086,11 +1089,12 @@ def _resolve_page_size(max_items: int | None) -> int:
 
 
 def _resolve_vertex_scope(*, bucket: str | None, prefix: str | None) -> tuple[str, str]:
-    bucket_name = _optional_str(bucket) or _optional_str(vertex_settings.attachment_gcs_bucket)
+    configured_bucket, configured_prefix = get_vertex_attachment_storage_config()
+    bucket_name = _optional_str(bucket) or _optional_str(configured_bucket)
     if not bucket_name:
         raise RuntimeError("VERTEX_AI_ATTACHMENT_GCS_BUCKET is not configured")
 
-    resolved_prefix = prefix if prefix is not None else vertex_settings.attachment_gcs_prefix
+    resolved_prefix = prefix if prefix is not None else configured_prefix
     return bucket_name, resolved_prefix.strip().strip("/")
 
 

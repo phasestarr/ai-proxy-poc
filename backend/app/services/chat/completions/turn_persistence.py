@@ -48,10 +48,6 @@ def persist_chat_turn_start(
     route: ProviderRoute | None = None,
     attachment_snapshots: list[dict[str, object]] | None = None,
 ) -> PersistedChatTurn:
-    latest_user_message = payload.messages[-1]
-    if latest_user_message.role != "user":
-        raise ValueError("last message must have role 'user'")
-
     operation_row = assert_operation_current(db, operation)
     history: ChatHistory | None = None
 
@@ -65,14 +61,14 @@ def persist_chat_turn_start(
     next_sequence = _get_next_message_sequence(db, history_id=history.id)
     now = utc_now()
     if next_sequence == 1 and history.title == "New chat":
-        history.title = build_title_from_prompt(latest_user_message.content)
+        history.title = build_title_from_prompt(payload.prompt)
 
     user_message = ChatMessage(
         id=str(uuid4()),
         chat_history_id=history.id,
         sequence=next_sequence,
         role="user",
-        content=latest_user_message.content,
+        content=payload.prompt,
         status="done",
         excluded_from_context=False,
         model_id=route.model.public_id if route else payload.model_id,

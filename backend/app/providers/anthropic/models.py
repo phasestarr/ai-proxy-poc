@@ -1,17 +1,15 @@
-"""
-Anthropic-owned Claude model catalog and runtime metadata.
-"""
+"""Anthropic runtime model definitions derived from operator configuration."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.providers.anthropic.config import ANTHROPIC_MODELS
 from app.providers.anthropic.tools import get_anthropic_tool_definitions
 from app.providers.types import ProviderModelDefinition, ProviderToolDefinition
 
 ANTHROPIC_PROVIDER_ID = "anthropic"
 
-# To change Anthropic model list, change `here` and `config.py` preset-mapping.
 
 @dataclass(slots=True, frozen=True)
 class AnthropicModelRuntimeDefinition:
@@ -22,49 +20,18 @@ class AnthropicModelRuntimeDefinition:
     supported_tools: tuple[ProviderToolDefinition, ...] = ()
 
     def to_provider_model_definition(self) -> ProviderModelDefinition:
-        return ProviderModelDefinition(
-            public_id=self.public_id,
-            provider=ANTHROPIC_PROVIDER_ID,
-            display_name=self.display_name,
-            available=self.available,
-            supported_tools=self.supported_tools,
-        )
+        return ProviderModelDefinition(self.public_id, ANTHROPIC_PROVIDER_ID, self.display_name, self.available, self.supported_tools)
 
 
-_ANTHROPIC_MODELS: tuple[AnthropicModelRuntimeDefinition, ...] = (
+_ANTHROPIC_MODELS = tuple(
     AnthropicModelRuntimeDefinition(
-        public_id="claude-opus-4-8",
-        provider_model="claude-opus-4-8",
-        display_name="Claude Opus 4.8",
-        available=False,
-        supported_tools=get_anthropic_tool_definitions(
-            "web_search",
-            "web_fetch",
-            "code_execution",
-        ),
-    ),
-    AnthropicModelRuntimeDefinition(
-        public_id="claude-sonnet-5",
-        provider_model="claude-sonnet-5",
-        display_name="Claude Sonnet 5",
-        available=True,
-        supported_tools=get_anthropic_tool_definitions(
-            "web_search",
-            "web_fetch",
-            "code_execution",
-        ),
-    ),
-    AnthropicModelRuntimeDefinition(
-        public_id="claude-haiku-4-5",
-        provider_model="claude-haiku-4-5",
-        display_name="Claude Haiku 4.5",
-        available=True,
-        supported_tools=get_anthropic_tool_definitions(
-            "web_search",
-            "web_fetch",
-            "code_execution",
-        ),
-    ),
+        public_id=model.public_id,
+        provider_model=model.provider_model,
+        display_name=model.display_name,
+        available=model.available,
+        supported_tools=get_anthropic_tool_definitions(*model.supported_tool_ids),
+    )
+    for model in ANTHROPIC_MODELS
 )
 
 
@@ -76,5 +43,4 @@ def resolve_anthropic_model_runtime(*, public_model_id: str) -> AnthropicModelRu
     for model in _ANTHROPIC_MODELS:
         if model.public_id == public_model_id:
             return model
-
     raise ValueError(f"unsupported anthropic model: {public_model_id}")

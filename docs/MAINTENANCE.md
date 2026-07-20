@@ -2,6 +2,13 @@
 
 Change points that matter when extending or debugging the current stack.
 
+## Configuration Ownership
+- `.env` owns deployment-specific policy, credentials, and external resource ids
+- `backend/app/config/*.py` owns version-controlled application policy and algorithm constants
+- `backend/app/providers/<provider>/config.py` owns provider catalogs, capabilities, versions, helper models, and pricing
+- `backend/app/providers/<provider>/options.py` owns frequently adjusted request payload values
+- a setting must have one owner; provider options do not fall back between Python config and environment values
+
 ## Model and Tool Source Of Truth
 - backend owns the public model catalog
 - frontend reads `GET /api/v1/models`
@@ -10,30 +17,22 @@ Change points that matter when extending or debugging the current stack.
 
 ## Where To Change Models
 
-For an existing provider, model changes should usually touch:
+For an existing provider, model changes should touch:
 
-1. `backend/app/providers/<provider>/models.py`
+1. `backend/app/providers/<provider>/config.py`
    - public model ids
    - provider runtime model ids
    - display names
    - availability
    - supported tool ids
-2. `backend/app/providers/<provider>/config.py`
+   - model capabilities and price cards
+2. `backend/app/providers/<provider>/options.py`
    - model to preset mapping
-   - provider request preset values
-
-Current provider model files:
-- `backend/app/providers/vertex/models.py`
-- `backend/app/providers/openai/models.py`
-- `backend/app/providers/anthropic/models.py`
+   - thinking/reasoning options and output caps
 
 ## Generic Model Defaults
 
-Keep backend-owned generic helper work pinned to these lighter tiers unless a specific call site has a reason to override:
-
-- Vertex: `gemini-3-flash-preview`
-- OpenAI: `gpt-5.4-mini`
-- Anthropic: `claude-haiku-4-5`
+Backend-owned generic helper ids are declared in each provider's `config.py`.
 
 Current generic-helper call sites:
 - internal context compression -> `backend/app/compression/service.py`
@@ -46,20 +45,28 @@ Current generic-helper call sites:
 
 For an existing provider, tool changes should usually touch:
 
-1. `backend/app/providers/<provider>/tools.py`
-   - public tool metadata
+1. `backend/app/providers/<provider>/config.py`
+   - public tool metadata, availability, and versions
+   - per-model supported tool ids
+2. `backend/app/providers/<provider>/options.py`
+   - provider-native tool request options
+3. `backend/app/providers/<provider>/tools.py`
    - provider-native hosted tool payloads
    - any provider-native tool beta/header logic
-2. `backend/app/providers/<provider>/models.py`
-   - assign supported tool ids to each model
-3. `backend/app/config/providers/<provider>.py`
-   - only if the tool needs env-backed configuration
+4. `backend/app/providers/<provider>/settings.py`
+   - only if the tool needs credentials or an external resource id
 
 ## Provider Package Shape
-- `models.py`
-  - provider model catalog
 - `config.py`
-  - request presets and model-to-preset mapping
+  - operator-facing models, tools, capabilities, versions, helper ids, and pricing
+- `options.py`
+  - request defaults, presets, output caps, thinking settings, and hosted-tool options
+- `settings.py`
+  - provider credentials and external resource binding
+- `provider.py`
+  - provider request coordination and prepared-request construction
+- `models.py`
+  - runtime model definitions derived from config
 - `tools.py`
   - tool metadata and hosted tool payload builders
 - `client.py`
@@ -72,72 +79,25 @@ For an existing provider, tool changes should usually touch:
 - `count_tokens.py`
   - provider-native exact input token counting
 - `stream.py`
-  - actual provider call and error mapping
+  - raw SDK transport and provider error mapping
 
-## Current Public Models
+## Current Public Surface
 
-Vertex:
-- `gemini-3.5-flash`
-- `gemini-3.1-pro-preview`
-- `gemini-3-flash-preview`
-
-OpenAI:
-- `gpt-5.6-sol`
-- `gpt-5.6-terra`
-- `gpt-5.6-luna`
-- `gpt-5.4-mini`
-
-Anthropic:
-- `claude-opus-4-8`
-- `claude-sonnet-5`
-- `claude-haiku-4-5`
-
-## Current Public Tools
-
-Vertex:
-- `google_search`
-- `url_context`
-- `code_execution`
-- `google_maps`
-- `retrieval`
-
-OpenAI:
-- `web_search`
-- `file_search`
-- `code_interpreter`
-- `shell`
-
-Anthropic:
-- `web_search`
-- `web_fetch`
-- `code_execution`
+Use `GET /api/v1/models` for runtime model/tool exposure, provider `config.py`
+for catalogs, and provider `options.py` for request behavior. Do not duplicate
+those lists here.
 
 ## Output Cap Rule
-- output token caps live in provider preset config
+- output token caps live in provider request options
 - env does not own provider output caps
-- OpenAI caps live in `backend/app/providers/openai/config.py`
-- Anthropic caps live in `backend/app/providers/anthropic/config.py`
-- Vertex caps live in `backend/app/providers/vertex/config.py`
+- OpenAI caps live in `backend/app/providers/openai/options.py`
+- Anthropic caps live in `backend/app/providers/anthropic/options.py`
+- Vertex caps live in `backend/app/providers/vertex/options.py`
 
 ## Current Tool Mapping
 
-Vertex:
-- `google_search` -> `google_search`
-- `retrieval` -> `retrieval.vertex_rag_store`
-- `code_execution` -> `code_execution`
-- `url_context` -> `url_context`
-- `google_maps` -> `google_maps`
-
-OpenAI:
-- `web_search` -> Responses API `web_search`
-- `file_search` -> Responses API `file_search`
-- `code_interpreter` -> Responses API `code_interpreter`
-- `shell` -> Responses API `shell`
-
-Anthropic:
-- `web_search` -> Messages API `web_search_20260318`
-- `web_fetch` -> Messages API `web_fetch_20260318`
-- `code_execution` -> Messages API `code_execution_20260521`
+Provider tool versions live in `config.py`, request options live in `options.py`,
+and provider-native payload construction lives in `tools.py`.
 
 ## Payload Assembly And Chat Execution Path
 1. request schema validation
@@ -166,12 +126,14 @@ Anthropic:
    - includes only raw messages after `covered_through_sequence`
    - appends the latest user request message as the final turn
 8. provider-native payload build
-   - OpenAI: `backend/app/providers/openai/mapper.py` + `backend/app/providers/openai/config.py`
-   - Anthropic: `backend/app/providers/anthropic/mapper.py` + `backend/app/providers/anthropic/config.py`
-   - Vertex: `backend/app/providers/vertex/mapper.py` + `backend/app/providers/vertex/config.py`
+   - provider coordination: `backend/app/providers/<provider>/provider.py`
+   - message translation: `backend/app/providers/<provider>/mapper.py`
+   - request values: `backend/app/providers/<provider>/options.py`
+   - hosted tools: `backend/app/providers/<provider>/tools.py`
 9. local estimate and exact-count gate
-   - heuristic estimate is attached in `backend/app/providers/<provider>/stream.py`
-   - threshold constants live in `backend/app/services/chat/completions/context/budget.py`
+   - heuristic estimate is attached in `backend/app/providers/<provider>/provider.py`
+   - threshold constants live in `backend/app/config/chat.py`
+   - budget decisions live in `backend/app/services/chat/completions/context/budget.py`
    - exact token counters live in `backend/app/providers/<provider>/count_tokens.py`
 10. compaction path
    - decision is made in `backend/app/services/chat/completions/context/budget.py`
@@ -329,11 +291,10 @@ Smoke coverage:
 - file upload in the product also prepares all three providers at attach time by design
 
 ## Context Compaction Conditions
-- soft threshold: `50000` input tokens
-- exact-count trigger starts at `40000` estimated input tokens
-- below `40000`: heuristic estimate only
-- at or above `40000`: provider-native count-tokens API may run
-- if the final budget token count is above `50000`, compaction starts
+- latest prompt hard limit: `LATEST_PROMPT_MAX_TOKENS`
+- text compaction threshold: `TEXT_CONTEXT_COMPACTION_TRIGGER`
+- exact text-count trigger: `EXACT_TEXT_TOKEN_COUNT_TRIGGER`
+- attachments have an independent per-history/provider token limit
 - after compaction, the backend rebuilds the provider payload from DB and checks again
 
 ## Before You Add A New Env Var

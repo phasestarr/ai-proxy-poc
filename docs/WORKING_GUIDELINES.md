@@ -8,7 +8,7 @@
 - Keep provider SDK details inside `backend/app/providers/<provider>/`.
 - Keep env-backed runtime settings in:
   - `backend/app/config/settings.py`
-  - `backend/app/config/providers/<provider>.py`
+  - `backend/app/providers/<provider>/settings.py`
 
 ## Runtime Rule
 - Docker Compose is the only runtime path.
@@ -19,13 +19,13 @@
 - Do not leave runtime env behavior depending on an unmounted `.env` file inside the container.
 
 ## Provider Rule
-- Public model ids and tool exposure start in `backend/app/providers/catalog.py`.
+- Public model ids and tool exposure start in `backend/app/providers/<provider>/config.py`.
 - For an existing provider, most day-to-day changes should stay inside:
-  - `models.py`
   - `config.py`
+  - `options.py`
   - `tools.py`
 - Keep provider request presets small and human-editable.
-- Treat output token caps as provider preset config, not env config.
+- Treat output token caps as provider request options, not env config.
 
 ## Docs Rule
 - Keep these docs aligned with the real runtime:

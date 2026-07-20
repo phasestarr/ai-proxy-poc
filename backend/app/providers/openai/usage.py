@@ -1,62 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 
+from app.providers.openai.config import (
+    OPENAI_CODE_INTERPRETER_COST_BY_MEMORY_LIMIT as _OPENAI_CODE_INTERPRETER_COST_BY_MEMORY_LIMIT,
+    OPENAI_FILE_SEARCH_COST_PER_1K_CALLS as _OPENAI_FILE_SEARCH_COST_PER_1K_CALLS,
+    OPENAI_PRICE_CARDS as _OPENAI_PRICE_CARDS,
+    OPENAI_PRICING_VERSION,
+    OPENAI_WEB_SEARCH_COST_PER_1K_CALLS as _OPENAI_WEB_SEARCH_COST_PER_1K_CALLS,
+)
+from app.providers.openai.options import OPENAI_TOOL_OPTIONS
 from app.providers.types import ProviderPriceEstimate, ProviderUsageMetadata
-
-OPENAI_PRICING_VERSION = "openai-2026-07-16"
-_OPENAI_WEB_SEARCH_COST_PER_1K_CALLS = 10.0
-_OPENAI_FILE_SEARCH_COST_PER_1K_CALLS = 2.5
-_OPENAI_CODE_INTERPRETER_COST_BY_MEMORY_LIMIT = {
-    "1g": 0.03,
-    "4g": 0.12,
-    "16g": 0.48,
-    "64g": 1.92,
-}
-
-
-@dataclass(slots=True, frozen=True)
-class _OpenAIPriceCard:
-    input_per_million_usd: float
-    cached_input_per_million_usd: float
-    output_per_million_usd: float
-    long_context_threshold: int | None = None
-    long_context_input_multiplier: float = 1.0
-    long_context_output_multiplier: float = 1.0
-
-
-_OPENAI_PRICE_CARDS: dict[str, _OpenAIPriceCard] = {
-    "gpt-5.6-sol": _OpenAIPriceCard(
-        input_per_million_usd=5.0,
-        cached_input_per_million_usd=0.5,
-        output_per_million_usd=30.0,
-        long_context_threshold=272_000,
-        long_context_input_multiplier=2.0,
-        long_context_output_multiplier=1.5,
-    ),
-    "gpt-5.6-terra": _OpenAIPriceCard(
-        input_per_million_usd=2.5,
-        cached_input_per_million_usd=0.25,
-        output_per_million_usd=15.0,
-        long_context_threshold=272_000,
-        long_context_input_multiplier=2.0,
-        long_context_output_multiplier=1.5,
-    ),
-    "gpt-5.6-luna": _OpenAIPriceCard(
-        input_per_million_usd=1.0,
-        cached_input_per_million_usd=0.1,
-        output_per_million_usd=6.0,
-        long_context_threshold=272_000,
-        long_context_input_multiplier=2.0,
-        long_context_output_multiplier=1.5,
-    ),
-    "gpt-5.4-mini": _OpenAIPriceCard(
-        input_per_million_usd=0.75,
-        cached_input_per_million_usd=0.075,
-        output_per_million_usd=4.5,
-    ),
-}
 
 
 def map_openai_usage(
@@ -118,8 +72,6 @@ def estimate_openai_price(
     code_interpreter_request_count: int | None,
     shell_request_count: int | None,
 ) -> ProviderPriceEstimate:
-    from app.config.providers.openai import openai_settings
-
     price_card = _OPENAI_PRICE_CARDS.get(public_model_id)
     if price_card is None:
         return ProviderPriceEstimate(
@@ -150,7 +102,10 @@ def estimate_openai_price(
     tool_cost = (
         (web_search_calls * _OPENAI_WEB_SEARCH_COST_PER_1K_CALLS / 1000.0)
         + (file_search_calls * _OPENAI_FILE_SEARCH_COST_PER_1K_CALLS / 1000.0)
-        + ((1 if code_interpreter_calls > 0 else 0) * _OPENAI_CODE_INTERPRETER_COST_BY_MEMORY_LIMIT[openai_settings.code_interpreter_memory_limit])
+        + (
+            (1 if code_interpreter_calls > 0 else 0)
+            * _OPENAI_CODE_INTERPRETER_COST_BY_MEMORY_LIMIT[_openai_code_interpreter_memory_limit()]
+        )
     )
     total_cost = input_cost + cached_input_cost + output_cost + tool_cost
     notes: list[str] = []
@@ -188,6 +143,14 @@ def _count_response_tool_calls(response_output: object) -> dict[str, int]:
         elif item_type.endswith("shell_call"):
             counts["shell"] += 1
     return counts
+
+
+def _openai_code_interpreter_memory_limit() -> str:
+    code_options = OPENAI_TOOL_OPTIONS.get("code_interpreter", {})
+    container_options = code_options.get("container", {}) if isinstance(code_options, dict) else {}
+    if not isinstance(container_options, dict):
+        raise ValueError("OpenAI code interpreter container options must be a mapping")
+    return str(container_options["memory_limit"])
 
 
 def _extract_item_type(item: object) -> str:

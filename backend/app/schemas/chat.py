@@ -16,15 +16,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-MAX_CHAT_MESSAGE_CHARS = 65535
-MAX_CHAT_LATEST_PROMPT_CHARS = 32768
+from app.config.chat import CHAT_HISTORY_TITLE_MAX_CHARS, MAX_SELECTED_TOOL_IDS
 
 
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
-    content: str = Field(..., min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
+    content: str = Field(..., min_length=1)
 
     @field_validator("content")
     @classmethod
@@ -40,8 +39,8 @@ class ChatCompletionRequest(BaseModel):
 
     chat_history_id: str | None = Field(default=None, min_length=1, max_length=36)
     model_id: str | None = Field(default=None, min_length=1)
-    tool_ids: list[str] = Field(default_factory=list, max_length=16)
-    messages: list[ChatMessage] = Field(..., min_length=1, max_length=100)
+    tool_ids: list[str] = Field(default_factory=list, max_length=MAX_SELECTED_TOOL_IDS)
+    prompt: str = Field(..., min_length=1)
 
     @field_validator("tool_ids")
     @classmethod
@@ -54,15 +53,13 @@ class ChatCompletionRequest(BaseModel):
             normalized.append(trimmed)
         return normalized
 
-    @model_validator(mode="after")
-    def validate_messages(self) -> "ChatCompletionRequest":
-        if not any(message.role == "user" for message in self.messages):
-            raise ValueError("at least one user message is required")
-        if self.messages[-1].role != "user":
-            raise ValueError("last message must have role 'user'")
-        if len(self.messages[-1].content) > MAX_CHAT_LATEST_PROMPT_CHARS:
-            raise ValueError(f"latest user prompt must be at most {MAX_CHAT_LATEST_PROMPT_CHARS} characters")
-        return self
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("prompt must not be blank")
+        return trimmed
 
     @property
     def conversation_id(self) -> str:
@@ -140,7 +137,7 @@ class ChatStreamErrorEvent(BaseModel):
 
 
 class ChatHistoryTitleUpdateRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=255)
+    title: str = Field(..., min_length=1, max_length=CHAT_HISTORY_TITLE_MAX_CHARS)
 
     @field_validator("title")
     @classmethod

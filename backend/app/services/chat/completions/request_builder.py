@@ -13,7 +13,7 @@ from app.db.postgres.models.chat_history import ChatHistory
 from app.db.postgres.session import SessionLocal
 from app.providers.dispatcher import (
     ProviderConfigurationError,
-    count_provider_chat_input_tokens,
+    count_provider_chat_text_tokens,
     prepare_provider_chat_completion,
 )
 from app.providers.types import PreparedProviderChatRequest, ProviderRoute
@@ -39,7 +39,6 @@ async def build_prepared_request(
     route: ProviderRoute,
     history_id: str | None,
 ) -> tuple[BuiltChatContext, PreparedProviderChatRequest]:
-    latest_user_message = payload.messages[-1]
     with SessionLocal() as pipeline_db:
         history = load_user_history(
             pipeline_db,
@@ -56,7 +55,7 @@ async def build_prepared_request(
         built_context = build_chat_context(
             pipeline_db,
             history=history,
-            latest_user_content=latest_user_message.content,
+            latest_user_content=payload.prompt,
         )
         try:
             prepared_request = prepare_provider_chat_completion(
@@ -75,7 +74,7 @@ async def build_prepared_request(
             raise map_provider_request_validation_error(route=route, exc=exc) from exc
         except Exception as exc:
             raise map_provider_request_validation_error(route=route, exc=exc) from exc
-        prepared_request = await _resolve_prepared_request_input_tokens(prepared_request)
+        prepared_request = await _resolve_prepared_request_text_tokens(prepared_request)
         return built_context, prepared_request
 
 
@@ -174,19 +173,19 @@ def looks_like_proxy_provider_config_error(detail: str) -> bool:
     )
 
 
-async def _resolve_prepared_request_input_tokens(
+async def _resolve_prepared_request_text_tokens(
     prepared_request: PreparedProviderChatRequest,
 ) -> PreparedProviderChatRequest:
     if not should_resolve_exact_input_tokens(prepared_request):
         return prepared_request
 
-    resolved_input_tokens = await count_provider_chat_input_tokens(
+    resolved_text_tokens = await count_provider_chat_text_tokens(
         prepared_request=prepared_request,
     )
-    if resolved_input_tokens is None:
+    if resolved_text_tokens is None:
         return prepared_request
 
     return replace(
         prepared_request,
-        resolved_input_tokens=resolved_input_tokens,
+        resolved_text_tokens=resolved_text_tokens,
     )

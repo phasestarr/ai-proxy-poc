@@ -10,7 +10,8 @@ Responsibilities:
 
 from __future__ import annotations
 
-from app.config.providers.anthropic import anthropic_settings
+from app.providers.anthropic.config import ANTHROPIC_API_VERSION
+from app.providers.anthropic.settings import anthropic_settings
 
 
 class AnthropicProviderConfigurationError(RuntimeError):
@@ -35,7 +36,6 @@ def build_anthropic_client():
     return AsyncAnthropic(
         api_key=anthropic_settings.api_key,
         default_headers={
-            "anthropic-version": anthropic_settings.api_version,
+            "anthropic-version": ANTHROPIC_API_VERSION,
         },
     )
-

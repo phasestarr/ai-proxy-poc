@@ -53,8 +53,8 @@ from app.db.postgres.session import SessionLocal
 
 logger = logging.getLogger("uvicorn.error")
 
-INPUT_TOKENS_ESTIMATED_STATUS = "context_input_tokens_estimated"
-INPUT_TOKENS_EXACT_STATUS = "context_input_tokens_exact"
+TEXT_TOKENS_ESTIMATED_STATUS = "context_text_tokens_estimated"
+TEXT_TOKENS_EXACT_STATUS = "context_text_tokens_exact"
 CONTEXT_COMPACTION_STARTED_STATUS = "context_compaction_started"
 CONTEXT_COMPACTION_STARTED_MESSAGE = "Compressing conversation context..."
 
@@ -246,7 +246,7 @@ async def _prepare_turn_for_provider(
         route=validation.route,
         history_id=history_id,
     )
-    emit_input_token_statuses(sink=sink, prepared_request=prepared_request)
+    emit_text_token_statuses(sink=sink, prepared_request=prepared_request)
 
     if needs_context_compaction(prepared_request):
         if built_context.history is None:
@@ -277,7 +277,7 @@ async def _prepare_turn_for_provider(
             route=validation.route,
             history_id=history_id,
         )
-        emit_input_token_statuses(sink=sink, prepared_request=prepared_request)
+        emit_text_token_statuses(sink=sink, prepared_request=prepared_request)
         if needs_context_compaction(prepared_request):
             raise ChatProxyError(
                 code="context_still_too_large",
@@ -320,7 +320,7 @@ __all__ = [
 ]
 
 
-def emit_input_token_statuses(
+def emit_text_token_statuses(
     *,
     sink: LiveChatStreamSink,
     prepared_request: PreparedProviderChatRequest,
@@ -329,23 +329,23 @@ def emit_input_token_statuses(
         "status",
         ChatStreamStatusEvent(
             provider=None,
-            status_code=INPUT_TOKENS_ESTIMATED_STATUS,
-            status_message=build_input_token_status_message(
-                prefix="Estimated input tokens",
-                token_count=prepared_request.estimated_input_tokens,
+            status_code=TEXT_TOKENS_ESTIMATED_STATUS,
+            status_message=build_token_status_message(
+                prefix="Estimated text tokens",
+                token_count=prepared_request.estimated_text_tokens,
             ),
         ),
     )
-    if prepared_request.resolved_input_tokens is None:
+    if prepared_request.resolved_text_tokens is None:
         return
     sink.emit(
         "status",
         ChatStreamStatusEvent(
             provider=None,
-            status_code=INPUT_TOKENS_EXACT_STATUS,
-            status_message=build_input_token_status_message(
-                prefix="Exact input tokens",
-                token_count=prepared_request.resolved_input_tokens,
+            status_code=TEXT_TOKENS_EXACT_STATUS,
+            status_message=build_token_status_message(
+                prefix="Exact text tokens",
+                token_count=prepared_request.resolved_text_tokens,
             ),
         ),
     )
@@ -354,11 +354,11 @@ def emit_input_token_statuses(
 def build_compaction_started_message(prepared_request: PreparedProviderChatRequest) -> str:
     return (
         f"{CONTEXT_COMPACTION_STARTED_MESSAGE} "
-        f"({prepared_request.budget_input_tokens:,} input tokens)"
+        f"({prepared_request.budget_text_tokens:,} text tokens)"
     )
 
 
-def build_input_token_status_message(*, prefix: str, token_count: int) -> str:
+def build_token_status_message(*, prefix: str, token_count: int) -> str:
     return f"{prefix}: {token_count:,}"
 
 
@@ -378,11 +378,10 @@ def _begin_send_operation(
         )
         return payload.chat_history_id, operation, False
 
-    latest_user_message = payload.messages[-1]
     history, operation = begin_new_history_send_operation(
         db,
         session=session,
-        title=build_title_from_prompt(latest_user_message.content),
+        title=build_title_from_prompt(payload.prompt),
         timeout_seconds=validating_timeout_seconds(),
     )
     return history.id, operation, True

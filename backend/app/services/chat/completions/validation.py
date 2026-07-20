@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.auth.types import SessionContext
+from app.config.chat import LATEST_PROMPT_MAX_TOKENS
 from app.config.chat_outcomes import get_error_message
 from app.db.redis.chat_coordination import (
     ChatCoordinationUnavailableError,
@@ -13,6 +14,7 @@ from app.db.redis.chat_coordination import (
 )
 from app.providers.dispatcher import ProviderConfigurationError, ensure_provider_ready
 from app.providers.types import ProviderRoute
+from app.providers.token_estimation import estimate_token_count_from_text
 from app.schemas.chat import ChatCompletionRequest
 from app.services.chat.completions.route_selection import prepare_chat_completion_request
 from app.services.chat.errors import ChatProxyError, build_preparation_error
@@ -30,6 +32,18 @@ def run_chat_validation(
     session: SessionContext,
     db: Session,
 ) -> ChatValidationResult:
+    prompt_token_count = estimate_token_count_from_text(payload.prompt)
+    if prompt_token_count > LATEST_PROMPT_MAX_TOKENS:
+        raise ChatProxyError(
+            code="prompt_too_large",
+            origin="client",
+            detail=(
+                f"latest prompt contains {prompt_token_count:,} tokens; "
+                f"the limit is {LATEST_PROMPT_MAX_TOKENS:,}"
+            ),
+            http_status=400,
+        )
+
     try:
         prepared = prepare_chat_completion_request(payload, session=session)
     except ValueError as exc:

@@ -4,15 +4,19 @@ import asyncio
 from copy import deepcopy
 from os.path import basename
 
-from app.config.providers.vertex import vertex_settings
+from app.providers.vertex.settings import vertex_settings
 from app.providers.vertex.client import build_vertex_client
-from app.providers.vertex.count_tokens import VERTEX_ATTACHMENT_COUNT_MODEL_ID
+from app.providers.vertex.config import VERTEX_ATTACHMENT_COUNT_MODEL_ID
 from app.providers.vertex.models import list_vertex_models, resolve_vertex_model_runtime
 
 _VERTEX_ATTACHMENT_CONTEXT_TEXT = (
     "The following files are attached to this chat history. "
     "Treat them as persistent reference context for every turn in this conversation."
 )
+
+
+def get_vertex_attachment_storage_config() -> tuple[str, str]:
+    return vertex_settings.attachment_gcs_bucket, vertex_settings.attachment_gcs_prefix
 
 
 def resolve_vertex_attachment_count_model() -> str:
